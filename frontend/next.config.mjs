@@ -2,7 +2,7 @@
 const nextConfig = {
   images: {
     remotePatterns: [
-      // Strapi local (dev)
+      // 🧪 Strapi local (desarrollo)
       {
         protocol: "http",
         hostname: "localhost",
@@ -10,11 +10,18 @@ const nextConfig = {
         pathname: "/uploads/**",
       },
 
-      // 🔒 Producción (dejalo comentado hasta deploy)
+      // 🚀 Strapi en producción (Render)
       {
         protocol: "https",
         hostname: "strapi-backend-ecommerce-qete.onrender.com",
         pathname: "/uploads/**",
+      },
+
+      // ☁️ Cloudinary (imagenes nuevas)
+      {
+        protocol: "https",
+        hostname: "res.cloudinary.com",
+        pathname: "/**",
       },
 
       // 🔁 ngrok (si exponés Strapi)
