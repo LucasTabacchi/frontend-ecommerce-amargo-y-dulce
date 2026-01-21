@@ -200,6 +200,8 @@ export default function CheckoutPage() {
     if (trimmedPostalCode.length < 4)
       return setError("Ingresá un código postal válido.");
 
+    localStorage.setItem("amg_email", trimmedEmail.toLowerCase());
+
     try {
       setLoading(true);
 
@@ -230,8 +232,9 @@ export default function CheckoutPage() {
           total,
           mpExternalReference,
           items: cartItems.map((it) => ({
-            productId: it.id,
-            slug: it.slug,
+            productId: Number(it.id),
+            productDocumentId: it.documentId ?? null,
+            slug: String(it.slug || "").trim(),
             title: it.title,
             qty: it.qty,
             unit_price: priceWithOff(it.price, it.off),

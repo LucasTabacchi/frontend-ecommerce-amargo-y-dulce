@@ -18,64 +18,110 @@ function strapiMediaUrl(path?: string) {
   return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
-function pickImage(attr: any) {
+function pickAttr(row: any) {
+  return row?.attributes ?? row ?? {};
+}
+
+function pickImage(rowOrAttr: any) {
+  const attr = pickAttr(rowOrAttr);
   const img = attr?.images?.[0];
   const f = img?.formats;
   const url = f?.medium?.url || f?.small?.url || f?.thumbnail?.url || img?.url || "";
   return strapiMediaUrl(url);
 }
 
-export default async function ProductDetailPage({ params }: { params: { id: string } }) {
-  const res = await fetcher<any>(
-    `/api/products?filters[id][$eq]=${encodeURIComponent(params.id)}&populate=*`
-  );
+function asNum(v: any, fallback = 0) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
 
-  const row = res?.data?.[0];
+export default async function ProductDetailPage({ params }: { params: { id: string } }) {
+  const pid = String(params.id || "").trim();
+  if (!pid) return notFound();
+
+  const isNumeric = /^\d+$/.test(pid);
+
+  let row: any | null = null;
+
+  try {
+    if (isNumeric) {
+      // ✅ id numérico
+      const sp = new URLSearchParams();
+      sp.set("populate", "*");
+      sp.set("pagination[pageSize]", "1");
+      sp.set("filters[id][$eq]", pid);
+
+      const list = await fetcher<any>(`/api/products?${sp.toString()}`, { auth: true });
+      row = list?.data?.[0] ?? null;
+    } else {
+      // ✅ documentId (principal) + slug (fallback)
+      const sp = new URLSearchParams();
+      sp.set("populate", "*");
+      sp.set("pagination[pageSize]", "1");
+
+      // documentId exacto
+      sp.set("filters[$or][0][documentId][$eq]", pid);
+      // slug exacto (por si entran por slug)
+      sp.set("filters[$or][1][slug][$eq]", pid);
+
+      const list = await fetcher<any>(`/api/products?${sp.toString()}`, { auth: true });
+      row = list?.data?.[0] ?? null;
+    }
+  } catch {
+    return notFound();
+  }
+
   if (!row) return notFound();
 
-  const attr = row?.attributes ?? row;
+  const attr = pickAttr(row);
 
-  const id = (row?.id ?? Number(params.id)) || params.id;
-  const slug = (attr?.slug ?? String(id)) as string;
+  // ✅ id numérico de Strapi (siempre existe)
+  const id = asNum(row?.id ?? attr?.id, NaN);
+  if (!Number.isFinite(id)) return notFound();
 
-  const title = attr?.title ?? "Producto";
-  const description = attr?.description ?? "";
-  const category = attr?.category ?? null;
+  // ✅ documentId (Strapi v5)
+  const documentIdRaw =
+    row?.documentId ??
+    attr?.documentId ??
+    attr?.document_id ??
+    null;
 
-  const price = Number(attr?.price ?? 0);
-  const off = typeof attr?.off === "number" ? attr.off : 0;
+  const documentId = documentIdRaw ? String(documentIdRaw).trim() : undefined;
+
+  const title = attr?.title ?? row?.title ?? "Producto";
+  const description = attr?.description ?? row?.description ?? "";
+  const category = attr?.category ?? row?.category ?? null;
+
+  const price = asNum(attr?.price ?? row?.price, 0);
+
+  const offRaw = attr?.off ?? row?.off ?? 0;
+  const off = asNum(offRaw, 0);
   const hasOff = off > 0;
   const finalPrice = hasOff ? Math.round(price * (1 - off / 100)) : price;
 
-  // Opcional (si tu modelo lo tiene)
-  const stock = typeof attr?.stock === "number" ? attr.stock : null;
+  const stockRaw = attr?.stock ?? row?.stock ?? null;
+  const stock = stockRaw == null ? null : asNum(stockRaw, 0);
 
-  const imageUrl = pickImage(attr);
+  const imageUrl = pickImage(row);
+
+  // slug puede ser null -> lo dejamos como opcional
+  const slug = String(attr?.slug ?? row?.slug ?? "").trim() || String(id);
 
   return (
     <main>
       <Container>
-        {/* Breadcrumb / volver */}
         <div className="pt-8">
-          <Link
-            href="/productos"
-            className="text-sm font-semibold text-neutral-600 hover:text-neutral-900"
-          >
+          <Link href="/productos" className="text-sm font-semibold text-neutral-600 hover:text-neutral-900">
             ← Volver a productos
           </Link>
         </div>
 
-        {/* Header */}
         <div className="pt-6 pb-6">
           <h1 className="text-3xl font-extrabold text-neutral-900">{title}</h1>
-          {category && (
-            <p className="mt-1 text-sm font-semibold text-neutral-500">{String(category)}</p>
-          )}
+          {category && <p className="mt-1 text-sm font-semibold text-neutral-500">{String(category)}</p>}
         </div>
 
-        {/* Layout principal */}
         <div className="grid gap-8 pb-14 lg:grid-cols-2">
-          {/* Imagen */}
           <section className="overflow-hidden rounded-2xl border bg-white">
             <div className="relative aspect-[4/3] w-full bg-neutral-100">
               {imageUrl ? (
@@ -88,9 +134,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                   priority
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-                  Sin imagen
-                </div>
+                <div className="flex h-full items-center justify-center text-sm text-neutral-500">Sin imagen</div>
               )}
 
               {hasOff && (
@@ -101,9 +145,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             </div>
           </section>
 
-          {/* Ficha */}
           <aside className="h-fit rounded-2xl border bg-white p-6 lg:p-7">
-            {/* Precio */}
             <div className="flex items-end justify-between gap-4">
               <div>
                 <div className="flex items-baseline gap-3">
@@ -125,7 +167,6 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                 )}
               </div>
 
-              {/* Stock (si existe) */}
               {stock != null && (
                 <div
                   className={`rounded-full px-3 py-1 text-xs font-bold ${
@@ -137,17 +178,13 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               )}
             </div>
 
-            {/* Descripción */}
             {description && (
               <div className="mt-5">
                 <h2 className="text-sm font-extrabold text-neutral-900">Descripción</h2>
-                <p className="mt-2 text-sm leading-6 text-neutral-700 whitespace-pre-line">
-                  {description}
-                </p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700 whitespace-pre-line">{description}</p>
               </div>
             )}
 
-            {/* Info extra */}
             <div className="mt-6 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
               <ul className="space-y-2">
                 <li className="flex items-start gap-2">
@@ -161,14 +198,14 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               </ul>
             </div>
 
-            {/* CTA */}
             <div className="mt-6">
               <AddToCartButton
                 item={{
-                  id,
-                  slug,
+                  id,          // id numérico de Strapi
+                  documentId,  // ✅ CLAVE para guardar en pedidos y linkear por documentId
+                  slug,        // opcional
                   title,
-                  price, // guardamos precio base; tu store ya calcula si hay off, o guardamos off también
+                  price,
                   off: hasOff ? off : undefined,
                   imageUrl,
                 }}

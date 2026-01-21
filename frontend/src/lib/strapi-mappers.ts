@@ -34,9 +34,18 @@ export function getStrapiImageUrlFromAttributes(attributes: any): string | undef
 export function toCardItem(product: any): ProductCardItem {
   const attr = product?.attributes ?? product ?? {};
 
+  const documentIdRaw =
+    product?.documentId ??
+    product?.attributes?.documentId ??
+    product?.attributes?.document_id ??
+    attr?.documentId ??
+    attr?.document_id ??
+    null;
+
   return {
-    id: Number(product?.id), // ✅
-    slug: attr.slug ?? String(product?.id ?? ""),
+    id: Number(product?.id), // ✅ id real de Strapi
+    documentId: documentIdRaw ? String(documentIdRaw) : null, // ✅
+    slug: attr.slug ?? null,
     title: attr.title ?? "Producto",
     description: attr.description ?? "",
     price: Number(attr.price ?? 0),

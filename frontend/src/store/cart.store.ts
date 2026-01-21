@@ -26,22 +26,25 @@ export const useCartStore = create<CartState>()(
 
       addItem: (product, qty = 1) => {
         set((state) => {
-          const existing = state.items.find(
-            (i) => i.slug === product.slug
-          );
+          // ✅ Normalizo id a number para que /productos/[id] y Order.items.productId funcionen siempre
+          const idNum = Number((product as any)?.id);
+          const normalized: ProductCardItem = {
+            ...(product as any),
+            id: Number.isFinite(idNum) ? (idNum as any) : (product as any).id,
+          };
+
+          const existing = state.items.find((i) => i.slug === normalized.slug);
 
           if (existing) {
             return {
               items: state.items.map((i) =>
-                i.slug === product.slug
-                  ? { ...i, qty: i.qty + qty }
-                  : i
+                i.slug === normalized.slug ? { ...i, qty: i.qty + qty } : i
               ),
             };
           }
 
           return {
-            items: [...state.items, { ...product, qty }],
+            items: [...state.items, { ...(normalized as any), qty }],
           };
         });
       },
@@ -61,21 +64,17 @@ export const useCartStore = create<CartState>()(
       dec: (slug) =>
         set((state) => ({
           items: state.items
-            .map((i) =>
-              i.slug === slug ? { ...i, qty: i.qty - 1 } : i
-            )
+            .map((i) => (i.slug === slug ? { ...i, qty: i.qty - 1 } : i))
             .filter((i) => i.qty > 0),
         })),
 
       clear: () => set({ items: [] }),
 
-      totalItems: () =>
-        get().items.reduce((acc, i) => acc + i.qty, 0),
+      totalItems: () => get().items.reduce((acc, i) => acc + i.qty, 0),
 
       totalPrice: () =>
         get().items.reduce((acc, i) => {
-          const hasOff =
-            typeof i.off === "number" && i.off > 0;
+          const hasOff = typeof i.off === "number" && i.off > 0;
           const finalPrice = hasOff
             ? Math.round(i.price * (1 - i.off! / 100))
             : i.price;
@@ -88,4 +87,3 @@ export const useCartStore = create<CartState>()(
     }
   )
 );
-

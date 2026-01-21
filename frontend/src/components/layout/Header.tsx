@@ -1,12 +1,23 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "./Container";
-import { Search, ShoppingCart, User, Menu, X } from "lucide-react";
+import { Search, ShoppingCart, User, Menu, X, Package } from "lucide-react";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
+
+type Suggestion = {
+  id: string | number | null;
+  title: string;
+  price: number | null;
+  slug: string | null;
+};
+
+function formatARS(n: number) {
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+}
 
 function NavLink({
   href,
@@ -40,6 +51,14 @@ export function Header() {
   // ✅ buscador (desktop + mobile comparten estado)
   const [query, setQuery] = useState("");
 
+  // ✅ autocomplete state
+  const [openSuggest, setOpenSuggest] = useState(false);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const suggestBoxRef = useRef<HTMLDivElement | null>(null);
+  const debounceRef = useRef<number | null>(null);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
@@ -47,16 +66,32 @@ export function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // ESC cierra menú mobile y dropdown login
+  // ESC cierra menú mobile, modal login y sugerencias
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         setMobileOpen(false);
         setLoginOpen(false);
+        setOpenSuggest(false);
+        setActiveIndex(-1);
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  // ✅ click afuera: cierra sugerencias
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      const el = suggestBoxRef.current;
+      if (!el) return;
+      if (!el.contains(e.target as Node)) {
+        setOpenSuggest(false);
+        setActiveIndex(-1);
+      }
+    };
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, []);
 
   // ✅ si estoy en /productos, sincronizo el input con ?q=
@@ -70,6 +105,8 @@ export function Header() {
   function goSearch(raw: string) {
     const q = raw.trim();
     setMobileOpen(false);
+    setOpenSuggest(false);
+    setActiveIndex(-1);
 
     if (!q) {
       router.push("/productos");
@@ -77,6 +114,175 @@ export function Header() {
     }
 
     router.push(`/productos?q=${encodeURIComponent(q)}`);
+  }
+
+  async function fetchSuggest(q: string) {
+    const qq = q.trim();
+    if (qq.length < 2) {
+      setSuggestions([]);
+      setLoadingSuggest(false);
+      return;
+    }
+
+    setLoadingSuggest(true);
+    try {
+      const r = await fetch(`/api/search/suggest?q=${encodeURIComponent(qq)}`, {
+        cache: "no-store",
+      });
+      const data = await r.json();
+      const res = Array.isArray(data?.results) ? data.results.slice(0, 5) : [];
+      setSuggestions(res);
+    } catch {
+      setSuggestions([]);
+    } finally {
+      setLoadingSuggest(false);
+    }
+  }
+
+  function onChangeQuery(next: string) {
+    setQuery(next);
+    setOpenSuggest(true);
+    setActiveIndex(-1);
+
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => {
+      fetchSuggest(next);
+    }, 250);
+  }
+
+  function onKeyDownSearch(e: React.KeyboardEvent<HTMLInputElement>) {
+    // ✅ REQUERIMIENTO: Enter siempre va a /productos?q=
+    if (e.key === "Enter") {
+      e.preventDefault();
+      goSearch(query);
+      return;
+    }
+
+    if (!openSuggest) return;
+
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveIndex((i) => {
+        const max = suggestions.length - 1;
+        const next = i + 1;
+        return next > max ? max : next;
+      });
+    }
+
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveIndex((i) => {
+        const next = i - 1;
+        return next < -1 ? -1 : next;
+      });
+    }
+
+    if (e.key === "Tab") {
+      setOpenSuggest(false);
+      setActiveIndex(-1);
+    }
+  }
+
+  function pickSuggestion(s: Suggestion) {
+    setQuery(s.title);
+    setOpenSuggest(false);
+    setActiveIndex(-1);
+
+    const idNum = Number(s.id);
+    if (Number.isFinite(idNum) && idNum > 0) {
+      router.push(`/productos/${idNum}`);
+      return;
+    }
+
+    goSearch(s.title);
+  }
+
+
+  function SearchBox({ variant }: { variant: "desktop" | "mobile" }) {
+    const showDropdown = openSuggest && query.trim().length >= 2;
+
+    return (
+      <div ref={suggestBoxRef} className="relative w-full">
+        <form
+          className={variant === "desktop" ? "relative w-full max-w-[760px]" : "relative"}
+          onSubmit={(e) => {
+            e.preventDefault();
+            goSearch(query);
+          }}
+        >
+          <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
+          <input
+            type="search"
+            value={query}
+            onChange={(e) => onChangeQuery(e.target.value)}
+            onFocus={() => {
+              setOpenSuggest(true);
+              if (query.trim().length >= 2) fetchSuggest(query);
+            }}
+            onKeyDown={onKeyDownSearch}
+            placeholder="Buscá tu producto"
+            className={
+              variant === "desktop"
+                ? "h-11 w-full rounded-full border border-neutral-300 bg-white pl-12 pr-4 text-[15px] text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none"
+                : "h-11 w-full rounded-full border border-neutral-300 bg-white pl-12 pr-4 text-[15px] focus:outline-none"
+            }
+            aria-autocomplete="list"
+            aria-expanded={showDropdown}
+            aria-controls={variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"}
+          />
+        </form>
+
+        {showDropdown && (
+          <div className="absolute left-0 right-0 z-50 mt-2 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
+            <div className="px-4 py-2 text-xs text-neutral-500">
+              {loadingSuggest
+                ? "Buscando..."
+                : suggestions.length
+                ? "Sugerencias"
+                : "Sin resultados"}
+            </div>
+
+            <ul
+              id={variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"}
+              role="listbox"
+              className="max-h-80 overflow-auto"
+            >
+              {suggestions.map((s, idx) => (
+                <li key={String(s.id ?? s.slug ?? s.title)}>
+                  <button
+                    type="button"
+                    onClick={() => pickSuggestion(s)}
+                    onMouseEnter={() => setActiveIndex(idx)}
+                    className={[
+                      "flex w-full items-center justify-between px-4 py-2 text-left text-sm",
+                      idx === activeIndex ? "bg-neutral-50" : "bg-white",
+                      "hover:bg-neutral-50",
+                    ].join(" ")}
+                  >
+                    <span className="truncate">{s.title}</span>
+                    {typeof s.price === "number" && (
+                      <span className="ml-3 shrink-0 text-xs text-neutral-600">
+                        {formatARS(s.price)}
+                      </span>
+                    )}
+                  </button>
+                </li>
+              ))}
+
+              <li className="border-t border-neutral-100">
+                <button
+                  type="button"
+                  onClick={() => goSearch(query)}
+                  className="w-full px-4 py-2 text-left text-sm text-neutral-700 hover:bg-neutral-50"
+                >
+                  Ver todos los resultados →
+                </button>
+              </li>
+            </ul>
+          </div>
+        )}
+      </div>
+    );
   }
 
   return (
@@ -109,24 +315,11 @@ export function Header() {
             </nav>
           </div>
 
-          {/* CENTRO: buscador */}
+          {/* CENTRO: buscador (con autocomplete) */}
           <div className="hidden lg:flex justify-center">
-            <form
-              className="relative w-full max-w-[760px]"
-              onSubmit={(e) => {
-                e.preventDefault();
-                goSearch(query);
-              }}
-            >
-              <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
-              <input
-                type="search"
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Buscá tu producto"
-                className="h-11 w-full rounded-full border border-neutral-300 bg-white pl-12 pr-4 text-[15px] text-neutral-900 placeholder:text-neutral-400 focus:border-neutral-400 focus:outline-none"
-              />
-            </form>
+            <div className="relative w-full max-w-[760px]">
+              {SearchBox({ variant: "desktop" })}
+            </div>
           </div>
 
           {/* DERECHA: acciones desktop */}
@@ -147,6 +340,17 @@ export function Header() {
 
               <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
             </div>
+
+            <div className="h-6 w-px bg-neutral-200" />
+
+            {/* ✅ Mis pedidos */}
+            <Link
+              href="/mis-pedidos"
+              className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950 transition"
+            >
+              <Package className="h-5 w-5" />
+              Mis pedidos
+            </Link>
 
             <div className="h-6 w-px bg-neutral-200" />
 
@@ -190,23 +394,8 @@ export function Header() {
         {mobileOpen && (
           <div className="border-t bg-white md:hidden">
             <div className="py-4">
-              {/* Search mobile */}
-              <form
-                className="relative"
-                onSubmit={(e) => {
-                  e.preventDefault();
-                  goSearch(query);
-                }}
-              >
-                <Search className="absolute left-4 top-1/2 h-5 w-5 -translate-y-1/2 text-neutral-400" />
-                <input
-                  type="search"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="Buscá tu producto"
-                  className="h-11 w-full rounded-full border border-neutral-300 bg-white pl-12 pr-4 text-[15px] focus:outline-none"
-                />
-              </form>
+              {/* Search mobile (con autocomplete) */}
+              {SearchBox({ variant: "mobile" })}
 
               {/* Links */}
               <nav className="mt-4 flex flex-col gap-3">
@@ -218,6 +407,11 @@ export function Header() {
                 </NavLink>
                 <NavLink href="/sobre-nosotros" onClick={() => setMobileOpen(false)}>
                   Sobre nosotros
+                </NavLink>
+
+                {/* ✅ Mis pedidos en mobile */}
+                <NavLink href="/mis-pedidos" onClick={() => setMobileOpen(false)}>
+                  Mis pedidos
                 </NavLink>
               </nav>
 

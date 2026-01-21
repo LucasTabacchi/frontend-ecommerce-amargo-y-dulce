@@ -32,22 +32,28 @@ export default async function ProductosPage({
     const sp = new URLSearchParams();
     sp.set("populate", "*");
     sp.set("pagination[pageSize]", "100");
+    sp.set("sort[0]", "createdAt:desc");
+
+    // ✅ Solo publicados (draft/publish)
+    sp.set("filters[publishedAt][$notNull]", "true");
 
     if (q) {
-      // ✅ Búsqueda por varios campos (si alguno no existe en tu modelo, no rompe: simplemente no matchea)
+      // ✅ Búsqueda por varios campos (si alguno no existe, no rompe)
       sp.set("filters[$or][0][title][$containsi]", q);
       sp.set("filters[$or][1][slug][$containsi]", q);
       sp.set("filters[$or][2][description][$containsi]", q);
     }
 
+    // ✅ IMPORTANTE: pedir a Strapi con auth:true (Bearer token server-side)
     const res = await fetcher<StrapiListResponse<ProductAttributes>>(
-      `/api/products?${sp.toString()}`
+      `/api/products?${sp.toString()}`,
+      { auth: true }
     );
 
     const raw = Array.isArray(res?.data) ? res.data : [];
 
-    // ✅ Importante: el mapper te devuelve imageUrl listo
-    products = raw.map(toCardItem);
+    // ✅ mapper devuelve imageUrl listo
+    products = raw.map((item: any) => toCardItem(item));
   } catch (err: any) {
     errorMsg = err?.message || "No se pudieron cargar los productos.";
     products = [];
@@ -70,17 +76,26 @@ export default async function ProductosPage({
           </p>
 
           {q && (
-            <div className="mt-4">
-              <Link href="/productos" className="text-sm underline text-neutral-700">
+            <div className="mt-4 flex items-center gap-3">
+              <Link
+                href="/productos"
+                className="text-sm underline text-neutral-700"
+              >
                 Limpiar búsqueda
               </Link>
+              <span className="text-sm text-neutral-400">•</span>
+              <span className="text-sm text-neutral-600">
+                {products.length} resultado{products.length === 1 ? "" : "s"}
+              </span>
             </div>
           )}
         </div>
 
         {errorMsg ? (
           <div className="rounded-xl border bg-white p-6 text-sm text-neutral-800">
-            <div className="font-semibold">No se pudieron cargar los productos</div>
+            <div className="font-semibold">
+              No se pudieron cargar los productos
+            </div>
             <p className="mt-2 text-neutral-600">{errorMsg}</p>
             <div className="mt-4">
               <Link className="underline" href="/">
@@ -109,13 +124,15 @@ export default async function ProductosPage({
                     ? Math.round(basePrice * (1 - p.off / 100))
                     : basePrice;
 
+                // ✅ IMPORTANTÍSIMO: SIEMPRE navegar por ID numérico (tu detalle funciona con id DB)
+                const href = `/productos/${p.id}`;
+
                 return (
                   <Link
-                    key={p.slug ?? p.id}
-                    href={`/productos/${p.id}`}
+                    key={String(p.id)}
+                    href={href}
                     className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
                   >
-                    {/* ✅ Imagen desde p.imageUrl (sale del mapper) */}
                     <div className="relative aspect-[4/3] w-full bg-neutral-100">
                       {p.imageUrl ? (
                         <Image

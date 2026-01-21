@@ -13,7 +13,8 @@ export type ProductCardItem = {
   price: number;
   imageUrl?: string;
   off?: number;
-  category?: string;       // (si lo estás usando)
+  category?: string;
+  documentId?: string | null; // ✅ Strapi v5       // (si lo estás usando)
 };
 
 
@@ -32,7 +33,7 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
 
   return (
     <Link
-      href={`/productos/${item.slug}`}
+      href={`/productos/${item.id}`}
       className="group block rounded-lg border border-neutral-200 bg-white p-4 transition hover:shadow-sm"
     >
       {/* Imagen / Placeholder */}
