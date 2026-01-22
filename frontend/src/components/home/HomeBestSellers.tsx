@@ -16,36 +16,31 @@ export function HomeBestSellers({ products }: HomeBestSellersProps) {
   }
 
   return (
-    <section aria-label="Productos más comprados" className="py-10">
-      {/* Título centrado con líneas suaves */}
-      <div className="flex items-center gap-4">
-        <div className="h-px flex-1 bg-neutral-200" />
-        <h2 className="text-sm font-extrabold tracking-widest text-neutral-800">
-          PRODUCTOS MAS COMPRADOS
-        </h2>
-        <div className="h-px flex-1 bg-neutral-200" />
-      </div>
-
-      {/* Grid de productos */}
-      <div className="mt-8 grid grid-cols-1 gap-6 md:grid-cols-2">
-        {products.map((item) => (
-          <div key={item.slug} className="flex justify-center">
-            <div className="w-full max-w-sm">
-              <ProductCard item={item} />
-            </div>
+      <section className="py-14">
+        <div className="mx-auto max-w-6xl">
+          <div className="flex items-center justify-center">
+            <h2 className="text-xs font-extrabold tracking-[0.22em] text-neutral-800">
+              PRODUCTOS MAS COMPRADOS
+            </h2>
           </div>
-        ))}
-      </div>
 
-      {/* Botón "Más productos" */}
-      <div className="mt-8 flex justify-center">
-        <Link
-          href="/productos"
-          className="rounded-full bg-orange-600 px-6 py-2 text-sm font-semibold text-white hover:bg-orange-700"
-        >
-          Mas productos
-        </Link>
-      </div>
-    </section>
-  );
-}
+          <div className="mt-10 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {products.map((p: any) => (
+              <div key={String(p.documentId ?? p.id)} className="w-full">
+                <ProductCard item={p} />
+              </div>
+            ))}
+          </div>
+
+          <div className="mt-10 flex justify-center">
+            <Link
+              href="/productos"
+              className="rounded-full bg-orange-600 px-6 py-2 text-sm font-bold text-white hover:bg-orange-700"
+            >
+              Mas productos
+            </Link>
+          </div>
+        </div>
+      </section>
+    );
+  }
