@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
+import { ProductReviews } from "@/components/products/ProductReviews";
 
 export const dynamic = "force-dynamic";
 
@@ -59,9 +60,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
       sp.set("populate", "*");
       sp.set("pagination[pageSize]", "1");
 
-      // documentId exacto
       sp.set("filters[$or][0][documentId][$eq]", pid);
-      // slug exacto (por si entran por slug)
       sp.set("filters[$or][1][slug][$eq]", pid);
 
       const list = await fetcher<any>(`/api/products?${sp.toString()}`, { auth: true });
@@ -80,13 +79,8 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
   if (!Number.isFinite(id)) return notFound();
 
   // ✅ documentId (Strapi v5)
-  const documentIdRaw =
-    row?.documentId ??
-    attr?.documentId ??
-    attr?.document_id ??
-    null;
-
-  const documentId = documentIdRaw ? String(documentIdRaw).trim() : undefined;
+  const documentIdRaw = row?.documentId ?? attr?.documentId ?? attr?.document_id ?? null;
+  const documentId = documentIdRaw ? String(documentIdRaw).trim() : null;
 
   const title = attr?.title ?? row?.title ?? "Producto";
   const description = attr?.description ?? row?.description ?? "";
@@ -111,14 +105,19 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
     <main>
       <Container>
         <div className="pt-8">
-          <Link href="/productos" className="text-sm font-semibold text-neutral-600 hover:text-neutral-900">
+          <Link
+            href="/productos"
+            className="text-sm font-semibold text-neutral-600 hover:text-neutral-900"
+          >
             ← Volver a productos
           </Link>
         </div>
 
         <div className="pt-6 pb-6">
           <h1 className="text-3xl font-extrabold text-neutral-900">{title}</h1>
-          {category && <p className="mt-1 text-sm font-semibold text-neutral-500">{String(category)}</p>}
+          {category && (
+            <p className="mt-1 text-sm font-semibold text-neutral-500">{String(category)}</p>
+          )}
         </div>
 
         <div className="grid gap-8 pb-14 lg:grid-cols-2">
@@ -134,7 +133,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                   priority
                 />
               ) : (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-500">Sin imagen</div>
+                <div className="flex h-full items-center justify-center text-sm text-neutral-500">
+                  Sin imagen
+                </div>
               )}
 
               {hasOff && (
@@ -181,7 +182,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             {description && (
               <div className="mt-5">
                 <h2 className="text-sm font-extrabold text-neutral-900">Descripción</h2>
-                <p className="mt-2 text-sm leading-6 text-neutral-700 whitespace-pre-line">{description}</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700 whitespace-pre-line">
+                  {description}
+                </p>
               </div>
             )}
 
@@ -201,9 +204,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             <div className="mt-6">
               <AddToCartButton
                 item={{
-                  id,          // id numérico de Strapi
-                  documentId,  // ✅ CLAVE para guardar en pedidos y linkear por documentId
-                  slug,        // opcional
+                  id, // id numérico de Strapi
+                  documentId: documentId ?? undefined, // ✅ guardamos documentId en carrito/pedido
+                  slug, // opcional
                   title,
                   price,
                   off: hasOff ? off : undefined,
@@ -215,6 +218,11 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               </p>
             </div>
           </aside>
+        </div>
+
+        {/* ✅ NUEVO: Opiniones / Valoración */}
+        <div className="pb-14">
+          <ProductReviews productDocumentId={documentId} productId={id} />
         </div>
       </Container>
     </main>
