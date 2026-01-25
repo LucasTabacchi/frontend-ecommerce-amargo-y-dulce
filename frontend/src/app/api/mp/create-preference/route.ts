@@ -37,17 +37,9 @@ function cleanObject<T extends Record<string, any>>(obj: T): Partial<T> {
 
 /* ===================== STOCK VALIDATION (BEFORE PAY) ===================== */
 
-type StockProblem = {
-  productDocumentId: string;
-  title: string;
-  requested: number;
-  available: number;
-};
-
 function pickAttr(row: any) {
   return row?.attributes ?? row ?? {};
 }
-
 function pickDocumentId(row: any): string | null {
   const attr = pickAttr(row);
   const v =
@@ -61,22 +53,19 @@ function pickDocumentId(row: any): string | null {
   const s = v != null ? String(v).trim() : "";
   return s ? s : null;
 }
-
 function pickTitle(row: any): string {
   const attr = pickAttr(row);
   return String(attr?.title ?? row?.title ?? "Producto");
 }
-
 function pickStock(row: any): number | null {
   const attr = pickAttr(row);
   const raw = attr?.stock ?? row?.stock ?? null;
-  if (raw === null || raw === undefined) return null; // null => sin control (ilimitado)
+  if (raw === null || raw === undefined) return null;
   const n = Number(raw);
   return Number.isFinite(n) ? n : 0;
 }
 
 async function validateStockOrThrow(items: any[]) {
-  // juntamos qty por productDocumentId
   const need = new Map<string, { requested: number; title?: string }>();
 
   for (const it of Array.isArray(items) ? items : []) {
@@ -92,9 +81,8 @@ async function validateStockOrThrow(items: any[]) {
   }
 
   const docIds = Array.from(need.keys());
-  if (!docIds.length) return; // no hay nada chequeable
+  if (!docIds.length) return;
 
-  // ⚠️ Evitamos $in por diferencias entre v4/v5 y armamos OR seguro
   const sp = new URLSearchParams();
   sp.set("pagination[pageSize]", String(Math.min(docIds.length, 100)));
   sp.set("populate", "*");
@@ -113,32 +101,22 @@ async function validateStockOrThrow(items: any[]) {
     if (doc) byDoc.set(doc, r);
   }
 
-  const problems: StockProblem[] = [];
+  const problems: Array<{ productDocumentId: string; title: string; requested: number; available: number }> = [];
 
   for (const doc of docIds) {
     const requested = need.get(doc)!.requested;
     const row = byDoc.get(doc);
 
     if (!row) {
-      problems.push({
-        productDocumentId: doc,
-        title: need.get(doc)?.title ?? "Producto",
-        requested,
-        available: 0,
-      });
+      problems.push({ productDocumentId: doc, title: need.get(doc)?.title ?? "Producto", requested, available: 0 });
       continue;
     }
 
     const stock = pickStock(row);
-    if (stock === null) continue; // sin control => ok
+    if (stock === null) continue;
 
     if (stock < requested) {
-      problems.push({
-        productDocumentId: doc,
-        title: pickTitle(row),
-        requested,
-        available: stock,
-      });
+      problems.push({ productDocumentId: doc, title: pickTitle(row), requested, available: stock });
     }
   }
 
@@ -171,15 +149,24 @@ export async function POST(req: Request) {
 
   if (!isHttpUrl(siteUrl)) {
     return NextResponse.json(
-      {
-        error: "NEXT_PUBLIC_SITE_URL inválida. Debe empezar con http:// o https://",
-        got: rawSiteUrl,
-      },
+      { error: "NEXT_PUBLIC_SITE_URL inválida (http/https requerido)", got: rawSiteUrl },
       { status: 500 }
     );
   }
 
-  const { orderId, orderNumber, items, mpExternalReference } = body ?? {};
+  const {
+    orderId,
+    orderNumber,
+    items,
+    mpExternalReference,
+
+    // totals pro
+    total,
+    subtotal,
+    discountTotal,
+    coupon,
+    appliedPromotions,
+  } = body ?? {};
 
   if (!orderId) {
     return NextResponse.json({ error: "Falta orderId (id real de Strapi)" }, { status: 400 });
@@ -187,9 +174,14 @@ export async function POST(req: Request) {
 
   if (!mpExternalReference || typeof mpExternalReference !== "string") {
     return NextResponse.json(
-      { error: "Falta mpExternalReference. Debe venir desde /api/orders/create" },
+      { error: "Falta mpExternalReference (debe venir desde /api/orders/create)" },
       { status: 400 }
     );
+  }
+
+  const totalNumber = Number(total);
+  if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
+    return NextResponse.json({ error: "Falta total válido (quote.total)" }, { status: 400 });
   }
 
   // ✅ 1) VALIDAR STOCK ANTES DE PAGAR
@@ -198,21 +190,14 @@ export async function POST(req: Request) {
   } catch (e: any) {
     if (e?.code === "OUT_OF_STOCK") {
       return NextResponse.json(
-        {
-          error: "Sin stock suficiente",
-          code: "OUT_OF_STOCK",
-          problems: e.problems ?? [],
-        },
+        { error: "Sin stock suficiente", code: "OUT_OF_STOCK", problems: e.problems ?? [] },
         { status: 409 }
       );
     }
-    return NextResponse.json(
-      { error: e?.message || "Error validando stock" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: e?.message || "Error validando stock" }, { status: 500 });
   }
 
-  // Normalizar items para MercadoPago
+  // Normalizar items (solo sanity check)
   const normalizedItems: MPItem[] = (Array.isArray(items) ? items : [])
     .map((it: any) => {
       const title = String(it?.title ?? "Producto").trim();
@@ -220,29 +205,24 @@ export async function POST(req: Request) {
       const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
       const unit_price = Number(it?.unit_price ?? it?.price ?? 0);
 
-      return {
-        title: title || "Producto",
-        quantity,
-        unit_price,
-        currency_id: "ARS",
-      };
+      return { title: title || "Producto", quantity, unit_price, currency_id: "ARS" as const };
     })
-    .filter(
-      (it) =>
-        it.title &&
-        it.quantity > 0 &&
-        Number.isFinite(it.unit_price) &&
-        it.unit_price > 0
-    );
+    .filter((it) => it.title && it.quantity > 0 && Number.isFinite(it.unit_price) && it.unit_price > 0);
 
   if (normalizedItems.length === 0) {
-    return NextResponse.json(
-      { error: "No hay items válidos para crear la preferencia" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "No hay items válidos para crear la preferencia" }, { status: 400 });
   }
 
-  // 🔒 CLAVE: usar SIEMPRE el mismo external_reference
+  // 🔒 Cobrar EXACTAMENTE el total final
+  const chargeItems: MPItem[] = [
+    {
+      title: orderNumber ? `Pedido ${String(orderNumber)}` : "Compra Amargo y Dulce",
+      quantity: 1,
+      unit_price: Math.round(totalNumber),
+      currency_id: "ARS",
+    },
+  ];
+
   const external_reference = mpExternalReference;
 
   const notification_url = `${siteUrl}/api/mp/webhook`;
@@ -253,8 +233,13 @@ export async function POST(req: Request) {
     pending: `${siteUrl}/gracias?status=pending&orderId=${encodeURIComponent(String(orderId))}`,
   };
 
+  const promoIds =
+    Array.isArray(appliedPromotions)
+      ? appliedPromotions.map((p: any) => p?.id).filter((x: any) => Number.isFinite(Number(x))).slice(0, 12)
+      : [];
+
   const preferenceBody = {
-    items: normalizedItems,
+    items: chargeItems,
     external_reference,
     back_urls,
     auto_return: "approved",
@@ -263,39 +248,54 @@ export async function POST(req: Request) {
       orderId: String(orderId),
       orderNumber: orderNumber ? String(orderNumber) : undefined,
       mpExternalReference: external_reference,
+      subtotal: subtotal != null ? String(subtotal) : undefined,
+      discountTotal: discountTotal != null ? String(discountTotal) : undefined,
+      coupon: typeof coupon === "string" ? coupon : undefined,
+      promotionIds: promoIds.length ? promoIds.join(",") : undefined,
     }),
   };
 
-  console.log("[create-preference] MP preferenceBody:", preferenceBody);
+  // ❗ Log mínimo para no inflar el payload
+  console.log("[create-preference] orderId:", String(orderId), "total:", Math.round(totalNumber));
 
-  const res = await fetch("https://api.mercadopago.com/checkout/preferences", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${accessToken}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(preferenceBody),
-    cache: "no-store",
-  });
-
-  const data = await res.json().catch(() => null);
-
-  if (!res.ok) {
-    console.error("[create-preference] MP error:", data);
-    return NextResponse.json(
-      {
-        error: pickMpErrorMessage(data, "MercadoPago rechazó la preferencia"),
-        mp: data,
+  try {
+    const res = await fetch("https://api.mercadopago.com/checkout/preferences", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
       },
-      { status: res.status || 500 }
-    );
-  }
+      body: JSON.stringify(preferenceBody),
+      cache: "no-store",
+    });
 
-  return NextResponse.json({
-    id: data.id,
-    init_point: data.init_point,
-    sandbox_init_point: data.sandbox_init_point,
-    mpExternalReference: external_reference,
-    orderId: String(orderId),
-  });
+    const data = await res.json().catch(() => null);
+
+    if (!res.ok) {
+      console.error("[create-preference] MP error (short):", {
+        status: res.status,
+        message: pickMpErrorMessage(data, "MercadoPago rechazó la preferencia"),
+      });
+
+      // ❗ devolver poco (evita 455k)
+      return NextResponse.json(
+        {
+          error: pickMpErrorMessage(data, "MercadoPago rechazó la preferencia"),
+          status: res.status,
+        },
+        { status: res.status || 500 }
+      );
+    }
+
+    return NextResponse.json({
+      id: data.id,
+      init_point: data.init_point,
+      sandbox_init_point: data.sandbox_init_point,
+      mpExternalReference: external_reference,
+      orderId: String(orderId),
+    });
+  } catch (e: any) {
+    console.error("[create-preference] fetch error:", e?.message || e);
+    return NextResponse.json({ error: "Error conectando con MercadoPago" }, { status: 500 });
+  }
 }

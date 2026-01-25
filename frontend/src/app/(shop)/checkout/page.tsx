@@ -1,3 +1,4 @@
+// src/app/(shop)/checkout/page.tsx
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
@@ -50,6 +51,19 @@ type UiState =
   | { kind: "failed"; orderId: string; reason: string }
   | { kind: "timeout"; orderId: string };
 
+type Quote = {
+  subtotal: number;
+  discountTotal: number;
+  total: number;
+  appliedPromotions: Array<{
+    id: number;
+    name: string;
+    code?: string | null;
+    amount: number;
+    meta?: any;
+  }>;
+};
+
 /* ================= page ================= */
 
 export default function CheckoutPage() {
@@ -73,7 +87,11 @@ export default function CheckoutPage() {
   const [postalCode, setPostalCode] = useState("");
   const [notes, setNotes] = useState("");
 
+  // ✅ cupón (PRO)
+  const [coupon, setCoupon] = useState("");
+
   const [loading, setLoading] = useState(false);
+  const [quoting, setQuoting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const trimmedName = name.trim();
@@ -121,16 +139,89 @@ export default function CheckoutPage() {
     }
   }, [redirectedOrderId, redirectedStatus]);
 
-  const subtotal = useMemo(
+  // Subtotal UI (por si falla quote)
+  const uiSubtotal = useMemo(
     () =>
-      cartItems.reduce((acc, it) => {
+      cartItems.reduce((acc, it: any) => {
         const unit = priceWithOff(it.price, it.off);
         return acc + unit * it.qty;
       }, 0),
     [cartItems]
   );
 
-  const total = subtotal;
+  // Payload quote: solo id+qty (backend trae precios reales)
+  const payloadItems = useMemo(() => {
+    return (cartItems as any[])
+      .map((it) => ({
+        id: Number(it.id),
+        qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
+      }))
+      .filter((x) => Number.isFinite(x.id) && x.id > 0);
+  }, [cartItems]);
+
+  // Quote PRO
+  const [quote, setQuote] = useState<Quote>({
+    subtotal: 0,
+    discountTotal: 0,
+    total: 0,
+    appliedPromotions: [],
+  });
+
+  useEffect(() => {
+    let alive = true;
+
+    if (!payloadItems.length) {
+      setQuote({ subtotal: 0, discountTotal: 0, total: 0, appliedPromotions: [] });
+      setQuoting(false);
+      return;
+    }
+
+    const t = setTimeout(async () => {
+      try {
+        setQuoting(true);
+        const res = await fetch("/api/promotions/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            items: payloadItems,
+            coupon: coupon.trim(),
+            shipping: 0,
+          }),
+        });
+
+        const data = (await res.json()) as Quote;
+        if (!alive) return;
+
+        const s = Number(data?.subtotal) || Math.round(uiSubtotal);
+        const d = Number(data?.discountTotal) || 0;
+        const tot =
+          Number(data?.total) || Math.max(0, s - d);
+
+        setQuote({
+          subtotal: s,
+          discountTotal: d,
+          total: tot,
+          appliedPromotions: Array.isArray(data?.appliedPromotions) ? data.appliedPromotions : [],
+        });
+      } catch {
+        if (!alive) return;
+        const s = Math.round(uiSubtotal);
+        setQuote({ subtotal: s, discountTotal: 0, total: s, appliedPromotions: [] });
+      } finally {
+        if (alive) setQuoting(false);
+      }
+    }, 250);
+
+    return () => {
+      alive = false;
+      clearTimeout(t);
+    };
+  }, [payloadItems, coupon, uiSubtotal]);
+
+  const effectiveSubtotal = payloadItems.length ? (quote.subtotal || Math.round(uiSubtotal)) : 0;
+  const effectiveDiscount = payloadItems.length ? quote.discountTotal : 0;
+  const effectiveTotal =
+    payloadItems.length ? (quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)) : 0;
 
   /* ================= polling ================= */
 
@@ -183,6 +274,34 @@ export default function CheckoutPage() {
 
   /* ================= submit ================= */
 
+  async function fetchFinalQuote(): Promise<Quote> {
+    // “blindaje”: recalculamos justo antes de crear orden / MP
+    try {
+      const res = await fetch("/api/promotions/quote", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          items: payloadItems,
+          coupon: coupon.trim(),
+          shipping: 0,
+        }),
+      });
+      const data = (await res.json()) as Quote;
+      const s = Number(data?.subtotal) || Math.round(uiSubtotal);
+      const d = Number(data?.discountTotal) || 0;
+      const tot = Number(data?.total) || Math.max(0, s - d);
+      return {
+        subtotal: s,
+        discountTotal: d,
+        total: tot,
+        appliedPromotions: Array.isArray(data?.appliedPromotions) ? data.appliedPromotions : [],
+      };
+    } catch {
+      const s = Math.round(uiSubtotal);
+      return { subtotal: s, discountTotal: 0, total: s, appliedPromotions: [] };
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -205,9 +324,12 @@ export default function CheckoutPage() {
     try {
       setLoading(true);
 
+      // ✅ recalcular quote antes de crear orden / MP
+      const finalQuote = await fetchFinalQuote();
+
       const mpExternalReference = safeUUID();
 
-      /* 1️⃣ Crear orden */
+      /* 1️⃣ Crear orden (guardando subtotal/descuento/promos/cupón) */
       const createRes = await fetch("/api/orders/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -229,9 +351,18 @@ export default function CheckoutPage() {
             text: `${trimmedStreet} ${trimmedNumber}, ${trimmedCity}, ${trimmedProvince} (${trimmedPostalCode})`,
           },
 
-          total,
+          // ✅ PRO totals
+          subtotal: finalQuote.subtotal,
+          discountTotal: finalQuote.discountTotal,
+          appliedPromotions: finalQuote.appliedPromotions,
+          coupon: coupon.trim() || null,
+
+          // ✅ total blindado
+          total: finalQuote.total,
+
           mpExternalReference,
-          items: cartItems.map((it) => ({
+
+          items: cartItems.map((it: any) => ({
             productId: Number(it.id),
             productDocumentId: it.documentId ?? null,
             slug: String(it.slug || "").trim(),
@@ -261,15 +392,16 @@ export default function CheckoutPage() {
       const mpExternalReferenceFinal = mpExtFromServer || mpExternalReference;
       const orderNumber = makeOrderNumber(orderNumericId || orderId);
 
-      /* 2️⃣ Preferencia MP */
+      /* 2️⃣ Preferencia MP (cobra quote.total) */
       const mpItems = cartItems
-        .map((it) => ({
+        .map((it: any) => ({
           title: it.title,
           qty: Number(it.qty ?? 1),
           unit_price: Number(priceWithOff(it.price, it.off)),
+          productDocumentId: it.documentId ?? null, // ✅ útil si validás stock en create-preference
         }))
         .filter(
-          (x) => x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0
+          (x: any) => x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0
         );
 
       if (mpItems.length === 0) {
@@ -284,6 +416,13 @@ export default function CheckoutPage() {
           orderNumber,
           mpExternalReference: mpExternalReferenceFinal,
           items: mpItems,
+
+          // ✅ PRO totals para cobrar
+          total: finalQuote.total,
+          subtotal: finalQuote.subtotal,
+          discountTotal: finalQuote.discountTotal,
+          coupon: coupon.trim() || null,
+          appliedPromotions: finalQuote.appliedPromotions,
         }),
       });
 
@@ -397,15 +536,50 @@ export default function CheckoutPage() {
               rows={2}
             />
 
+            {/* ✅ Cupón */}
+            <input
+              value={coupon}
+              onChange={(e) => setCoupon(e.target.value)}
+              placeholder="Cupón (opcional)"
+              className="w-full border p-2"
+            />
+
             <div className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span>Subtotal</span>
-                <span>{formatARS(subtotal)}</span>
+                <span>{formatARS(effectiveSubtotal)}</span>
               </div>
+
+              <div className="mt-2 flex items-center justify-between">
+                <span>Descuento</span>
+                <span>-{formatARS(effectiveDiscount)}</span>
+              </div>
+
               <div className="mt-2 flex items-center justify-between font-semibold">
                 <span>Total</span>
-                <span>{formatARS(total)}</span>
+                <span>{formatARS(effectiveTotal)}</span>
               </div>
+
+              {quoting ? (
+                <div className="mt-2 text-xs opacity-70">Calculando promociones…</div>
+              ) : null}
+
+              {quote.appliedPromotions?.length ? (
+                <div className="mt-3">
+                  <div className="text-xs font-semibold">Promociones aplicadas</div>
+                  <ul className="mt-1 space-y-1 text-xs">
+                    {quote.appliedPromotions.map((p) => (
+                      <li key={p.id} className="flex justify-between gap-3">
+                        <span className="truncate">
+                          {p.name}
+                          {p.code ? ` (${p.code})` : ""}
+                        </span>
+                        <span>-{formatARS(p.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
             </div>
 
             <button

@@ -1,156 +1,156 @@
 import Link from "next/link";
 import { Container } from "@/components/layout/Container";
-import { BadgePercent, Gift, ShoppingBag, Info } from "lucide-react";
+import { fetcher } from "@/lib/fetcher";
 
-function PromoCard({
-  icon: Icon,
-  title,
-  subtitle,
-  details,
-  highlight,
-}: {
-  icon: React.ElementType;
-  title: string;
-  subtitle: string;
-  details: string[];
-  highlight: string;
-}) {
-  return (
-    <div className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
-      <div className="flex items-start gap-4">
-        <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50">
-          <Icon className="h-5 w-5 text-neutral-800" />
-        </div>
+export const dynamic = "force-dynamic";
 
-        <div className="flex-1">
-          <h3 className="text-base font-extrabold text-neutral-900">{title}</h3>
-          <p className="mt-1 text-sm text-neutral-600">{subtitle}</p>
+/**
+ * Soportamos Strapi v4 (data[].attributes) y Strapi v5 (data[] plano)
+ */
+type PromotionAttributes = {
+  name?: string;
+  enabled?: boolean;
+  publishedAt?: string | null;
+  requiresCoupon?: boolean;
+  code?: string | null;
+  discountType?: string;
+  discountValue?: number;
+  minSubtotal?: number | null;
+  minBoxes?: number | null;
+  minItems?: number | null;
+  combinable?: boolean;
+  priority?: number;
+};
 
-          <div className="mt-4 rounded-lg bg-[#FAF7F2] p-4">
-            <div className="text-sm font-bold text-neutral-900">{highlight}</div>
-            <ul className="mt-2 space-y-1 text-sm text-neutral-700">
-              {details.map((d) => (
-                <li key={d} className="flex gap-2">
-                  <span className="mt-[6px] h-1.5 w-1.5 rounded-full bg-neutral-400" />
-                  <span>{d}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
+type PromotionV4 = { id: number; attributes: PromotionAttributes };
+type PromotionV5 = { id?: number } & PromotionAttributes;
+type PromotionAny = PromotionV4 | PromotionV5;
 
-          <div className="mt-5 flex flex-wrap gap-3">
-            <Link
-              href="/productos#listado"
-              className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-            >
-              Ver bombones
-            </Link>
-            <Link
-              href="/carrito"
-              className="rounded-full border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-            >
-              Ir al carrito
-            </Link>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+type StrapiList<T> = { data: T[] };
+
+function formatARS(n: number) {
+  return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-export default function PromocionesPage() {
+function pickPromo(p: any): { id: number; a: PromotionAttributes } | null {
+  if (!p) return null;
+  const a: PromotionAttributes = (p.attributes ?? p) as PromotionAttributes;
+  const id = Number(p.id ?? (a as any)?.id);
+  if (!Number.isFinite(id) || id <= 0) return null;
+  return { id, a };
+}
+
+export default async function PromocionesPage() {
+  const qs = new URLSearchParams();
+  qs.set("pagination[pageSize]", "50");
+  qs.set("sort[0]", "priority:asc");
+  qs.set("filters[enabled][$eq]", "true");
+  qs.set("filters[publishedAt][$notNull]", "true");
+
+  // ✅ con el fetcher nuevo podés usar con o sin /api; dejo sin /api para evitar confusiones
+  const res = await fetcher<StrapiList<PromotionAny>>(`/promotions?${qs.toString()}`, {
+    cache: "no-store",
+  });
+
+  const promosRaw = Array.isArray(res?.data) ? res.data : [];
+  const promos = promosRaw.map(pickPromo).filter(Boolean) as Array<{
+    id: number;
+    a: PromotionAttributes;
+  }>;
+
   return (
     <main>
       <Container>
-        {/* Header */}
-        <section className="py-10">
-          <h1 className="text-3xl font-extrabold text-neutral-900">
-            Promociones
-          </h1>
-          <p className="mt-3 max-w-3xl text-sm leading-6 text-neutral-700">
-            Nuestras promos aplican a <span className="font-semibold">bombones</span>.
-            Aprovechá descuentos por monto de compra o llevando varias cajas.
+        <div className="py-10">
+          <h1 className="text-3xl font-extrabold text-neutral-900">Promociones</h1>
+          <p className="mt-2 text-sm text-neutral-600">
+            Estas promos se calculan automáticamente en el carrito y checkout.
           </p>
+        </div>
 
-          {/* Mini banda informativa */}
-          <div className="mt-6 rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50">
-                <Info className="h-5 w-5 text-neutral-800" />
-              </div>
-              <div className="text-sm text-neutral-700">
-                <div className="font-semibold text-neutral-900">
-                  ¿Cómo se aplican?
+        <div className="grid grid-cols-1 gap-6 pb-14 md:grid-cols-2">
+          {promos.map(({ id, a }) => {
+            const isCoupon = !!a?.requiresCoupon && !!a?.code;
+
+            const discountLabel =
+              a?.discountType === "percent"
+                ? `${Number(a?.discountValue ?? 0)}% OFF`
+                : a?.discountType ?? "—";
+
+            return (
+              <div
+                key={id}
+                className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
+              >
+                <div className="text-lg font-extrabold text-neutral-900">
+                  {a?.name ?? "Promoción"}
                 </div>
-                <div className="mt-1">
-                  Los descuentos se calculan en el carrito según el total o la cantidad
-                  de cajas. (Más adelante lo conectamos con la lógica real.)
+
+                <div className="mt-2 space-y-1 text-sm text-neutral-700">
+                  <div>
+                    Tipo: <span className="font-semibold">{discountLabel}</span>
+                  </div>
+
+                  {a?.minSubtotal ? (
+                    <div>
+                      Mínimo:{" "}
+                      <span className="font-semibold">
+                        {formatARS(Number(a.minSubtotal))}
+                      </span>
+                    </div>
+                  ) : null}
+
+                  {a?.minBoxes ? (
+                    <div>
+                      Mínimo: <span className="font-semibold">{Number(a.minBoxes)}</span>{" "}
+                      cajas
+                    </div>
+                  ) : null}
+
+                  {isCoupon ? (
+                    <div>
+                      Cupón: <span className="font-semibold">{a.code}</span>
+                    </div>
+                  ) : (
+                    <div>No requiere cupón</div>
+                  )}
+
+                  <div>
+                    Combinable:{" "}
+                    <span className="font-semibold">{a?.combinable ? "Sí" : "No"}</span>
+                  </div>
+
+                  {isCoupon ? (
+                    <div className="text-xs text-neutral-500">
+                      Si usás cupón, no se combinan otras promos.
+                    </div>
+                  ) : null}
                 </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
-        {/* Promos */}
-        <section className="pb-14">
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
-            <PromoCard
-              icon={BadgePercent}
-              title="Descuento por monto"
-              subtitle="Cuanto más llevás, más ahorrás."
-              highlight="10% OFF en compras desde $50.000"
-              details={[
-                "Válido para bombones.",
-                "Se aplica automáticamente en el carrito.",
-                "No requiere cupón.",
-              ]}
-            />
-
-            <PromoCard
-              icon={ShoppingBag}
-              title="Descuento por cantidad"
-              subtitle="Ideal para regalos o eventos."
-              highlight="5% OFF llevando 3 cajas o más"
-              details={[
-                "Válido para bombones.",
-                "El descuento aplica por cantidad de cajas.",
-                "Combinable con distintos sabores (cuando existan).",
-              ]}
-            />
-          </div>
-
-          {/* Promo destacada (opcional) */}
-          <div className="mt-8 rounded-2xl border border-neutral-200 bg-white p-7 shadow-sm">
-            <div className="flex items-start gap-4">
-              <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50">
-                <Gift className="h-5 w-5 text-neutral-800" />
-              </div>
-              <div className="flex-1">
-                <h2 className="text-lg font-extrabold text-neutral-900">
-                  Promo especial (ejemplo)
-                </h2>
-                <p className="mt-1 text-sm text-neutral-600">
-                  Para fechas especiales podemos activar combos (San Valentín, Día de la Madre, etc.).
-                </p>
-
-                <div className="mt-4 flex flex-wrap gap-3">
+                <div className="mt-5 flex gap-3">
                   <Link
                     href="/productos#listado"
-                    className="rounded-full bg-orange-600 px-5 py-2 text-sm font-semibold text-white hover:bg-orange-700"
+                    className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white"
                   >
-                    Armar mi compra
+                    Ver bombones
                   </Link>
                   <Link
-                    href="/sobre-nosotros"
-                    className="rounded-full border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
+                    href="/carrito"
+                    className="rounded-full border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-900"
                   >
-                    Consultar envíos
+                    Ir al carrito
                   </Link>
                 </div>
               </div>
+            );
+          })}
+
+          {promos.length === 0 ? (
+            <div className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600 shadow-sm">
+              No hay promociones activas en este momento.
             </div>
-          </div>
-        </section>
+          ) : null}
+        </div>
       </Container>
     </main>
   );

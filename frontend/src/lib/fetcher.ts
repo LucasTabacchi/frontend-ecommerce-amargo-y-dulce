@@ -1,18 +1,41 @@
 type FetcherOptions = RequestInit & {
   headers?: Record<string, string>;
-  auth?: boolean; // ✅ nuevo: si true, agrega Bearer token
+  auth?: boolean; // ✅ si true, agrega Bearer token (server-only)
 };
 
+// Normaliza base: sin trailing "/" y sin "/api" al final (para evitar /api/api)
+function normalizeStrapiBase(url: string) {
+  let u = String(url ?? "").trim();
+  if (!u) return "http://localhost:1337";
+  u = u.endsWith("/") ? u.slice(0, -1) : u;
+  if (u.toLowerCase().endsWith("/api")) u = u.slice(0, -4);
+  return u;
+}
+
+// Normaliza path: siempre con "/api/..." (si ya viene con /api, no duplica)
+function normalizeApiPath(path: string) {
+  const p = String(path ?? "").trim();
+  if (!p) return "/api";
+  if (/^https?:\/\//i.test(p)) return p; // url completa
+  const withSlash = p.startsWith("/") ? p : `/${p}`;
+  return withSlash.startsWith("/api/") || withSlash === "/api"
+    ? withSlash
+    : `/api${withSlash}`;
+}
+
 export async function fetcher<T>(url: string, options: FetcherOptions = {}): Promise<T> {
-  const base =
+  const baseRaw =
     process.env.STRAPI_URL ||
     process.env.NEXT_PUBLIC_STRAPI_URL ||
     "http://localhost:1337";
 
-  const fullUrl = url.startsWith("http")
-    ? url
-    : `${base}${url.startsWith("/") ? "" : "/"}${url}`;
+  const base = normalizeStrapiBase(baseRaw);
 
+  const fullUrl = /^https?:\/\//i.test(url)
+    ? url
+    : `${base}${normalizeApiPath(url)}`;
+
+  // ⚠️ Token solo en server. En el browser no debe existir.
   const token = process.env.STRAPI_API_TOKEN || process.env.STRAPI_TOKEN || "";
 
   const headers: Record<string, string> = {
