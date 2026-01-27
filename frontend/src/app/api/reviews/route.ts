@@ -1,6 +1,9 @@
+// src/app/api/reviews/route.ts
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+
+/* ===================== helpers ===================== */
 
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
@@ -29,6 +32,10 @@ async function fetchWithTimeout(input: string, init: RequestInit, ms = 20000) {
   }
 }
 
+function isNumericId(s: string) {
+  return /^\d+$/.test(String(s || "").trim());
+}
+
 async function resolveProductNumericId(params: {
   strapiBase: string;
   token: string;
@@ -51,15 +58,36 @@ async function resolveProductNumericId(params: {
   return Number.isFinite(idNum) && idNum > 0 ? idNum : null;
 }
 
+function mapReviewRow(r: any) {
+  const a = r?.attributes ?? r ?? {};
+  const rating = Number(a?.rating ?? r?.rating ?? 0);
+
+  // ✅ tu modelo tiene comment (Rich text)
+  const comment = String(a?.comment ?? r?.comment ?? "").trim();
+
+  return {
+    id: r?.id ?? a?.id,
+    rating: Number.isFinite(rating) ? rating : 0,
+    title: String(a?.title ?? r?.title ?? "").trim() || undefined,
+    // 👉 para el front, siempre devolvemos "text"
+    text: comment || undefined,
+    name: String(a?.name ?? r?.name ?? "").trim() || undefined,
+    createdAt: String(a?.createdAt ?? r?.createdAt ?? "").trim() || undefined,
+  };
+}
+
 /* ===================== GET ===================== */
 
 export async function GET(req: Request) {
   const url = new URL(req.url);
-  const productDocumentId = String(url.searchParams.get("productDocumentId") ?? "").trim();
-  const productId = String(url.searchParams.get("productId") ?? "").trim();
-  const pageSize = Math.min(100, Math.max(1, Number(url.searchParams.get("pageSize") ?? 20)));
 
-  if (!productDocumentId && !productId) {
+  const productDocumentId = String(url.searchParams.get("productDocumentId") ?? "").trim();
+  const productIdParam = String(url.searchParams.get("productId") ?? "").trim();
+
+  const pageSizeRaw = Number(url.searchParams.get("pageSize") ?? 20);
+  const pageSize = Math.min(100, Math.max(1, Number.isFinite(pageSizeRaw) ? pageSizeRaw : 20));
+
+  if (!productDocumentId && !productIdParam) {
     return NextResponse.json({ data: [] }, { status: 200 });
   }
 
@@ -67,15 +95,32 @@ export async function GET(req: Request) {
     process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
   );
   const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
-  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN" }, { status: 500 });
+  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN" }, { status: 500 });
+
+  // ✅ IMPORTANTE:
+  // En Strapi v5, filtrar por relation.documentId NO siempre funciona.
+  // Lo más robusto es: resolver product.id numérico y filtrar por filters[product][id].
+  let productId: number | null = null;
+
+  try {
+    if (productIdParam && isNumericId(productIdParam)) {
+      productId = Number(productIdParam);
+    } else if (productDocumentId) {
+      productId = await resolveProductNumericId({ strapiBase, token, productDocumentId });
+    }
+  } catch (e) {
+    console.error("[api/reviews][GET] resolve product failed:", e);
+  }
+
+  if (!productId) {
+    // si no pudimos resolver el producto, devolvemos vacío (no error) para UX
+    return NextResponse.json({ data: [] }, { status: 200 });
+  }
 
   const sp = new URLSearchParams();
   sp.set("sort[0]", "createdAt:desc");
   sp.set("pagination[pageSize]", String(pageSize));
-
-  // ✅ filtro por relación
-  if (productDocumentId) sp.set("filters[product][documentId][$eq]", productDocumentId);
-  else sp.set("filters[product][id][$eq]", productId);
+  sp.set("filters[product][id][$eq]", String(productId));
 
   try {
     const res = await fetchWithTimeout(`${strapiBase}/api/reviews?${sp.toString()}`, {
@@ -92,23 +137,7 @@ export async function GET(req: Request) {
     }
 
     const rows = Array.isArray(json?.data) ? json.data : [];
-    const data = rows.map((r: any) => {
-      const a = r?.attributes ?? r ?? {};
-      const rating = Number(a?.rating ?? r?.rating ?? 0);
-
-      // ✅ tu modelo tiene comment (Rich text)
-      const comment = String(a?.comment ?? r?.comment ?? "").trim();
-
-      return {
-        id: r?.id ?? a?.id,
-        rating: Number.isFinite(rating) ? rating : 0,
-        title: String(a?.title ?? r?.title ?? "").trim() || undefined,
-        // 👉 para el front, siempre devolvemos "text"
-        text: comment || undefined,
-        name: String(a?.name ?? r?.name ?? "").trim() || undefined,
-        createdAt: String(a?.createdAt ?? r?.createdAt ?? "").trim() || undefined,
-      };
-    });
+    const data = rows.map(mapReviewRow);
 
     return NextResponse.json({ data }, { status: 200 });
   } catch (e: any) {
@@ -146,9 +175,9 @@ export async function POST(req: Request) {
     process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
   );
   const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
-  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN" }, { status: 500 });
+  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN" }, { status: 500 });
 
-  // 1) Resolver product numeric id (preferido)
+  // 1) Resolver product numeric id (si podemos)
   let productId: number | null =
     Number.isFinite(productIdRaw) && productIdRaw > 0 ? productIdRaw : null;
 
@@ -160,14 +189,14 @@ export async function POST(req: Request) {
     console.error("[api/reviews][POST] resolve product failed:", e);
   }
 
-  if (!productId) {
+  if (!productId && !productDocumentId) {
     return NextResponse.json(
-      { error: "No se pudo resolver el producto (productId/productDocumentId)" },
+      { error: "Falta productId/productDocumentId" },
       { status: 400 }
     );
   }
 
-  // 2) Payload base (✅ comment, no text)
+  // 2) Payload base
   const baseData: any = {
     rating,
     comment,
@@ -175,15 +204,30 @@ export async function POST(req: Request) {
     ...(name ? { name } : {}),
   };
 
-  // 3) Candidatos relación (según setup)
-  const candidatePayloads = [
-    // ✅ más común (funciona en muchos v5)
-    { data: { ...baseData, product: productId } },
+  // 3) Variantes de relación (según cómo Strapi acepte la relación)
+  // Preferimos numérico si lo tenemos; si no, probamos documentId.
+  const candidates: any[] = [];
 
-    // variantes por si tu setup pide connect
-    { data: { ...baseData, product: { connect: [productId] } } },
-    { data: { ...baseData, product: { connect: [{ id: productId }] } } },
-  ];
+  if (productId) {
+    candidates.push({ data: { ...baseData, product: productId } });
+    candidates.push({ data: { ...baseData, product: { connect: [productId] } } });
+    candidates.push({ data: { ...baseData, product: { connect: [{ id: productId }] } } });
+  }
+
+  if (productDocumentId) {
+    candidates.push({ data: { ...baseData, product: productDocumentId } });
+    candidates.push({ data: { ...baseData, product: { connect: [productDocumentId] } } });
+    candidates.push({ data: { ...baseData, product: { connect: [{ documentId: productDocumentId }] } } });
+  }
+
+  // dedupe simple por JSON string
+  const seen = new Set<string>();
+  const candidatePayloads = candidates.filter((p) => {
+    const k = JSON.stringify(p);
+    if (seen.has(k)) return false;
+    seen.add(k);
+    return true;
+  });
 
   let lastError: any = null;
 

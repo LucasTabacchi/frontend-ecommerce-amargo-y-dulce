@@ -23,17 +23,43 @@ function pickAttr(row: any) {
   return row?.attributes ?? row ?? {};
 }
 
+/**
+ * Soporta:
+ * - v5 plano: images: [{ url, formats }]
+ * - v5 data:  images: { data: [{ url/formats or attributes }] }
+ * - v4:       images: { data: [{ attributes: { url, formats } }] }
+ * - single:   images: { url/formats }
+ */
 function pickImage(rowOrAttr: any) {
   const attr = pickAttr(rowOrAttr);
-  const img = attr?.images?.[0];
-  const f = img?.formats;
-  const url = f?.medium?.url || f?.small?.url || f?.thumbnail?.url || img?.url || "";
+
+  const v4 = attr?.images?.data?.[0]?.attributes;
+
+  const v5first =
+    Array.isArray(attr?.images)
+      ? attr.images?.[0]
+      : Array.isArray(attr?.images?.data)
+      ? attr.images.data?.[0]
+      : attr?.images;
+
+  const v5 = (v5first as any)?.attributes ?? v5first;
+
+  const img = v4 || v5;
+  if (!img) return "";
+
+  const f = (img as any)?.formats;
+  const url = f?.medium?.url || f?.small?.url || f?.thumbnail?.url || (img as any)?.url || "";
   return strapiMediaUrl(url);
 }
 
 function asNum(v: any, fallback = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
+}
+
+function toStrOrNull(v: any) {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
 }
 
 export default async function ProductDetailPage({ params }: { params: { id: string } }) {
@@ -45,27 +71,22 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
   let row: any | null = null;
 
   try {
+    const sp = new URLSearchParams();
+    sp.set("populate", "*");
+    sp.set("pagination[pageSize]", "1");
+
     if (isNumeric) {
-      // ✅ id numérico
-      const sp = new URLSearchParams();
-      sp.set("populate", "*");
-      sp.set("pagination[pageSize]", "1");
+      // ✅ legacy: id numérico
       sp.set("filters[id][$eq]", pid);
-
-      const list = await fetcher<any>(`/api/products?${sp.toString()}`, { auth: true });
-      row = list?.data?.[0] ?? null;
     } else {
-      // ✅ documentId (principal) + slug (fallback)
-      const sp = new URLSearchParams();
-      sp.set("populate", "*");
-      sp.set("pagination[pageSize]", "1");
-
+      // ✅ v5: documentId o fallback por slug
       sp.set("filters[$or][0][documentId][$eq]", pid);
       sp.set("filters[$or][1][slug][$eq]", pid);
-
-      const list = await fetcher<any>(`/api/products?${sp.toString()}`, { auth: true });
-      row = list?.data?.[0] ?? null;
     }
+
+    // ✅ OJO: para ver producto no deberías requerir auth
+    const list = await fetcher<any>(`/api/products?${sp.toString()}`);
+    row = list?.data?.[0] ?? null;
   } catch {
     return notFound();
   }
@@ -79,11 +100,14 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
   if (!Number.isFinite(id)) return notFound();
 
   // ✅ documentId (Strapi v5)
-  const documentIdRaw = row?.documentId ?? attr?.documentId ?? attr?.document_id ?? null;
-  const documentId = documentIdRaw ? String(documentIdRaw).trim() : null;
+  const documentId =
+    toStrOrNull(row?.documentId) ??
+    toStrOrNull(attr?.documentId) ??
+    toStrOrNull(attr?.document_id) ??
+    null;
 
-  const title = attr?.title ?? row?.title ?? "Producto";
-  const description = attr?.description ?? row?.description ?? "";
+  const title = String(attr?.title ?? row?.title ?? "Producto");
+  const description = String(attr?.description ?? row?.description ?? "");
   const category = attr?.category ?? row?.category ?? null;
 
   const price = asNum(attr?.price ?? row?.price, 0);
@@ -98,8 +122,10 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
   const imageUrl = pickImage(row);
 
-  // slug puede ser null -> lo dejamos como opcional
+  // slug puede ser null -> fallback seguro
   const slug = String(attr?.slug ?? row?.slug ?? "").trim() || String(id);
+
+  const outOfStock = stock != null && stock <= 0;
 
   return (
     <main>
@@ -204,25 +230,36 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             <div className="mt-6">
               <AddToCartButton
                 item={{
-                  id, // id numérico de Strapi
-                  documentId: documentId ?? undefined, // ✅ guardamos documentId en carrito/pedido
-                  slug, // opcional
+                  id, // id numérico
+                  documentId: documentId ?? undefined, // ✅ guardamos documentId
+                  slug,
                   title,
                   price,
                   off: hasOff ? off : undefined,
                   imageUrl,
+                  // si tu ProductCardItem tiene stock, también podés pasarlo acá
+                  // stock: stock ?? undefined,
                 }}
+                // ✅ si tu componente soporta disabled:
+                disabled={outOfStock}
               />
-              <p className="mt-3 text-center text-xs text-neutral-500">
-                Podés revisar tu carrito antes de pagar.
-              </p>
+
+              {outOfStock ? (
+                <p className="mt-3 text-center text-xs font-semibold text-red-700">
+                  Este producto no tiene stock disponible.
+                </p>
+              ) : (
+                <p className="mt-3 text-center text-xs text-neutral-500">
+                  Podés revisar tu carrito antes de pagar.
+                </p>
+              )}
             </div>
           </aside>
         </div>
 
-        {/* ✅ NUEVO: Opiniones / Valoración */}
+        {/* ✅ Reviews: pasamos documentId si existe (clave en v5) */}
         <div className="pb-14">
-          <ProductReviews productDocumentId={documentId} productId={id} />
+          <ProductReviews productDocumentId={documentId ?? undefined} productId={id} />
         </div>
       </Container>
     </main>
