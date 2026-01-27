@@ -4,10 +4,15 @@ import type { ProductCardItem } from "@/components/products/ProductCard";
 
 export type CartItem = ProductCardItem & {
   qty: number;
+  documentId?: string | null;
 };
 
 type CartState = {
   items: CartItem[];
+
+  // ✅ persist hydration flag (para evitar rehidratación pisando clear())
+  hasHydrated: boolean;
+  setHasHydrated: (v: boolean) => void;
 
   addItem: (product: ProductCardItem, qty?: number) => void;
   removeItem: (slug: string) => void;
@@ -22,7 +27,8 @@ type CartState = {
 function normalizeQty(v: any) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 1;
-  return Math.max(1, Math.floor(n));
+  // ✅ PERMITE 0 (necesario para dec() y para poder filtrar/eliminar)
+  return Math.max(0, Math.floor(n));
 }
 
 function normalizeIdToNumberOrZero(v: any) {
@@ -37,29 +43,36 @@ function normStrOrNull(v: any) {
 
 /**
  * ✅ Normaliza el item para:
- * - asegurar qty válido
- * - asegurar id numérico (Strapi id)
- * - asegurar documentId (Strapi v5) si existe
- * - asegurar slug usable (fallback)
+ * - qty válido
+ * - id numérico (Strapi id)
+ * - documentId (Strapi v5) si existe
+ * - slug usable (fallback)
  */
 function normalizeCartItem(product: any, qty: number): CartItem {
   const idNum = normalizeIdToNumberOrZero(product?.id);
+
   const documentId =
     normStrOrNull(product?.documentId) ??
     normStrOrNull(product?.attributes?.documentId) ??
     normStrOrNull(product?.attributes?.document_id) ??
     null;
 
-  const slug = normStrOrNull(product?.slug) ?? (idNum ? String(idNum) : documentId ?? "item");
+  const slug =
+    normStrOrNull(product?.slug) ?? (idNum ? String(idNum) : documentId ?? "item");
 
   const price = Number(product?.price) || 0;
+
   const offRaw = product?.off;
   const off =
-    offRaw == null || offRaw === "" ? undefined : Number.isFinite(Number(offRaw)) ? Number(offRaw) : undefined;
+    offRaw == null || offRaw === ""
+      ? undefined
+      : Number.isFinite(Number(offRaw))
+      ? Number(offRaw)
+      : undefined;
 
   return {
     ...(product as any),
-    id: idNum as any, // tu ProductCardItem tipa id como number; mantenemos number
+    id: idNum as any, // ProductCardItem tipa id como number
     documentId,
     slug,
     price,
@@ -73,8 +86,12 @@ export const useCartStore = create<CartState>()(
     (set, get) => ({
       items: [],
 
+      hasHydrated: false,
+      setHasHydrated: (v) => set({ hasHydrated: v }),
+
       addItem: (product, qty = 1) => {
-        const addQty = normalizeQty(qty);
+        // ✅ al agregar, mínimo 1
+        const addQty = Math.max(1, normalizeQty(qty));
 
         set((state) => {
           const normalized = normalizeCartItem(product, addQty);
@@ -90,7 +107,7 @@ export const useCartStore = create<CartState>()(
             return {
               items: state.items.map((i: any) =>
                 (i.documentId ?? i.slug) === key
-                  ? { ...i, qty: normalizeQty(i.qty) + addQty }
+                  ? { ...i, qty: Math.max(1, normalizeQty(i.qty) + addQty) }
                   : i
               ),
             };
@@ -108,24 +125,30 @@ export const useCartStore = create<CartState>()(
       inc: (slug) =>
         set((state) => ({
           items: state.items.map((i) =>
-            i.slug === slug ? { ...i, qty: normalizeQty(i.qty) + 1 } : i
+            i.slug === slug ? { ...i, qty: Math.max(1, normalizeQty(i.qty) + 1) } : i
           ),
         })),
 
       dec: (slug) =>
         set((state) => ({
           items: state.items
-            .map((i) => (i.slug === slug ? { ...i, qty: normalizeQty(i.qty) - 1 } : i))
+            .map((i) => {
+              if (i.slug !== slug) return i;
+              // ✅ baja 1 y permite 0
+              const nextQty = normalizeQty(i.qty) - 1;
+              return { ...i, qty: normalizeQty(nextQty) };
+            })
+            // ✅ si llegó a 0, se elimina del carrito
             .filter((i) => normalizeQty(i.qty) > 0),
         })),
 
       clear: () => set({ items: [] }),
 
-      totalItems: () => get().items.reduce((acc, i) => acc + normalizeQty(i.qty), 0),
+      totalItems: () => get().items.reduce((acc, i) => acc + Math.max(1, normalizeQty(i.qty)), 0),
 
       totalPrice: () =>
         get().items.reduce((acc, i: any) => {
-          const qty = normalizeQty(i.qty);
+          const qty = Math.max(1, normalizeQty(i.qty));
           const price = Number(i.price) || 0;
           const off = Number(i.off) || 0;
           const hasOff = Number.isFinite(off) && off > 0;
@@ -143,13 +166,14 @@ export const useCartStore = create<CartState>()(
         const items = Array.isArray(state?.items) ? state.items : [];
 
         const fixed = items.map((it: any) => {
-          // si ya viene con shape de CartItem, lo normalizamos igual
-          const normalized = normalizeCartItem(it, normalizeQty(it?.qty ?? 1));
-          // preserva fields extra (title, imageUrl, etc.)
+          const normalized = normalizeCartItem(it, Math.max(1, normalizeQty(it?.qty ?? 1)));
           return { ...(it as any), ...normalized };
         });
 
         return { ...persisted, state: { ...state, items: fixed } };
+      },
+      onRehydrateStorage: () => (state) => {
+        state?.setHasHydrated(true);
       },
     }
   )

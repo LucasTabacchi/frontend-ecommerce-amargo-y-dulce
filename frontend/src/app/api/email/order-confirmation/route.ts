@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import { Resend } from "resend";
 
+export const dynamic = "force-dynamic";
+
 const resend = new Resend(process.env.RESEND_API_KEY);
+
+// Dedupe best-effort en memoria (sirve si llegan 2 hits al mismo runtime)
+const recentSends = new Map<string, number>();
+const DEDUPE_WINDOW_MS = 10_000;
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -16,8 +22,28 @@ function escapeHtml(s: string) {
     .replaceAll("'", "&#039;");
 }
 
+function looksRateLimitError(e: any) {
+  const msg = String(e?.message || e?.error?.message || "").toLowerCase();
+  return (
+    msg.includes("too many requests") ||
+    msg.includes("rate limit") ||
+    e?.statusCode === 429 ||
+    e?.status === 429
+  );
+}
+
 export async function POST(req: Request) {
   try {
+    if (!process.env.RESEND_API_KEY) {
+      return NextResponse.json({ error: "Falta RESEND_API_KEY" }, { status: 500 });
+    }
+
+    const from = process.env.EMAIL_FROM;
+    if (!from) {
+      return NextResponse.json({ error: "Falta EMAIL_FROM" }, { status: 500 });
+    }
+
+    const body = await req.json().catch(() => null);
     const {
       email,
       name,
@@ -26,7 +52,9 @@ export async function POST(req: Request) {
       items,
       phone,
       shippingAddress,
-    } = await req.json();
+      // opcional: si lo mandás desde el webhook, mejor aún:
+      mpPaymentId,
+    } = body || {};
 
     if (!email || !orderNumber) {
       return NextResponse.json(
@@ -34,6 +62,20 @@ export async function POST(req: Request) {
         { status: 400 }
       );
     }
+
+    // ✅ idempotency key: un mail por pedido (o por pedido+payment)
+    // Si el webhook se dispara 2 veces, Resend no re-envía.
+    const idempotencyKey = `order-confirmation/${String(orderNumber)}${
+      mpPaymentId ? `/${String(mpPaymentId)}` : ""
+    }`;
+
+    // ✅ dedupe best-effort local
+    const now = Date.now();
+    const last = recentSends.get(idempotencyKey);
+    if (last && now - last < DEDUPE_WINDOW_MS) {
+      return NextResponse.json({ ok: true, deduped: true, to: process.env.TEST_EMAIL_TO || email });
+    }
+    recentSends.set(idempotencyKey, now);
 
     const addressText =
       shippingAddress?.text ||
@@ -54,7 +96,7 @@ export async function POST(req: Request) {
     const html = `
       <div style="font-family:Arial,sans-serif;line-height:1.5">
         <h2>¡Gracias por tu compra${name ? `, ${escapeHtml(name)}` : ""}!</h2>
-        <p>Confirmamos tu pedido <b>${escapeHtml(orderNumber)}</b>.</p>
+        <p>Confirmamos tu pedido <b>${escapeHtml(String(orderNumber))}</b>.</p>
 
         <h3>Dirección de envío</h3>
         <p>${escapeHtml(addressText || "-")}</p>
@@ -74,39 +116,57 @@ export async function POST(req: Request) {
       </div>
     `;
 
-    const from = process.env.EMAIL_FROM;
-    if (!from) {
-      return NextResponse.json({ error: "Falta EMAIL_FROM" }, { status: 500 });
-    }
+    // ✅ Modo testing (sin dominio): fuerza destinatario a tu email verificado
+    const to = process.env.TEST_EMAIL_TO || String(email);
 
-    // ✅ Modo testing (sin dominio): fuerza el destinatario a tu propio email verificado
-    // Si TEST_EMAIL_TO NO está seteada, se envía al email real del cliente.
-    const to = process.env.TEST_EMAIL_TO || email;
-
-    // (opcional) log mínimo para debug
     console.log("[email] sending confirmation", {
       orderNumber,
       to,
       forced: Boolean(process.env.TEST_EMAIL_TO),
+      idempotencyKey,
     });
 
-    const result = await resend.emails.send({
-      from,
-      to,
-      subject: `Confirmación de pedido ${orderNumber}`,
-      html,
-    });
+    // ✅ Resend idempotency (Node SDK)
+    const result = await resend.emails.send(
+      {
+        from,
+        to,
+        subject: `Confirmación de pedido ${String(orderNumber)}`,
+        html,
+      },
+      { idempotencyKey }
+    );
 
-    // si Resend devuelve error, lo propagamos con 502
+    // SDK puede devolver { error } en vez de throw
     if ((result as any)?.error) {
+      const err = (result as any).error;
+      const msg = err?.message || "Resend error";
+
+      // Si es rate limit, devolvemos 202 (no “romper” el flujo del webhook)
+      if (looksRateLimitError(err) || String(msg).toLowerCase().includes("too many requests")) {
+        return NextResponse.json(
+          { ok: false, queued: false, error: msg, rateLimited: true, to },
+          { status: 202 }
+        );
+      }
+
+      return NextResponse.json({ error: msg }, { status: 502 });
+    }
+
+    return NextResponse.json({ ok: true, to, idempotencyKey });
+  } catch (e: any) {
+    // Si Resend throwea por rate limit u otro error
+    if (looksRateLimitError(e)) {
       return NextResponse.json(
-        { error: (result as any).error?.message || "Resend error" },
-        { status: 502 }
+        {
+          ok: false,
+          error: e?.message || "Too many requests",
+          rateLimited: true,
+        },
+        { status: 202 }
       );
     }
 
-    return NextResponse.json({ ok: true, to });
-  } catch (e: any) {
     return NextResponse.json(
       { error: e?.message || "Error enviando email" },
       { status: 500 }

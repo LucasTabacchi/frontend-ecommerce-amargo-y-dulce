@@ -8,7 +8,6 @@ export const dynamic = "force-dynamic";
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
   u = u.endsWith("/") ? u.slice(0, -1) : u;
-  // evita /api/api
   if (u.toLowerCase().endsWith("/api")) u = u.slice(0, -4);
   return u;
 }
@@ -30,8 +29,7 @@ function makeOrderNumber(numericId: string | number) {
 }
 
 async function strapiJSON(res: Response) {
-  const data = await res.json().catch(() => null);
-  return data;
+  return await res.json().catch(() => null);
 }
 
 function badRequest(msg: string, fields?: Record<string, any>) {
@@ -47,16 +45,21 @@ function readShipping(obj: any) {
     province: isNonEmptyString(s?.province) ? s.province.trim() : "",
     postalCode: isNonEmptyString(s?.postalCode) ? s.postalCode.trim() : "",
     notes: isNonEmptyString(s?.notes) ? s.notes.trim() : "",
-    // text puede venir o lo generamos
     text: isNonEmptyString(s?.text) ? s.text.trim() : "",
   };
 }
 
+/**
+ * Lee /api/users/me con el JWT del usuario (cookie strapi_jwt)
+ * y devuelve { id, documentId, email } si está logueado.
+ */
 async function getLoggedUser(strapiBase: string) {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) return null;
 
   try {
+    // En Strapi v5, many endpoints devuelven documentId.
+    // users/me suele traerlo también; si no, al menos id+email.
     const r = await fetch(`${strapiBase}/api/users/me`, {
       headers: { Authorization: `Bearer ${jwt}` },
       cache: "no-store",
@@ -65,14 +68,37 @@ async function getLoggedUser(strapiBase: string) {
     if (!r.ok) return null;
 
     const me = await r.json().catch(() => null);
-    const id = me?.id ?? null; // Strapi v4 devuelve id
-    const email = typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
 
-    if (!id) return null;
-    return { id, email };
+    const id = me?.id ?? null; // numérico (útil como fallback)
+    const documentId = me?.documentId ?? null; // ✅ ideal para relaciones v5
+    const email =
+      typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
+
+    // Si no tengo documentId, igual devuelvo id/email (pero para relation intentamos documentId)
+    if (!id && !documentId) return null;
+
+    return { id, documentId, email };
   } catch {
     return null;
   }
+}
+
+/**
+ * Construye el payload de Strapi v5 para setear una relación.
+ * En v5 se recomienda connect con documentId. :contentReference[oaicite:1]{index=1}
+ */
+function buildUserRelation(logged: { id: any; documentId: any } | null) {
+  const doc = String(logged?.documentId ?? "").trim();
+  if (doc) {
+    return { user: { connect: [doc] } };
+  }
+  // Fallback: si por alguna razón no vino documentId (no ideal en v5)
+  const idNum = Number(logged?.id);
+  if (Number.isFinite(idNum) && idNum > 0) {
+    // Intento “best effort” (puede fallar según versión/config)
+    return { user: { connect: [String(idNum)] } };
+  }
+  return {};
 }
 
 export async function POST(req: Request) {
@@ -82,11 +108,11 @@ export async function POST(req: Request) {
       "http://localhost:1337"
   );
 
-  // Este token es el de servidor (API token) para crear la orden en Strapi
+  // Token server (API token) para CREATE/UPDATE (más estable para checkout)
   const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
   if (!token) {
     return NextResponse.json(
-      { error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN en .env.local (Next)" },
+      { error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN en .env (Next)" },
       { status: 500 }
     );
   }
@@ -101,7 +127,6 @@ export async function POST(req: Request) {
     );
   }
 
-  // Acepta {data:{...}} o {...}
   const incomingData =
     body && typeof body === "object" && "data" in body ? body.data : body;
 
@@ -112,10 +137,10 @@ export async function POST(req: Request) {
     );
   }
 
-  // ✅ si hay usuario logueado, lo resolvemos acá (id + email)
+  // ✅ usuario logueado (si existe)
   const logged = await getLoggedUser(strapiBase);
 
-  // ===================== VALIDACIONES server-side (obligatorios) =====================
+  // ===================== VALIDACIONES =====================
 
   const name = isNonEmptyString(incomingData.name) ? incomingData.name.trim() : "";
 
@@ -140,62 +165,61 @@ export async function POST(req: Request) {
   if (shipping.province.length < 2) return badRequest("Falta province", { province: shipping.province });
   if (shipping.postalCode.length < 4) return badRequest("Falta postalCode", { postalCode: shipping.postalCode });
 
-  // items mínimos
   const items = Array.isArray(incomingData.items) ? incomingData.items : [];
   if (items.length === 0) return badRequest("Tu carrito está vacío (items).");
 
-  // total mínimo
   const total = Number(incomingData.total);
-  if (!Number.isFinite(total) || total <= 0) return badRequest("Total inválido", { total: incomingData.total });
+  if (!Number.isFinite(total) || total <= 0) {
+    return badRequest("Total inválido", { total: incomingData.total });
+  }
 
-  // ===================== Normalizaciones =====================
+  // ===================== NORMALIZACIONES =====================
 
-  // mpExternalReference server-side (si no viene)
   const mpExternalReference = isNonEmptyString(incomingData.mpExternalReference)
     ? incomingData.mpExternalReference.trim()
     : safeUUID();
 
-  // si no vino text, lo generamos acá para consistencia
   const shippingText =
     shipping.text ||
     `${shipping.street} ${shipping.number}, ${shipping.city}, ${shipping.province} (${shipping.postalCode})`;
 
-  // 1) CREATE en Strapi
-  const createPayload = {
-    data: {
-      // No confiamos en que el cliente mande todo perfecto: sobreescribimos normalizados
-      ...incomingData,
-      name,
-      email,
-      phone,
-      total,
-      items,
+  // 🔒 Importante: NO propagamos keys raras desde el cliente.
+  // Construimos el data “limpio” y dejamos afuera user/createdAt/etc.
+  const baseData: any = {
+    // si querés permitir más campos del cliente, agregalos explícitamente acá:
+    subtotal: incomingData.subtotal ?? undefined,
+    discountTotal: incomingData.discountTotal ?? undefined,
+    coupon: incomingData.coupon ?? undefined,
+    appliedPromotions: incomingData.appliedPromotions ?? undefined,
 
-      shippingAddress: {
-        street: shipping.street,
-        number: shipping.number,
-        city: shipping.city,
-        province: shipping.province,
-        postalCode: shipping.postalCode,
-        notes: shipping.notes || null,
-        text: shippingText,
-      },
+    name,
+    email,
+    phone,
+    total,
+    items,
 
-      mpExternalReference,
-
-      // ✅ guardar relación con el usuario logueado (nuevo campo relation en Order)
-      ...(logged?.id ? { user: logged.id } : {}),
-
-      // NO ponemos orderNumber acá porque todavía no tenemos numericId con certeza
+    shippingAddress: {
+      street: shipping.street,
+      number: shipping.number,
+      city: shipping.city,
+      province: shipping.province,
+      postalCode: shipping.postalCode,
+      notes: shipping.notes || null,
+      text: shippingText,
     },
+
+    mpExternalReference,
   };
 
-  console.log(
-    "[orders/create] → Strapi CREATE payload:",
-    JSON.stringify(createPayload, null, 2)
-  );
+  // ✅ relación user en formato v5 (connect)
+  const relationPart = buildUserRelation(logged);
 
-  const createRes = await fetch(`${strapiBase}/api/orders`, {
+  // 1) CREATE en Strapi (intento con relación)
+  let createPayload = { data: { ...baseData, ...relationPart } };
+
+  console.log("[orders/create] → Strapi CREATE payload:", JSON.stringify(createPayload, null, 2));
+
+  let createRes = await fetch(`${strapiBase}/api/orders`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -205,7 +229,25 @@ export async function POST(req: Request) {
     cache: "no-store",
   });
 
-  const created = await strapiJSON(createRes);
+  let created = await strapiJSON(createRes);
+
+  // 🔁 Fallback: si Strapi sigue tirando Invalid key user, creamos SIN relación
+  if (!createRes.ok && created?.error?.details?.key === "user") {
+    console.warn("[orders/create] Strapi rechazó relation user, reintento sin user…");
+    createPayload = { data: { ...baseData } };
+
+    createRes = await fetch(`${strapiBase}/api/orders`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify(createPayload),
+      cache: "no-store",
+    });
+
+    created = await strapiJSON(createRes);
+  }
 
   if (!createRes.ok) {
     console.error("[orders/create] Strapi CREATE returned", createRes.status, created);
@@ -215,37 +257,22 @@ export async function POST(req: Request) {
     );
   }
 
-  // Strapi v5: para PUT /api/orders/:id usamos documentId
   const documentId = created?.data?.documentId ? String(created.data.documentId) : null;
   const numericId = created?.data?.id ? String(created.data.id) : null;
 
   if (!documentId) {
     return NextResponse.json(
-      {
-        error: "Strapi no devolvió documentId al crear la orden",
-        strapi: created,
-      },
+      { error: "Strapi no devolvió documentId al crear la orden", strapi: created },
       { status: 500 }
     );
   }
 
   const orderNumber = numericId ? makeOrderNumber(numericId) : null;
 
-  // 2) UPDATE en Strapi para setear orderNumber (si pudimos calcularlo)
+  // 2) UPDATE en Strapi para setear orderNumber
   if (orderNumber) {
-    const updatePayload = {
-      data: {
-        orderNumber,
-        mpExternalReference,
-      },
-    };
-
+    const updatePayload = { data: { orderNumber, mpExternalReference } };
     const updateUrl = `${strapiBase}/api/orders/${encodeURIComponent(documentId)}`;
-    console.log("[orders/create] → Strapi UPDATE url:", updateUrl);
-    console.log(
-      "[orders/create] → Strapi UPDATE payload:",
-      JSON.stringify(updatePayload, null, 2)
-    );
 
     const updateRes = await fetch(updateUrl, {
       method: "PUT",
@@ -259,22 +286,14 @@ export async function POST(req: Request) {
 
     if (!updateRes.ok) {
       const upd = await updateRes.text().catch(() => "");
-      console.warn(
-        "[orders/create] Strapi UPDATE failed (no bloqueo):",
-        updateRes.status,
-        upd
-      );
-      // No bloqueamos: la orden ya existe y el pago puede seguir.
+      console.warn("[orders/create] Strapi UPDATE failed (no bloqueo):", updateRes.status, upd);
     }
   } else {
-    console.warn(
-      "[orders/create] Strapi no devolvió numericId; no pude calcular orderNumber."
-    );
+    console.warn("[orders/create] Strapi no devolvió numericId; no pude calcular orderNumber.");
   }
 
-  // 3) Respuesta útil al front
   return NextResponse.json({
-    orderId: documentId, // <-- ESTE es el que vas a usar luego en /api/orders/[id] y en back_urls
+    orderId: documentId,
     orderDocumentId: documentId,
     orderNumericId: numericId,
     orderNumber,

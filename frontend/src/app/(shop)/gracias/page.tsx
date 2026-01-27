@@ -77,41 +77,60 @@ function StatusBadge({ status }: { status: StatusKind }) {
   );
 }
 
+function mapOrderStatusToUi(orderStatus: string | null | undefined): StatusKind {
+  const s = String(orderStatus ?? "").toLowerCase();
+  if (s === "paid") return "success";
+  if (s === "failed" || s === "cancelled") return "failure";
+  if (s) return "pending";
+  return "pending";
+}
+
 export default function GraciasPage() {
   const sp = useSearchParams();
 
   const clear = useCartStore((s) => s.clear);
+  const hasHydrated = useCartStore((s) => s.hasHydrated);
 
-  const urlStatus = normalizeStatus(sp.get("status"));
   const orderId = sp.get("orderId") || "";
   const externalRef = sp.get("external_reference") || "";
 
-  // Estado real según Strapi (orderStatus). Arrancamos usando el status de URL.
-  const [status, setStatus] = useState<StatusKind>(urlStatus);
+  const initialStatus = normalizeStatus(sp.get("status"));
+  const [status, setStatus] = useState<StatusKind>(initialStatus);
   const [hint, setHint] = useState<string | null>(null);
 
-  // Para evitar clear() duplicado
   const clearedRef = useRef(false);
+  const resolvedRef = useRef<StatusKind | null>(null);
+  const latestUrlStatusRef = useRef<StatusKind>(initialStatus);
 
+  // ✅ Vaciar carrito cuando la UI esté en success (1 sola vez) y el store ya hidrató
   useEffect(() => {
-    // si cambia la URL, reseteamos el estado visible y el hint
-    setStatus(urlStatus);
-    setHint(null);
-    clearedRef.current = false;
-  }, [urlStatus]);
+    if (!hasHydrated) return;
+    if (status !== "success") return;
+    if (clearedRef.current) return;
+
+    clearedRef.current = true;
+    clear();
+  }, [status, clear, hasHydrated]);
+
+  // Si cambia la URL, usamos status solo como fallback si no resolvimos por Strapi
+  useEffect(() => {
+    const nextUrlStatus = normalizeStatus(sp.get("status"));
+    latestUrlStatusRef.current = nextUrlStatus;
+
+    if (!resolvedRef.current) {
+      setStatus(nextUrlStatus);
+      setHint(null);
+      // ❌ NO reseteamos clearedRef acá (puede generar comportamientos raros)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sp]);
 
   useEffect(() => {
     if (!orderId) return;
 
     let alive = true;
     const startedAt = Date.now();
-
-    function mapOrderStatusToUi(orderStatus: string | null | undefined): StatusKind {
-      const s = String(orderStatus ?? "").toLowerCase();
-      if (s === "paid") return "success";
-      if (s === "failed" || s === "cancelled") return "failure";
-      return "pending";
-    }
+    let timer: any = null;
 
     async function tick() {
       try {
@@ -124,21 +143,29 @@ export default function GraciasPage() {
 
         const orderStatus: string | null =
           json?.data?.attributes?.orderStatus ??
-          json?.orderStatus ??
           json?.data?.orderStatus ??
           null;
 
         const nextUi = mapOrderStatusToUi(orderStatus);
 
-        // si está paid, vaciamos carrito una sola vez
-        if (nextUi === "success" && !clearedRef.current) {
+        // nunca permitir downgrade success -> pending
+        if (resolvedRef.current === "success") {
+          setStatus("success");
+          return;
+        }
+
+        if (nextUi === "success" || nextUi === "failure") {
+          resolvedRef.current = nextUi;
+        }
+
+        setStatus((prev) => (prev === "success" ? "success" : nextUi));
+
+        // backup: si llega a success por acá, intentamos vaciar (aunque igual lo hace el effect de arriba)
+        if (nextUi === "success" && hasHydrated && !clearedRef.current) {
           clearedRef.current = true;
           clear();
         }
 
-        setStatus(nextUi);
-
-        // timeout de verificación
         if (Date.now() - startedAt > 30_000 && nextUi === "pending") {
           setHint(
             "Todavía no pudimos confirmar el pago. Podés refrescar la página o revisar tu email: el webhook puede tardar unos segundos."
@@ -156,30 +183,17 @@ export default function GraciasPage() {
       }
     }
 
-    // ✅ Fast start + backoff:
-    // - 0–8s: cada 500ms
-    // - 8–30s: cada 2500ms
-    // - corta a 30s
-    tick();
+    const schedule = async () => {
+      await tick();
 
-    let delay = 500;
-    let timer: any = null;
+      const elapsed = Date.now() - startedAt;
 
-    const schedule = () => {
-      timer = setTimeout(async () => {
-        await tick();
+      if (!alive) return;
+      if (resolvedRef.current === "success" || resolvedRef.current === "failure") return;
+      if (elapsed > 30_000) return;
 
-        const elapsed = Date.now() - startedAt;
-
-        if (elapsed > 8_000) delay = 2500;
-        if (elapsed > 30_000) return;
-
-        // si ya resolvimos (success/failure), no seguimos pegándole a Strapi
-        if (!alive) return;
-        if (status === "success" || status === "failure") return;
-
-        schedule();
-      }, delay);
+      const delay = elapsed <= 8_000 ? 500 : 2500;
+      timer = setTimeout(schedule, delay);
     };
 
     schedule();
@@ -188,8 +202,7 @@ export default function GraciasPage() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [orderId, clear]);
+  }, [orderId, clear, hasHydrated]);
 
   const statusLabel =
     status === "success"
@@ -204,10 +217,8 @@ export default function GraciasPage() {
     <main>
       <Container>
         <div className="py-10">
-          {/* Header */}
           <StatusBadge status={status} />
 
-          {/* Card */}
           <div className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
             <h2 className="text-lg font-extrabold text-neutral-900">Detalle del pedido</h2>
 
@@ -234,7 +245,6 @@ export default function GraciasPage() {
               </div>
             </div>
 
-            {/* Actions */}
             <div className="mt-6 flex flex-wrap gap-3">
               <Link
                 href="/"
@@ -256,9 +266,17 @@ export default function GraciasPage() {
               >
                 Seguir comprando
               </Link>
+
+              {status === "success" && orderId && (
+                <Link
+                  href={`/mis-pedidos/${encodeURIComponent(orderId)}`}
+                  className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
+                >
+                  Ver mi pedido →
+                </Link>
+              )}
             </div>
 
-            {/* Hint */}
             {status === "pending" && (
               <p className="mt-4 text-xs text-neutral-500">
                 {hint ||
@@ -277,4 +295,3 @@ export default function GraciasPage() {
     </main>
   );
 }
-
