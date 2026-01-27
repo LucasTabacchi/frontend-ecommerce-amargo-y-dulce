@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "./Container";
-import { Search, ShoppingCart, User, Menu, X, Package } from "lucide-react";
+import { Search, ShoppingCart, User, Menu, X, Package, LogOut } from "lucide-react";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
 
@@ -14,6 +14,8 @@ type Suggestion = {
   price: number | null;
   slug: string | null;
 };
+
+type MeResponse = { user: any | null };
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -47,6 +49,40 @@ export function Header() {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
+
+  // ✅ auth
+  const [meLoading, setMeLoading] = useState(true);
+  const [me, setMe] = useState<any | null>(null);
+
+  async function refreshMe() {
+    setMeLoading(true);
+    try {
+      const r = await fetch("/api/auth/me", { cache: "no-store" });
+      const j: MeResponse = await r.json().catch(() => ({ user: null }));
+      setMe(j.user ?? null);
+    } catch {
+      setMe(null);
+    } finally {
+      setMeLoading(false);
+    }
+  }
+
+  async function logout() {
+    try {
+      await fetch("/api/auth/logout", { method: "POST" });
+    } finally {
+      setMe(null);
+      setLoginOpen(false);
+    }
+  }
+
+  useEffect(() => {
+    refreshMe();
+
+    const onFocus = () => refreshMe();
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // ✅ buscador (desktop + mobile comparten estado)
   const [query, setQuery] = useState("");
@@ -151,7 +187,7 @@ export function Header() {
   }
 
   function onKeyDownSearch(e: React.KeyboardEvent<HTMLInputElement>) {
-    // ✅ REQUERIMIENTO: Enter siempre va a /productos?q=
+    // Enter siempre va a /productos?q=
     if (e.key === "Enter") {
       e.preventDefault();
       goSearch(query);
@@ -196,7 +232,6 @@ export function Header() {
 
     goSearch(s.title);
   }
-
 
   function SearchBox({ variant }: { variant: "desktop" | "mobile" }) {
     const showDropdown = openSuggest && query.trim().length >= 2;
@@ -285,6 +320,12 @@ export function Header() {
     );
   }
 
+  const displayName =
+    me?.username ||
+    me?.name ||
+    (typeof me?.email === "string" ? me.email.split("@")[0] : null) ||
+    "Cuenta";
+
   return (
     <header
       className={[
@@ -294,7 +335,7 @@ export function Header() {
     >
       <Container>
         <div className="grid h-[72px] grid-cols-[auto_1fr_auto] items-center gap-6">
-          {/* IZQUIERDA: logo + menú */}
+          {/* IZQUIERDA */}
           <div className="flex items-center gap-6">
             <Link href="/" className="leading-none">
               <div className="text-[22px] font-extrabold tracking-tight text-neutral-900">
@@ -315,46 +356,67 @@ export function Header() {
             </nav>
           </div>
 
-          {/* CENTRO: buscador (con autocomplete) */}
+          {/* CENTRO */}
           <div className="hidden lg:flex justify-center">
-            <div className="relative w-full max-w-[760px]">
-              {SearchBox({ variant: "desktop" })}
-            </div>
+            <div className="relative w-full max-w-[760px]">{SearchBox({ variant: "desktop" })}</div>
           </div>
 
-          {/* DERECHA: acciones desktop */}
+          {/* DERECHA */}
           <div className="hidden items-center gap-4 md:flex">
             <div className="h-6 w-px bg-neutral-200" />
 
-            {/* Dropdown login */}
             <div className="relative">
-              <button
-                onClick={() => setLoginOpen((v) => !v)}
-                className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950"
-                type="button"
-                aria-expanded={loginOpen}
-              >
-                <User className="h-5 w-5" />
-                Iniciar sesión
-              </button>
+              {!me && !meLoading ? (
+                <>
+                  <button
+                    onClick={() => setLoginOpen((v) => !v)}
+                    className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950"
+                    type="button"
+                    aria-expanded={loginOpen}
+                  >
+                    <User className="h-5 w-5" />
+                    Iniciar sesión
+                  </button>
 
-              <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+                  <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+                </>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-2 text-[15px] font-medium text-neutral-800">
+                    <User className="h-5 w-5" />
+                    {meLoading ? "Cargando…" : `Hola, ${displayName}`}
+                  </div>
+
+                  {!meLoading && (
+                    <button
+                      onClick={logout}
+                      className="inline-flex items-center gap-2 text-[13px] text-neutral-700 hover:text-neutral-900 underline"
+                      type="button"
+                    >
+                      <LogOut className="h-4 w-4" />
+                      Cerrar sesión
+                    </button>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="h-6 w-px bg-neutral-200" />
 
-            {/* ✅ Mis pedidos */}
-            <Link
-              href="/mis-pedidos"
-              className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950 transition"
-            >
-              <Package className="h-5 w-5" />
-              Mis pedidos
-            </Link>
+            {me && !meLoading && (
+              <>
+                <Link
+                  href="/mis-pedidos"
+                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950 transition"
+                >
+                  <Package className="h-5 w-5" />
+                  Mis pedidos
+                </Link>
 
-            <div className="h-6 w-px bg-neutral-200" />
+                <div className="h-6 w-px bg-neutral-200" />
+              </>
+            )}
 
-            {/* Carrito + badge */}
             <Link
               href="/carrito"
               className="relative flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950"
@@ -367,7 +429,7 @@ export function Header() {
             </Link>
           </div>
 
-          {/* MOBILE: carrito + hamburguesa */}
+          {/* MOBILE */}
           <div className="flex items-center justify-end gap-2 md:hidden">
             <Link
               href="/carrito"
@@ -390,14 +452,11 @@ export function Header() {
           </div>
         </div>
 
-        {/* PANEL MOBILE */}
         {mobileOpen && (
           <div className="border-t bg-white md:hidden">
             <div className="py-4">
-              {/* Search mobile (con autocomplete) */}
               {SearchBox({ variant: "mobile" })}
 
-              {/* Links */}
               <nav className="mt-4 flex flex-col gap-3">
                 <NavLink href="/productos" onClick={() => setMobileOpen(false)}>
                   Productos
@@ -409,25 +468,40 @@ export function Header() {
                   Sobre nosotros
                 </NavLink>
 
-                {/* ✅ Mis pedidos en mobile */}
-                <NavLink href="/mis-pedidos" onClick={() => setMobileOpen(false)}>
-                  Mis pedidos
-                </NavLink>
+                {me && !meLoading && (
+                  <NavLink href="/mis-pedidos" onClick={() => setMobileOpen(false)}>
+                    Mis pedidos
+                  </NavLink>
+                )}
               </nav>
 
-              {/* Acciones mobile */}
               <div className="mt-4 flex gap-3">
-                <button
-                  onClick={() => {
-                    setMobileOpen(false);
-                    setLoginOpen(true);
-                  }}
-                  className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
-                  type="button"
-                >
-                  <User className="h-5 w-5" />
-                  Iniciar sesión
-                </button>
+                {!me && !meLoading ? (
+                  <button
+                    onClick={() => {
+                      setMobileOpen(false);
+                      setLoginOpen(true);
+                    }}
+                    className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
+                    type="button"
+                  >
+                    <User className="h-5 w-5" />
+                    Iniciar sesión
+                  </button>
+                ) : (
+                  <button
+                    onClick={() => {
+                      setMobileOpen(false);
+                      logout();
+                    }}
+                    className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
+                    type="button"
+                    disabled={meLoading}
+                  >
+                    <LogOut className="h-5 w-5" />
+                    {meLoading ? "Cargando…" : "Cerrar sesión"}
+                  </button>
+                )}
 
                 <Link
                   href="/carrito"

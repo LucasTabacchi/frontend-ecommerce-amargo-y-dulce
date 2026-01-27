@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { Chrome } from "lucide-react";
+import { GoogleLoginButton } from "@/components/auth/GoogleLoginButton";
 
 export function LoginModal({
   open,
@@ -12,7 +12,6 @@ export function LoginModal({
 }) {
   const ref = useRef<HTMLDivElement>(null);
 
-  // Cerrar si clickea fuera
   useEffect(() => {
     if (!open) return;
 
@@ -46,15 +45,9 @@ export function LoginModal({
         Accedé con tu cuenta de Google para continuar.
       </p>
 
-      <a
-        href="/api/auth/google"
+      <GoogleLoginButton
         className="mt-4 flex h-10 w-full items-center justify-center gap-3 rounded-full border border-neutral-300 bg-white text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-      >
-        <span className="flex h-5 w-5 items-center justify-center rounded-full border text-[10px] font-bold">
-          G
-        </span>
-        Continuar con Google
-      </a>
+      />
 
       <p className="mt-3 text-xs text-neutral-500">
         Usamos Google solo para autenticarte.
