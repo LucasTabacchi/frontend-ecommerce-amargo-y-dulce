@@ -230,20 +230,17 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             <div className="mt-6">
               <AddToCartButton
                 item={{
-                  id, // id numérico
-                  documentId: documentId ?? undefined, // ✅ guardamos documentId
+                  id,
+                  documentId: documentId ?? undefined,
                   slug,
                   title,
                   price,
                   off: hasOff ? off : undefined,
                   imageUrl,
-                  // si tu ProductCardItem tiene stock, también podés pasarlo acá
-                  // stock: stock ?? undefined,
+                  stock, // ✅ IMPORTANTE
                 }}
-                // ✅ si tu componente soporta disabled:
-                disabled={outOfStock}
               />
-
+              
               {outOfStock ? (
                 <p className="mt-3 text-center text-xs font-semibold text-red-700">
                   Este producto no tiene stock disponible.

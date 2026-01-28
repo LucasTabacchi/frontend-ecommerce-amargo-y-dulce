@@ -1,10 +1,10 @@
 // src/lib/strapi-mappers.ts
 import type { ProductCardItem } from "@/components/products/ProductCard";
 
-const STRAPI_URL = (
+const STRAPI_URL = String(
   process.env.NEXT_PUBLIC_STRAPI_URL ??
-  process.env.STRAPI_URL ??
-  "http://localhost:1337"
+    process.env.STRAPI_URL ??
+    "http://localhost:1337"
 ).replace(/\/$/, "");
 
 function withBase(url?: string | null) {
@@ -18,32 +18,35 @@ function withBase(url?: string | null) {
 
 /* ===================== IMAGES ===================== */
 
+function pickFirstMedia(images: any) {
+  if (!images) return null;
+
+  // v4: { data: [{ attributes: {...} }] }
+  if (Array.isArray(images?.data)) return images.data[0] ?? null;
+
+  // v5: { data: [{...}] }
+  if (Array.isArray(images?.data)) return images.data[0] ?? null;
+
+  // v5: [{...}]
+  if (Array.isArray(images)) return images[0] ?? null;
+
+  // v5 single: {...}
+  return images;
+}
+
 /**
  * Soporta:
- * - Strapi v5 "plano": images: [{ url, formats... }]  o images: { ... } o images: { data: [...] }
+ * - Strapi v5 "plano": images: [{ url, formats... }] o images: { ... } o images: { data: [...] }
  * - Strapi v4 "media": images: { data: [{ attributes: { url, formats... } }] }
- * - Array directo: images: [ ... ]
  */
 export function getStrapiImageUrlFromAttributes(attributes: any): string | undefined {
   const attr = attributes ?? {};
+  const first = pickFirstMedia(attr?.images);
 
-  // v4: images.data[0].attributes
-  const v4ImgAttr = attr?.images?.data?.[0]?.attributes;
-
-  // v5 puede venir:
-  // - images: [{...}]
-  // - images: { data: [{...}] }
-  // - images: { ... } (single media)
-  const v5Arr0 = Array.isArray(attr?.images)
-    ? attr.images?.[0]
-    : Array.isArray(attr?.images?.data)
-    ? attr.images.data?.[0]
-    : attr?.images;
+  if (!first) return undefined;
 
   // puede venir con .attributes o plano
-  const v5ImgAttr = (v5Arr0 as any)?.attributes ?? v5Arr0;
-
-  const img = v4ImgAttr || v5ImgAttr;
+  const img = (first as any)?.attributes ?? first;
   if (!img) return undefined;
 
   const formats = (img as any)?.formats;
@@ -51,9 +54,10 @@ export function getStrapiImageUrlFromAttributes(attributes: any): string | undef
     formats?.medium?.url ||
     formats?.small?.url ||
     formats?.thumbnail?.url ||
-    (img as any)?.url;
+    (img as any)?.url ||
+    "";
 
-  return withBase(url);
+  return url ? withBase(url) : undefined;
 }
 
 /* ===================== PRODUCT MAPPER ===================== */
@@ -73,16 +77,27 @@ function toStrOrNull(v: any) {
   return s ? s : null;
 }
 
+function toOffOrUndef(v: any): number | undefined {
+  if (v === null || v === undefined || v === "") return undefined;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return undefined;
+  const off = Math.trunc(n);
+  return off > 0 ? off : undefined;
+}
+
 /**
- * Lee stock de manera tolerante:
- * - attr.stock (tu campo en Strapi)
- * - attr.qty / quantity (si lo llamaste distinto)
+ * Lee stock de manera tolerante (v4/v5):
+ * - product.stock (v5 plano)
+ * - attr.stock (v4 o v5 con attributes)
  * Devuelve number | null (si no existe).
  */
-function pickStock(attr: any): number | null {
+function pickStock(product: any, attr: any): number | null {
   const raw =
+    product?.stock ??
     attr?.stock ??
+    product?.qty ??
     attr?.qty ??
+    product?.quantity ??
     attr?.quantity ??
     null;
 
@@ -91,21 +106,16 @@ function pickStock(attr: any): number | null {
   const n = Number(raw);
   if (!Number.isFinite(n)) return null;
 
-  // stock nunca negativo
   return Math.max(0, Math.trunc(n));
 }
 
 /**
  * Mapper para cards de producto
- * Soporta Strapi v4 (data: {id, attributes}) y v5 (data: {id, documentId, ...attributes?})
- *
- * CLAVE: documentId en v5 viene al NIVEL RAÍZ del item, NO dentro de attributes.
+ * Soporta Strapi v4 (data: {id, attributes}) y v5 (data: {id, documentId, ...})
  */
 export function toCardItem(product: any): ProductCardItem {
   const attr = product?.attributes ?? product ?? {};
 
-  // ✅ Strapi v5: documentId está en product.documentId (root)
-  // fallback por si te llega un objeto ya "plano" o custom
   const documentId =
     toStrOrNull(product?.documentId) ??
     toStrOrNull(attr?.documentId) ??
@@ -114,32 +124,31 @@ export function toCardItem(product: any): ProductCardItem {
 
   const id = toIntOrNull(product?.id ?? attr?.id) ?? 0;
 
-  const offRaw = attr?.off;
-  const off =
-    offRaw == null || offRaw === ""
-      ? undefined
-      : Number.isFinite(Number(offRaw))
-      ? Number(offRaw)
-      : undefined;
+  const slug =
+    toStrOrNull(attr?.slug) ??
+    (documentId ? documentId : null) ??
+    String(id);
 
-  const stock = pickStock(attr);
+  const title = toStrOrNull(attr?.title) ?? "Producto";
+  const description = String(attr?.description ?? "");
+  const price = toNum(attr?.price ?? product?.price, 0);
+  const off = toOffOrUndef(attr?.off ?? product?.off);
+
+  const stock = pickStock(product, attr);
+  const imageUrl = getStrapiImageUrlFromAttributes(attr);
 
   return {
-    id, // ✅ id numérico (puede repetirse por draft/published en v5)
-    documentId, // ✅ estable en v5
-    slug: toStrOrNull(attr?.slug) ?? String(id), // fallback seguro
-    title: toStrOrNull(attr?.title) ?? "Producto",
-    description: String(attr?.description ?? ""),
-    price: toNum(attr?.price, 0),
+    id,
+    documentId,
+    slug,
+    title,
+    description,
+    price,
     off,
-
-    // ✅ stock: lo agregamos para que el carrito pueda limitar cantidades
-    // Si tu ProductCardItem NO tiene stock tipado, esto igual funciona en runtime.
-    // Ideal: agregalo al type ProductCardItem como `stock?: number | null`.
-    ...(stock !== null ? { stock } : {}),
-
-    // en tu schema Product.category es TEXT (no relación), así que lo dejamos string/null
     category: toStrOrNull(attr?.category),
-    imageUrl: getStrapiImageUrlFromAttributes(attr),
+    imageUrl,
+
+    // ✅ stock para clamp en carrito / add-to-cart
+    ...(stock !== null ? { stock } : {}),
   } as ProductCardItem;
 }

@@ -15,11 +15,7 @@ export type ProductCardItem = {
   imageUrl?: string;
   off?: number;
   category?: string;
-
-  // ✅ Strapi v5 (estable)
   documentId?: string | null;
-
-  // ✅ para limitar qty en carrito
   stock?: number | null;
 };
 

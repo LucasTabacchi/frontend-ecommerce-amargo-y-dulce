@@ -1,11 +1,11 @@
 // src/app/(shop)/carrito/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
 import { Container } from "@/components/layout/Container";
-import { Minus, Plus, Trash2, ShoppingCart, BadgePercent } from "lucide-react";
+import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
 import { useCartStore } from "@/store/cart.store";
 
 function formatARS(n: number) {
@@ -30,16 +30,45 @@ type Quote = {
   }>;
 };
 
+function normalizeQty(v: any) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
+
+function normStock(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.trunc(n));
+}
+
 export default function CarritoPage() {
   const items = useCartStore((s) => s.items);
   const inc = useCartStore((s) => s.inc);
   const dec = useCartStore((s) => s.dec);
   const removeItem = useCartStore((s) => s.removeItem);
 
+  // ✅ alerta simple (sin librerías)
+  const [alertMsg, setAlertMsg] = useState<string | null>(null);
+  const alertTimerRef = useRef<any>(null);
+
+  function showAlert(msg: string) {
+    setAlertMsg(msg);
+    if (alertTimerRef.current) window.clearTimeout(alertTimerRef.current);
+    alertTimerRef.current = window.setTimeout(() => setAlertMsg(null), 2500);
+  }
+
+  useEffect(() => {
+    return () => {
+      if (alertTimerRef.current) window.clearTimeout(alertTimerRef.current);
+    };
+  }, []);
+
   // Subtotal UI (respeta off por item) – sirve para mostrar mientras llega el quote
   const uiSubtotal = items.reduce((acc, it: any) => {
     const unit = priceWithOff(it.price, it.off);
-    return acc + unit * it.qty;
+    return acc + unit * normalizeQty(it.qty);
   }, 0);
 
   // ✅ Quote desde backend (reglas PRO) — SIN cupón en carrito
@@ -55,8 +84,8 @@ export default function CarritoPage() {
   const payloadItems = useMemo(() => {
     return (items as any[])
       .map((it) => ({
-        id: Number(it.id), // IMPORTANTE: tu store debería tener it.id (Strapi numeric id)
-        qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
+        id: Number(it.id),
+        qty: Math.max(1, normalizeQty(it.qty) || 1),
       }))
       .filter((x) => Number.isFinite(x.id) && x.id > 0);
   }, [items]);
@@ -64,7 +93,6 @@ export default function CarritoPage() {
   useEffect(() => {
     let alive = true;
 
-    // si no hay items, limpiamos
     if (!payloadItems.length) {
       setQuote({ subtotal: 0, discountTotal: 0, total: 0, appliedPromotions: [] });
       setIsQuoting(false);
@@ -80,15 +108,21 @@ export default function CarritoPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             items: payloadItems,
-            coupon: "", // ✅ NO cupón en carrito
+            coupon: "",
             shipping: 0,
           }),
+          cache: "no-store",
         });
 
-        const data = (await res.json()) as Quote;
+        const data = (await res.json().catch(() => null)) as Quote | null;
         if (!alive) return;
 
-        // fallback mínimo por si el backend devuelve algo inesperado
+        if (!res.ok || !data) {
+          const s = Math.round(uiSubtotal);
+          setQuote({ subtotal: s, discountTotal: 0, total: s, appliedPromotions: [] });
+          return;
+        }
+
         setQuote({
           subtotal: Number(data?.subtotal) || 0,
           discountTotal: Number(data?.discountTotal) || 0,
@@ -97,7 +131,6 @@ export default function CarritoPage() {
         });
       } catch {
         if (!alive) return;
-        // si falla el quote, volvemos a “sin promos”
         const s = Math.round(uiSubtotal);
         setQuote({ subtotal: s, discountTotal: 0, total: s, appliedPromotions: [] });
       } finally {
@@ -111,7 +144,6 @@ export default function CarritoPage() {
     };
   }, [payloadItems, uiSubtotal]);
 
-  // Totales a mostrar: preferimos quote si vino (y si hay items)
   const effectiveSubtotal = payloadItems.length ? (quote.subtotal || Math.round(uiSubtotal)) : 0;
   const effectiveDiscount = payloadItems.length ? quote.discountTotal : 0;
   const effectiveTotal = payloadItems.length
@@ -130,6 +162,13 @@ export default function CarritoPage() {
           <p className="mt-2 text-sm text-neutral-600">
             Revisá tus bombones antes de finalizar la compra.
           </p>
+
+          {/* ✅ Alert banner */}
+          {alertMsg && (
+            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+              {alertMsg}
+            </div>
+          )}
         </div>
 
         <div className="grid grid-cols-1 gap-8 pb-14 lg:grid-cols-[1fr_380px]">
@@ -150,10 +189,22 @@ export default function CarritoPage() {
                 const unit = priceWithOff(it.price, it.off);
                 const hasOff = typeof it.off === "number" && it.off > 0;
 
+                const qty = Math.max(1, normalizeQty(it.qty) || 1);
+
+                // ✅ stock local (si existe)
+                const stock = normStock(it.stock);
+                const hasStock = typeof stock === "number";
+
+                const outOfStock = hasStock && stock <= 0;
+                const reachedLimit = hasStock && stock > 0 && qty >= stock;
+
                 return (
                   <div
                     key={it.slug}
-                    className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm"
+                    className={[
+                      "rounded-xl border bg-white p-5 shadow-sm",
+                      outOfStock ? "border-red-200" : "border-neutral-200",
+                    ].join(" ")}
                   >
                     <div className="flex items-start gap-4">
                       {/* Imagen */}
@@ -192,6 +243,27 @@ export default function CarritoPage() {
                                 </span>
                               </div>
                             ) : null}
+
+                            {/* ✅ stock badge + hint */}
+                            {hasStock && (
+                              <div className="mt-2 text-xs">
+                                {outOfStock ? (
+                                  <span className="rounded-full bg-red-50 px-2 py-1 font-semibold text-red-700">
+                                    Stock agotado
+                                  </span>
+                                ) : reachedLimit ? (
+                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
+                                    Solo queda {stock}
+                                  </span>
+                                ) : stock <= 3 ? (
+                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
+                                    Quedan {stock}
+                                  </span>
+                                ) : (
+                                  <span className="text-neutral-500">Stock: {stock}</span>
+                                )}
+                              </div>
+                            )}
                           </div>
 
                           <button
@@ -218,12 +290,29 @@ export default function CarritoPage() {
                             </button>
 
                             <div className="min-w-[34px] text-center text-sm font-semibold">
-                              {it.qty}
+                              {qty}
                             </div>
 
                             <button
-                              onClick={() => inc(it.slug)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white hover:bg-neutral-50"
+                              onClick={() => {
+                                // ✅ bloqueo UI + aviso claro
+                                if (outOfStock) {
+                                  showAlert(`"${it.title}" no tiene stock disponible.`);
+                                  return;
+                                }
+                                if (reachedLimit) {
+                                  showAlert(`Solo queda ${stock} de "${it.title}".`);
+                                  return;
+                                }
+                                inc(it.slug);
+                              }}
+                              disabled={outOfStock || reachedLimit}
+                              className={[
+                                "inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white",
+                                outOfStock || reachedLimit
+                                  ? "cursor-not-allowed border-neutral-200 opacity-50"
+                                  : "border-neutral-200 hover:bg-neutral-50",
+                              ].join(" ")}
                               aria-label="Sumar"
                               type="button"
                             >
@@ -233,9 +322,22 @@ export default function CarritoPage() {
 
                           {/* Precio total del item */}
                           <div className="text-sm font-bold text-neutral-900">
-                            {formatARS(unit * it.qty)}
+                            {formatARS(unit * qty)}
                           </div>
                         </div>
+
+                        {/* ✅ warning si qty > stock (por items viejos / stock bajó) */}
+                        {hasStock && stock > 0 && qty > stock && (
+                          <p className="mt-3 text-xs text-red-700">
+                            Tu cantidad supera el stock disponible. Ajustala a {stock} para continuar.
+                          </p>
+                        )}
+
+                        {outOfStock && (
+                          <p className="mt-3 text-xs text-red-700">
+                            Este producto está sin stock. Eliminá el item para continuar.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>
@@ -260,7 +362,6 @@ export default function CarritoPage() {
           <aside className="h-fit rounded-xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h2 className="text-lg font-extrabold text-neutral-900">Resumen</h2>
 
-            {/* Totales */}
             <div className="mt-5 space-y-2 text-sm">
               <div className="flex justify-between text-neutral-700">
                 <span>Subtotal</span>
@@ -269,18 +370,18 @@ export default function CarritoPage() {
                 </span>
               </div>
 
-
               <div className="my-3 h-px bg-neutral-200" />
 
               <div className="flex justify-between text-base">
                 <span className="font-extrabold text-neutral-900">Total</span>
-                <span className="font-extrabold text-neutral-900">
-                  {formatARS(effectiveTotal)}
-                </span>
+                <span className="font-extrabold text-neutral-900">{formatARS(effectiveTotal)}</span>
               </div>
+
+              {isQuoting ? (
+                <div className="pt-2 text-xs text-neutral-500">Calculando promociones…</div>
+              ) : null}
             </div>
 
-            {/* CTA Checkout */}
             <Link
               href="/checkout"
               aria-disabled={items.length === 0}
