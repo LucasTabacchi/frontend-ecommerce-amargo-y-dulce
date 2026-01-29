@@ -71,6 +71,25 @@ type StockProblem = {
   available: number;
 };
 
+type Address = {
+  id: string; // documentId (v5)
+  documentId?: string | null;
+  numericId?: number | null;
+  label?: string | null;
+  fullName?: string | null;
+  phone?: string | null;
+  street?: string | null;
+  number?: string | null;
+  city?: string | null;
+  province?: string | null;
+  zip?: string | null;
+  notes?: string | null;
+  isDefault?: boolean | null;
+};
+
+// ✅ auth/me
+type MeResponse = { user: { email?: string | null; name?: string | null } | null };
+
 function toNum(v: any, def = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -84,8 +103,14 @@ function normalizeQuote(data: any, fallbackSubtotal: number): Quote {
     subtotal: s,
     discountTotal: d,
     total: tot,
-    appliedPromotions: Array.isArray(data?.appliedPromotions) ? data.appliedPromotions : [],
+    appliedPromotions: Array.isArray(data?.appliedPromotions)
+      ? data.appliedPromotions
+      : [],
   };
+}
+
+function isEmptyish(v: string) {
+  return String(v ?? "").trim().length === 0;
 }
 
 /* ================= page ================= */
@@ -110,6 +135,15 @@ export default function CheckoutPage() {
   const [province, setProvince] = useState("");
   const [postalCode, setPostalCode] = useState("");
   const [notes, setNotes] = useState("");
+
+  // ✅ direcciones guardadas
+  const [addrLoading, setAddrLoading] = useState(true);
+  const [addrError, setAddrError] = useState<string | null>(null);
+  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [selectedAddressId, setSelectedAddressId] = useState<string>("");
+
+  // ✅ usuario (para autocompletar email)
+  const [me, setMe] = useState<MeResponse>({ user: null });
 
   // cupón
   const [coupon, setCoupon] = useState("");
@@ -143,7 +177,9 @@ export default function CheckoutPage() {
     const orderId = sp.get("orderId");
     if (orderId && status) {
       router.replace(
-        `/gracias?status=${encodeURIComponent(status)}&orderId=${encodeURIComponent(orderId)}`
+        `/gracias?status=${encodeURIComponent(
+          status
+        )}&orderId=${encodeURIComponent(orderId)}`
       );
     }
   }, [sp, router]);
@@ -156,11 +192,155 @@ export default function CheckoutPage() {
 
   useEffect(() => {
     if (redirectedOrderId) {
-      setUi({ kind: "checking", orderId: redirectedOrderId, status: redirectedStatus });
+      setUi({
+        kind: "checking",
+        orderId: redirectedOrderId,
+        status: redirectedStatus,
+      });
     } else {
       setUi({ kind: "form" });
     }
   }, [redirectedOrderId, redirectedStatus]);
+
+  /* ================== AUTOFILL EMAIL ================== */
+
+  // 1) Traer /api/auth/me (si está logueado) y autocompletar email + nombre (si están vacíos)
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/me", { cache: "no-store" });
+        const j: MeResponse = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+
+        setMe({ user: j?.user ?? null });
+
+        const uEmail = String(j?.user?.email ?? "").trim();
+        const uName = String(j?.user?.name ?? "").trim();
+
+        if (uEmail && isEmptyish(email)) setEmail(uEmail);
+        if (uName && isEmptyish(name)) setName(uName);
+      } catch {
+        if (!alive) return;
+        setMe({ user: null });
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // 2) Fallback: si no está logueado, intenta leer email guardado en localStorage (sin pisar)
+  useEffect(() => {
+    if (!isEmptyish(email)) return;
+    try {
+      const saved = localStorage.getItem("amg_email") || "";
+      const s = saved.trim();
+      if (s && s.includes("@")) setEmail(s);
+    } catch {}
+  }, [email]);
+
+  /* ================== direcciones guardadas ================== */
+
+  async function loadAddresses() {
+    setAddrLoading(true);
+    setAddrError(null);
+    try {
+      const r = await fetch("/api/addresses", { cache: "no-store" });
+
+      // si no está logueado, puede devolver 401
+      if (r.status === 401) {
+        setAddresses([]);
+        setSelectedAddressId("");
+        return;
+      }
+
+      const j = await r.json().catch(() => null);
+      const list: Address[] = Array.isArray(j?.data)
+        ? j.data
+        : Array.isArray(j)
+        ? j
+        : [];
+
+      // orden: default primero (por si el backend no ordena)
+      const sorted = [...list].sort(
+        (a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))
+      );
+
+      setAddresses(sorted);
+
+      // ✅ selecciona default o primera
+      const def = sorted.find((x) => Boolean(x.isDefault));
+      const first = sorted[0];
+      if (def?.id) setSelectedAddressId(def.id);
+      else if (first?.id) setSelectedAddressId(first.id);
+      else setSelectedAddressId("");
+    } catch {
+      setAddrError("No se pudieron cargar tus direcciones guardadas.");
+      setAddresses([]);
+      setSelectedAddressId("");
+    } finally {
+      setAddrLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    // Intentamos cargar siempre: si está guest, responde 401 y no molesta.
+    loadAddresses();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const selectedAddress = useMemo(() => {
+    return (
+      addresses.find((a) => String(a.id) === String(selectedAddressId)) || null
+    );
+  }, [addresses, selectedAddressId]);
+
+  function applyAddressToForm(a: Address) {
+    // Solo pisa campos si vienen con datos
+    if (a.street) setStreet(a.street);
+    if (a.number) setNumber(a.number);
+    if (a.city) setCity(a.city);
+    if (a.province) setProvince(a.province);
+    if (a.zip) setPostalCode(a.zip);
+    if (a.notes) setNotes(a.notes);
+
+    // opcional: si el address trae phone, autocompleta teléfono
+    if (a.phone && isEmptyish(phone)) setPhone(a.phone);
+
+    // opcional: si el address trae nombre completo, autocompleta nombre
+    if (a.fullName && isEmptyish(name)) setName(a.fullName);
+
+    // ✅ NO TOCAR email acá (se completa desde /auth/me o localStorage)
+  }
+
+  // ✅ Auto-aplicar al cambiar selección (recomendado)
+  function onChangeAddress(nextId: string) {
+    setSelectedAddressId(nextId);
+    const next = addresses.find((a) => String(a.id) === String(nextId));
+    if (next) applyAddressToForm(next);
+  }
+
+  // Auto-aplicar predeterminada SOLO si el usuario aún no completó el form
+  useEffect(() => {
+    if (!selectedAddress) return;
+
+    const formEmpty =
+      isEmptyish(street) &&
+      isEmptyish(number) &&
+      isEmptyish(city) &&
+      isEmptyish(province) &&
+      isEmptyish(postalCode) &&
+      isEmptyish(notes);
+
+    if (formEmpty && selectedAddress.isDefault) {
+      applyAddressToForm(selectedAddress);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedAddress?.id]);
 
   /* ================== subtotal UI (igual que carrito) ================== */
 
@@ -199,7 +379,12 @@ export default function CheckoutPage() {
     const fallbackS = Math.round(uiSubtotal);
 
     if (!payloadItems.length) {
-      setQuote({ subtotal: 0, discountTotal: 0, total: 0, appliedPromotions: [] });
+      setQuote({
+        subtotal: 0,
+        discountTotal: 0,
+        total: 0,
+        appliedPromotions: [],
+      });
       setQuoting(false);
       return;
     }
@@ -236,7 +421,12 @@ export default function CheckoutPage() {
         setQuote(normalizeQuote(data, fallbackS));
       } catch {
         if (!alive) return;
-        setQuote({ subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] });
+        setQuote({
+          subtotal: fallbackS,
+          discountTotal: 0,
+          total: fallbackS,
+          appliedPromotions: [],
+        });
       } finally {
         if (alive) setQuoting(false);
       }
@@ -248,10 +438,12 @@ export default function CheckoutPage() {
     };
   }, [payloadItems, coupon, uiSubtotal]);
 
-  const effectiveSubtotal = payloadItems.length ? (quote.subtotal || Math.round(uiSubtotal)) : 0;
+  const effectiveSubtotal = payloadItems.length
+    ? quote.subtotal || Math.round(uiSubtotal)
+    : 0;
   const effectiveDiscount = payloadItems.length ? quote.discountTotal : 0;
   const effectiveTotal = payloadItems.length
-    ? (quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount))
+    ? quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)
     : 0;
 
   /* ================= polling ================= */
@@ -269,7 +461,8 @@ export default function CheckoutPage() {
 
         if (!alive) return;
 
-        const orderStatus = json?.data?.attributes?.orderStatus ?? json?.orderStatus ?? null;
+        const orderStatus =
+          json?.data?.attributes?.orderStatus ?? json?.orderStatus ?? null;
 
         if (orderStatus === "paid") {
           setUi({ kind: "paid", orderId: ui.orderId });
@@ -318,12 +511,22 @@ export default function CheckoutPage() {
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
+        return {
+          subtotal: fallbackS,
+          discountTotal: 0,
+          total: fallbackS,
+          appliedPromotions: [],
+        };
       }
 
       return normalizeQuote(data, fallbackS);
     } catch {
-      return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
+      return {
+        subtotal: fallbackS,
+        discountTotal: 0,
+        total: fallbackS,
+        appliedPromotions: [],
+      };
     }
   }
 
@@ -341,7 +544,8 @@ export default function CheckoutPage() {
     if (trimmedNumber.length < 1) return setError("Ingresá el número/altura.");
     if (trimmedCity.length < 2) return setError("Ingresá la ciudad.");
     if (trimmedProvince.length < 2) return setError("Ingresá la provincia.");
-    if (trimmedPostalCode.length < 4) return setError("Ingresá un código postal válido.");
+    if (trimmedPostalCode.length < 4)
+      return setError("Ingresá un código postal válido.");
 
     localStorage.setItem("amg_email", trimmedEmail.toLowerCase());
 
@@ -351,7 +555,6 @@ export default function CheckoutPage() {
       const finalQuote = await fetchFinalQuote();
       const mpExternalReference = safeUUID();
 
-      // ✅ sanity: total siempre number > 0
       const totalNum = Math.round(toNum(finalQuote?.total, 0));
       if (!Number.isFinite(totalNum) || totalNum <= 0) {
         throw new Error("Total inválido. Revisá tu carrito o promociones.");
@@ -367,6 +570,10 @@ export default function CheckoutPage() {
           phone: trimmedPhone,
 
           shippingAddress: {
+            source: selectedAddress?.id ? "saved_address" : "manual",
+            addressId: selectedAddress?.id ?? null,
+            label: selectedAddress?.label ?? null,
+
             street: trimmedStreet,
             number: trimmedNumber,
             city: trimmedCity,
@@ -402,12 +609,15 @@ export default function CheckoutPage() {
         throw new Error(pickErrorMessage(created, "No se pudo crear la orden"));
       }
 
-      const orderId: string | undefined = created?.orderDocumentId || created?.orderId;
+      const orderId: string | undefined =
+        created?.orderDocumentId || created?.orderId;
       const orderNumericId: string | undefined = created?.orderNumericId;
       const mpExtFromServer: string | undefined = created?.mpExternalReference;
 
       if (!orderId) {
-        throw new Error("No se recibió orderDocumentId/orderId desde /api/orders/create");
+        throw new Error(
+          "No se recibió orderDocumentId/orderId desde /api/orders/create"
+        );
       }
 
       const mpExternalReferenceFinal = mpExtFromServer || mpExternalReference;
@@ -421,9 +631,13 @@ export default function CheckoutPage() {
           unit_price: Number(priceWithOff(Number(it.price) || 0, it.off)),
           productDocumentId: it?.documentId ?? it?.productDocumentId ?? null,
         }))
-        .filter((x: any) => x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0);
+        .filter(
+          (x: any) =>
+            x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0
+        );
 
-      if (mpItems.length === 0) throw new Error("No hay items válidos para MercadoPago.");
+      if (mpItems.length === 0)
+        throw new Error("No hay items válidos para MercadoPago.");
 
       const prefRes = await fetch("/api/mp/create-preference", {
         method: "POST",
@@ -444,12 +658,13 @@ export default function CheckoutPage() {
 
       const pref = await prefRes.json().catch(() => null);
 
-      // ✅ MOSTRAR STOCK (409) EN VEZ DE "Total inválido"
       if (prefRes.status === 409 && pref?.code === "OUT_OF_STOCK") {
         const probs = Array.isArray(pref?.problems) ? pref.problems : [];
         setStockProblems(
           probs.map((p: any) => ({
-            productDocumentId: String(p?.productDocumentId ?? p?.documentId ?? ""),
+            productDocumentId: String(
+              p?.productDocumentId ?? p?.documentId ?? ""
+            ),
             title: String(p?.title ?? "Producto"),
             requested: Number(p?.requested ?? 0),
             available: Number(p?.available ?? 0),
@@ -459,11 +674,17 @@ export default function CheckoutPage() {
       }
 
       if (!prefRes.ok) {
-        throw new Error(pickErrorMessage(pref, "No se pudo crear la preferencia MP"));
+        throw new Error(
+          pickErrorMessage(pref, "No se pudo crear la preferencia MP")
+        );
       }
 
-      const checkoutUrl: string | undefined = pref?.sandbox_init_point || pref?.init_point;
-      if (!checkoutUrl) throw new Error("MercadoPago no devolvió init_point / sandbox_init_point.");
+      const checkoutUrl: string | undefined =
+        pref?.sandbox_init_point || pref?.init_point;
+      if (!checkoutUrl)
+        throw new Error(
+          "MercadoPago no devolvió init_point / sandbox_init_point."
+        );
 
       window.location.href = checkoutUrl;
     } catch (err: any) {
@@ -512,6 +733,66 @@ export default function CheckoutPage() {
 
         {ui.kind === "form" && (
           <form onSubmit={handleSubmit} className="max-w-md space-y-4">
+            {/* ✅ Direcciones guardadas */}
+            <div className="rounded border p-3">
+              <div className="flex items-center justify-between">
+                <div className="text-sm font-semibold">Dirección guardada</div>
+                <Link href="/mi-perfil" className="text-xs underline">
+                  Administrar
+                </Link>
+              </div>
+
+              {addrLoading ? (
+                <div className="mt-2 text-xs opacity-70">
+                  Cargando direcciones…
+                </div>
+              ) : addrError ? (
+                <div className="mt-2 text-xs text-red-600">{addrError}</div>
+              ) : addresses.length === 0 ? (
+                <div className="mt-2 text-xs opacity-70">
+                  No tenés direcciones guardadas (podés cargar una en Mi Perfil).
+                </div>
+              ) : (
+                <div className="mt-2">
+                  <select
+                    className="w-full border p-2 text-sm"
+                    value={selectedAddressId}
+                    onChange={(e) => onChangeAddress(e.target.value)}
+                  >
+                    {addresses.map((a) => {
+                      const label =
+                        a.label ||
+                        (a.street
+                          ? `${a.street}${a.number ? ` ${a.number}` : ""}`
+                          : "Dirección");
+                      const extra = a.isDefault ? " (Predeterminada)" : "";
+                      return (
+                        <option key={a.id} value={a.id}>
+                          {label}
+                          {extra}
+                        </option>
+                      );
+                    })}
+                  </select>
+
+                  {/* preview */}
+                  {selectedAddress ? (
+                    <div className="mt-2 text-xs text-neutral-600">
+                      {selectedAddress.street ? `${selectedAddress.street}` : ""}
+                      {selectedAddress.number
+                        ? ` ${selectedAddress.number}`
+                        : ""}
+                      {selectedAddress.city ? `, ${selectedAddress.city}` : ""}
+                      {selectedAddress.province
+                        ? `, ${selectedAddress.province}`
+                        : ""}
+                      {selectedAddress.zip ? ` (${selectedAddress.zip})` : ""}
+                    </div>
+                  ) : null}
+                </div>
+              )}
+            </div>
+
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
@@ -576,7 +857,7 @@ export default function CheckoutPage() {
             <textarea
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notas (piso, depto, referencia, timbre...) (opcional)"
+              placeholder="Notas para esta entrega (opcional)"
               className="w-full border p-2"
               rows={2}
             />
@@ -593,7 +874,9 @@ export default function CheckoutPage() {
             />
 
             {showInvalidCoupon ? (
-              <div className="text-xs text-red-600">Cupón inválido o no aplicable.</div>
+              <div className="text-xs text-red-600">
+                Cupón inválido o no aplicable.
+              </div>
             ) : null}
 
             <div className="rounded border p-3 text-sm">
@@ -612,11 +895,17 @@ export default function CheckoutPage() {
                 <span>{formatARS(effectiveTotal)}</span>
               </div>
 
-              {quoting ? <div className="mt-2 text-xs opacity-70">Calculando promociones…</div> : null}
+              {quoting ? (
+                <div className="mt-2 text-xs opacity-70">
+                  Calculando promociones…
+                </div>
+              ) : null}
 
               {quote.appliedPromotions?.length ? (
                 <div className="mt-3">
-                  <div className="text-xs font-semibold">Promociones aplicadas</div>
+                  <div className="text-xs font-semibold">
+                    Promociones aplicadas
+                  </div>
                   <ul className="mt-1 space-y-1 text-xs">
                     {quote.appliedPromotions.map((p) => (
                       <li key={p.id} className="flex justify-between gap-3">
@@ -676,7 +965,9 @@ export default function CheckoutPage() {
         {ui.kind === "timeout" && (
           <div className="max-w-md rounded border p-4">
             <p className="font-semibold">No pudimos confirmar el pago todavía.</p>
-            <p className="text-sm opacity-80">Podés refrescar en unos segundos o revisar el estado más tarde.</p>
+            <p className="text-sm opacity-80">
+              Podés refrescar en unos segundos o revisar el estado más tarde.
+            </p>
             <Link href="/" className="mt-3 inline-block underline">
               Volver a la tienda
             </Link>

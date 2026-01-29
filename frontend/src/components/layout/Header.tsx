@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
+import { ProfilePanel } from "@/components/profile/ProfilePanel";
 
 type Suggestion = {
   id: string | number | null;
@@ -49,6 +50,11 @@ function NavLink({
   );
 }
 
+function safeName(v: any) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.length ? s : null;
+}
+
 export function Header() {
   const router = useRouter();
   const pathname = usePathname();
@@ -61,6 +67,10 @@ export function Header() {
   // ✅ auth
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
+
+  // ✅ Profile dropdown
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileBoxRef = useRef<HTMLDivElement | null>(null);
 
   async function refreshMe() {
     setMeLoading(true);
@@ -79,8 +89,11 @@ export function Header() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
+      // ✅ limpia UI instantáneo
       setMe(null);
       setLoginOpen(false);
+      setProfileOpen(false);
+      router.refresh();
     }
   }
 
@@ -114,7 +127,7 @@ export function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // ESC cierra menú mobile, modal login y sugerencias
+  // ESC cierra menú mobile, modal login, sugerencias y perfil
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -122,6 +135,7 @@ export function Header() {
         setLoginOpen(false);
         setOpenSuggest(false);
         setActiveIndex(-1);
+        setProfileOpen(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -146,6 +160,28 @@ export function Header() {
     document.addEventListener("mousedown", onDocMouseDown);
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, []);
+
+  // ✅ click afuera: cierra profile panel
+  useEffect(() => {
+    const onDocMouseDown = (e: MouseEvent) => {
+      if (!profileOpen) return;
+      const box = profileBoxRef.current;
+      if (box && box.contains(e.target as Node)) return;
+      setProfileOpen(false);
+    };
+
+    document.addEventListener("mousedown", onDocMouseDown);
+    return () => document.removeEventListener("mousedown", onDocMouseDown);
+  }, [profileOpen]);
+
+  // ✅ si cambio de ruta, cierro dropdowns
+  useEffect(() => {
+    setProfileOpen(false);
+    setOpenSuggest(false);
+    setActiveIndex(-1);
+    setMobileOpen(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pathname]);
 
   // ✅ si estoy en /productos, sincronizo el input con ?q=
   useEffect(() => {
@@ -179,9 +215,10 @@ export function Header() {
 
     setLoadingSuggest(true);
     try {
-      const r = await fetch(`/api/search/suggest?q=${encodeURIComponent(qq)}`, {
-        cache: "no-store",
-      });
+      const r = await fetch(
+        `/api/search/suggest?q=${encodeURIComponent(qq)}`,
+        { cache: "no-store" }
+      );
       const data = await r.json();
       const res = Array.isArray(data?.results) ? data.results.slice(0, 5) : [];
       setSuggestions(res);
@@ -204,7 +241,6 @@ export function Header() {
   }
 
   function onKeyDownSearch(e: React.KeyboardEvent<HTMLInputElement>) {
-    // Enter siempre va a /productos?q=
     if (e.key === "Enter") {
       e.preventDefault();
       goSearch(query);
@@ -286,7 +322,9 @@ export function Header() {
             aria-autocomplete="list"
             aria-expanded={showDropdown}
             aria-controls={
-              variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"
+              variant === "desktop"
+                ? "suggestions-desktop"
+                : "suggestions-mobile"
             }
           />
         </form>
@@ -302,7 +340,11 @@ export function Header() {
             </div>
 
             <ul
-              id={variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"}
+              id={
+                variant === "desktop"
+                  ? "suggestions-desktop"
+                  : "suggestions-mobile"
+              }
               role="listbox"
               className="max-h-80 overflow-auto"
             >
@@ -345,9 +387,9 @@ export function Header() {
   }
 
   const displayName =
-    me?.username ||
-    me?.name ||
-    (typeof me?.email === "string" ? me.email.split("@")[0] : null) ||
+    safeName(me?.name) ||
+    safeName(me?.username) ||
+    (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
     "Cuenta";
 
   return (
@@ -391,11 +433,11 @@ export function Header() {
           <div className="hidden items-center gap-4 md:flex">
             <div className="h-6 w-px bg-neutral-200" />
 
-            <div className="relative">
+            <div className="relative" ref={profileBoxRef}>
               {!me && !meLoading ? (
                 <>
                   <button
-                    onClick={() => setLoginOpen((v) => !v)}
+                    onClick={() => setLoginOpen(true)}
                     className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950"
                     type="button"
                     aria-expanded={loginOpen}
@@ -404,45 +446,45 @@ export function Header() {
                     Iniciar sesión
                   </button>
 
-                  <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+                  <LoginModal
+                    open={loginOpen}
+                    onClose={() => setLoginOpen(false)}
+                  />
                 </>
               ) : (
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-2 text-[15px] font-medium text-neutral-800">
+                <>
+                  <button
+                    onClick={() => setProfileOpen((v) => !v)}
+                    className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950 transition"
+                    type="button"
+                    aria-expanded={profileOpen}
+                    disabled={meLoading}
+                  >
                     <User className="h-5 w-5" />
-                    {meLoading ? "Cargando…" : `Hola, ${displayName}`}
-                  </div>
+                    {meLoading ? "Cargando…" : displayName}
+                  </button>
 
-                  {!meLoading && (
-                    <button
-                      onClick={logout}
-                      className="inline-flex items-center gap-2 text-[13px] text-neutral-700 hover:text-neutral-900 underline"
-                      type="button"
-                    >
-                      <LogOut className="h-4 w-4" />
-                      Cerrar sesión
-                    </button>
+                  {profileOpen && (
+                    <>
+                      <div
+                        className="fixed inset-0 z-40"
+                        onClick={() => setProfileOpen(false)}
+                      />
+
+                      <div className="absolute right-0 top-12 z-50">
+                        <ProfilePanel
+                          variant="dropdown"
+                          onClose={() => setProfileOpen(false)}
+                          onLogout={logout}  
+                        />
+                      </div>
+                    </>
                   )}
-                </div>
+                </>
               )}
             </div>
 
             <div className="h-6 w-px bg-neutral-200" />
-
-            {/* ✅ Mis pedidos SOLO si está logueado */}
-            {me && !meLoading && (
-              <>
-                <Link
-                  href="/mis-pedidos"
-                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-800 hover:text-neutral-950 transition"
-                >
-                  <Package className="h-5 w-5" />
-                  Mis pedidos
-                </Link>
-
-                <div className="h-6 w-px bg-neutral-200" />
-              </>
-            )}
 
             <Link
               href="/carrito"
@@ -474,7 +516,11 @@ export function Header() {
               aria-expanded={mobileOpen}
               type="button"
             >
-              {mobileOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
+              {mobileOpen ? (
+                <X className="h-5 w-5" />
+              ) : (
+                <Menu className="h-5 w-5" />
+              )}
             </button>
           </div>
         </div>
@@ -495,7 +541,12 @@ export function Header() {
                   Sobre nosotros
                 </NavLink>
 
-                {/* ✅ Mis pedidos SOLO si está logueado */}
+                {me && !meLoading && (
+                  <NavLink href="/mi-perfil" onClick={() => setMobileOpen(false)}>
+                    Mi perfil
+                  </NavLink>
+                )}
+
                 {me && !meLoading && (
                   <NavLink href="/mis-pedidos" onClick={() => setMobileOpen(false)}>
                     Mis pedidos
