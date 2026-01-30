@@ -46,7 +46,30 @@ function readShipping(obj: any) {
     postalCode: isNonEmptyString(s?.postalCode) ? s.postalCode.trim() : "",
     notes: isNonEmptyString(s?.notes) ? s.notes.trim() : "",
     text: isNonEmptyString(s?.text) ? s.text.trim() : "",
+    source: isNonEmptyString(s?.source) ? s.source.trim() : "",
+    addressId: isNonEmptyString(s?.addressId) ? s.addressId.trim() : "",
+    label: isNonEmptyString(s?.label) ? s.label.trim() : "",
   };
+}
+
+/** ✅ Normaliza DNI: solo dígitos */
+function normalizeDni(v: any) {
+  const raw = String(v ?? "").trim();
+  const digits = raw.replace(/\D/g, "");
+  return digits.length ? digits : "";
+}
+
+type ShippingMethod = "delivery" | "pickup";
+
+function readShippingMethod(v: any): ShippingMethod {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s === "pickup") return "pickup";
+  return "delivery";
+}
+
+function readMoney(v: any, def = 0) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? Math.round(n) : def;
 }
 
 /**
@@ -58,8 +81,6 @@ async function getLoggedUser(strapiBase: string) {
   if (!jwt) return null;
 
   try {
-    // En Strapi v5, many endpoints devuelven documentId.
-    // users/me suele traerlo también; si no, al menos id+email.
     const r = await fetch(`${strapiBase}/api/users/me`, {
       headers: { Authorization: `Bearer ${jwt}` },
       cache: "no-store",
@@ -69,12 +90,11 @@ async function getLoggedUser(strapiBase: string) {
 
     const me = await r.json().catch(() => null);
 
-    const id = me?.id ?? null; // numérico (útil como fallback)
-    const documentId = me?.documentId ?? null; // ✅ ideal para relaciones v5
+    const id = me?.id ?? null;
+    const documentId = me?.documentId ?? null;
     const email =
       typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
 
-    // Si no tengo documentId, igual devuelvo id/email (pero para relation intentamos documentId)
     if (!id && !documentId) return null;
 
     return { id, documentId, email };
@@ -85,19 +105,18 @@ async function getLoggedUser(strapiBase: string) {
 
 /**
  * Construye el payload de Strapi v5 para setear una relación.
- * En v5 se recomienda connect con documentId. :contentReference[oaicite:1]{index=1}
  */
 function buildUserRelation(logged: { id: any; documentId: any } | null) {
   const doc = String(logged?.documentId ?? "").trim();
   if (doc) {
     return { user: { connect: [doc] } };
   }
-  // Fallback: si por alguna razón no vino documentId (no ideal en v5)
+
   const idNum = Number(logged?.id);
   if (Number.isFinite(idNum) && idNum > 0) {
-    // Intento “best effort” (puede fallar según versión/config)
     return { user: { connect: [String(idNum)] } };
   }
+
   return {};
 }
 
@@ -108,7 +127,6 @@ export async function POST(req: Request) {
       "http://localhost:1337"
   );
 
-  // Token server (API token) para CREATE/UPDATE (más estable para checkout)
   const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
   if (!token) {
     return NextResponse.json(
@@ -148,25 +166,51 @@ export async function POST(req: Request) {
   const email = logged?.email
     ? logged.email
     : isNonEmptyString(incomingData.email)
-    ? incomingData.email.trim().toLowerCase()
-    : "";
+      ? incomingData.email.trim().toLowerCase()
+      : "";
 
   const phone = isNonEmptyString(incomingData.phone) ? incomingData.phone.trim() : "";
+
+  // ✅ DNI (opcional pero si viene, validamos)
+  const dni = normalizeDni(incomingData.dni);
 
   if (name.length < 2) return badRequest("Nombre inválido", { name });
   if (!email.includes("@")) return badRequest("Email inválido", { email });
   if (phone.length < 6) return badRequest("Teléfono inválido", { phone });
 
+  if (dni && (dni.length < 7 || dni.length > 10)) {
+    return badRequest("DNI inválido (7 a 10 dígitos)", { dni });
+  }
+
+  // ✅ shipping policy
+  const shippingMethod: ShippingMethod = readShippingMethod(incomingData.shippingMethod);
+  const shippingCost = readMoney(incomingData.shippingCost, 0);
+  const pickupPoint = isNonEmptyString(incomingData.pickupPoint) ? incomingData.pickupPoint.trim() : null;
+
+  if (shippingCost < 0) return badRequest("shippingCost inválido", { shippingCost });
+
+  // Dirección solo si es delivery
   const shipping = readShipping(incomingData);
 
-  if (shipping.street.length < 2) return badRequest("Falta street", { street: shipping.street });
-  if (shipping.number.length < 1) return badRequest("Falta number", { number: shipping.number });
-  if (shipping.city.length < 2) return badRequest("Falta city", { city: shipping.city });
-  if (shipping.province.length < 2) return badRequest("Falta province", { province: shipping.province });
-  if (shipping.postalCode.length < 4) return badRequest("Falta postalCode", { postalCode: shipping.postalCode });
+  if (shippingMethod === "delivery") {
+    if (shipping.street.length < 2) return badRequest("Falta street", { street: shipping.street });
+    if (shipping.number.length < 1) return badRequest("Falta number", { number: shipping.number });
+    if (shipping.city.length < 2) return badRequest("Falta city", { city: shipping.city });
+    if (shipping.province.length < 2) return badRequest("Falta province", { province: shipping.province });
+    if (shipping.postalCode.length < 4) return badRequest("Falta postalCode", { postalCode: shipping.postalCode });
+  } else {
+    // pickup
+    // si querés exigir pickupPoint:
+    if (!pickupPoint) {
+      return badRequest("Falta pickupPoint para retiro en sucursal", { pickupPoint });
+    }
+  }
 
   const items = Array.isArray(incomingData.items) ? incomingData.items : [];
   if (items.length === 0) return badRequest("Tu carrito está vacío (items).");
+
+  const subtotal = readMoney(incomingData.subtotal, 0);
+  const discountTotal = readMoney(incomingData.discountTotal, 0);
 
   const total = Number(incomingData.total);
   if (!Number.isFinite(total) || total <= 0) {
@@ -179,39 +223,63 @@ export async function POST(req: Request) {
     ? incomingData.mpExternalReference.trim()
     : safeUUID();
 
-  const shippingText =
+  const shippingTextDelivery =
     shipping.text ||
     `${shipping.street} ${shipping.number}, ${shipping.city}, ${shipping.province} (${shipping.postalCode})`;
 
-  // 🔒 Importante: NO propagamos keys raras desde el cliente.
-  // Construimos el data “limpio” y dejamos afuera user/createdAt/etc.
+  // 🔒 data “limpio” (whitelist)
   const baseData: any = {
-    // si querés permitir más campos del cliente, agregalos explícitamente acá:
-    subtotal: incomingData.subtotal ?? undefined,
-    discountTotal: incomingData.discountTotal ?? undefined,
+    subtotal: subtotal || undefined,
+    discountTotal: discountTotal || undefined,
     coupon: incomingData.coupon ?? undefined,
     appliedPromotions: incomingData.appliedPromotions ?? undefined,
 
     name,
     email,
     phone,
-    total,
+
+    // ✅ DNI snapshot
+    dni: dni || null,
+
+    // ✅ shipping fields
+    shippingMethod,
+    shippingCost,
+    pickupPoint,
+
+    total: Math.round(Number(total)),
     items,
 
-    shippingAddress: {
-      street: shipping.street,
-      number: shipping.number,
-      city: shipping.city,
-      province: shipping.province,
-      postalCode: shipping.postalCode,
-      notes: shipping.notes || null,
-      text: shippingText,
-    },
+    shippingAddress:
+      shippingMethod === "pickup"
+        ? {
+            source: "pickup",
+            addressId: null,
+            label: "Retiro en sucursal",
+            street: null,
+            number: null,
+            city: null,
+            province: null,
+            postalCode: null,
+            notes: null,
+            text: pickupPoint ? `Retiro en sucursal: ${pickupPoint}` : "Retiro en sucursal",
+          }
+        : {
+            source: shipping.source || (incomingData?.shippingAddress?.addressId ? "saved_address" : "manual"),
+            addressId: shipping.addressId || null,
+            label: shipping.label || null,
+
+            street: shipping.street,
+            number: shipping.number,
+            city: shipping.city,
+            province: shipping.province,
+            postalCode: shipping.postalCode,
+            notes: shipping.notes || null,
+            text: shippingTextDelivery,
+          },
 
     mpExternalReference,
   };
 
-  // ✅ relación user en formato v5 (connect)
   const relationPart = buildUserRelation(logged);
 
   // 1) CREATE en Strapi (intento con relación)
@@ -231,7 +299,7 @@ export async function POST(req: Request) {
 
   let created = await strapiJSON(createRes);
 
-  // 🔁 Fallback: si Strapi sigue tirando Invalid key user, creamos SIN relación
+  // 🔁 Fallback: si Strapi tira Invalid key user, creamos SIN relación
   if (!createRes.ok && created?.error?.details?.key === "user") {
     console.warn("[orders/create] Strapi rechazó relation user, reintento sin user…");
     createPayload = { data: { ...baseData } };

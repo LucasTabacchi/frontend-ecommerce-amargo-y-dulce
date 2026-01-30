@@ -1,20 +1,15 @@
 import Link from "next/link";
-import { Facebook, Instagram, Phone, Mail, MapPin, Download } from "lucide-react";
+import { Facebook, Instagram, Phone, Mail } from "lucide-react";
 
 /**
  * Footer del ecommerce:
- * - Izquierda: marca (logo grande + frase)
- * - Centro: navegación extra (categorías / ayuda / legal)
+ * - Centro: navegación extra (ayuda / legal)
  * - Derecha: contacto + redes
- *
- * Responsive:
- * - Mobile: se apila en columnas
- * - Desktop: 3 columnas (marca | links | contacto)
  */
 export function Footer() {
   return (
     <footer className="bg-red-600 text-white">
-      <div className="w-full px-6 lg:px-12 py-12">
+      <div className="w-full px-6 py-12 lg:px-12">
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-3">
           {/* =========================
               IZQUIERDA — MARCA
@@ -25,60 +20,28 @@ export function Footer() {
             </div>
 
             <p className="mt-4 max-w-sm text-sm text-red-100">
-              Sabores para elegir, recuerdos para guardar. Chocolates
-              pensados para regalar (o regalarte).
+              Sabores para elegir, recuerdos para guardar. Chocolates pensados
+              para regalar (o regalarte).
             </p>
           </div>
 
           {/* =========================
               CENTRO — LINKS / INFO
           ========================== */}
-          <div className="grid grid-cols-2 gap-8 sm:grid-cols-3">
-            {/* Categorías */}
-            <div>
-              <h4 className="text-sm font-bold tracking-wide uppercase">
-                Categorías
-              </h4>
-              <ul className="mt-3 space-y-2 text-sm text-red-100">
-                <li>
-                  <Link className="hover:text-white" href="/productos">
-                    Chocolates
-                  </Link>
-                </li>
-                <li>
-                  <Link className="hover:text-white" href="/productos">
-                    Bombones
-                  </Link>
-                </li>
-                <li>
-                  <Link className="hover:text-white" href="/productos">
-                    Caramelos
-                  </Link>
-                </li>
-                <li>
-                  <Link className="hover:text-white" href="/productos">
-                    Cereales
-                  </Link>
-                </li>
-                <li>
-                  <Link className="hover:text-white" href="/productos">
-                    Ver todo
-                  </Link>
-                </li>
-              </ul>
-            </div>
-
+          <div className="grid grid-cols-2 gap-10 sm:gap-12">
             {/* Ayuda */}
             <div>
-              <h4 className="text-sm font-bold tracking-wide uppercase">Ayuda</h4>
-              <ul className="mt-3 space-y-2 text-sm text-red-100">
+              <h4 className="text-sm font-bold uppercase tracking-wide">
+                Ayuda
+              </h4>
+              <ul className="mt-4 space-y-2 text-sm text-red-100">
                 <li>
-                  <Link className="hover:text-white" href="/sobre-nosotros">
+                  <Link className="hover:text-white" href="/envios">
                     Envíos
                   </Link>
                 </li>
                 <li>
-                  <Link className="hover:text-white" href="/sobre-nosotros">
+                  <Link className="hover:text-white" href="/preguntas-frecuentes">
                     Preguntas frecuentes
                   </Link>
                 </li>
@@ -92,46 +55,35 @@ export function Footer() {
                     Promociones
                   </Link>
                 </li>
-
-                {/* “Catálogos” (placeholder) */}
-                <li>
-                  <a
-                    className="inline-flex items-center gap-2 hover:text-white"
-                    href="#"
-                    aria-label="Catálogo de productos"
-                  >
-                    Catálogo <Download className="h-4 w-4" />
-                  </a>
-                </li>
               </ul>
             </div>
 
             {/* Legal */}
             <div>
-              <h4 className="text-sm font-bold tracking-wide uppercase">Legal</h4>
-              <ul className="mt-3 space-y-2 text-sm text-red-100">
+              <h4 className="text-sm font-bold uppercase tracking-wide">
+                Legal
+              </h4>
+              <ul className="mt-4 space-y-2 text-sm text-red-100">
                 <li>
-                  <a className="hover:text-white" href="#" aria-label="Términos">
+                  <Link
+                    className="hover:text-white"
+                    href="/terminos-y-condiciones"
+                  >
                     Términos y condiciones
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
+                  <Link
                     className="hover:text-white"
-                    href="#"
-                    aria-label="Privacidad"
+                    href="/politica-de-privacidad"
                   >
                     Política de privacidad
-                  </a>
+                  </Link>
                 </li>
                 <li>
-                  <a
-                    className="hover:text-white"
-                    href="#"
-                    aria-label="Arrepentimiento"
-                  >
-                    Arrepentimiento de compra
-                  </a>
+                  <Link className="hover:text-white" href="/libro-de-quejas">
+                    Libro de Quejas Online
+                  </Link>
                 </li>
               </ul>
             </div>
@@ -141,7 +93,7 @@ export function Footer() {
               DERECHA — CONTACTO / REDES
           ========================== */}
           <div className="lg:text-right">
-            <h4 className="text-sm font-bold tracking-wide uppercase">
+            <h4 className="text-sm font-bold uppercase tracking-wide">
               Contactos
             </h4>
 
@@ -169,24 +121,13 @@ export function Footer() {
           </div>
         </div>
 
-        {/* Línea inferior (copyright + links) */}
+        {/* Línea inferior */}
         <div className="mt-10 border-t border-white/20 pt-6 text-xs text-red-100">
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-            <span>© {new Date().getFullYear()} Amargo y Dulce. Todos los derechos reservados.</span>
-
-            <div className="flex flex-wrap gap-x-3 gap-y-1">
-              <a className="hover:text-white" href="#">
-                Términos
-              </a>
-              <span className="opacity-50">|</span>
-              <a className="hover:text-white" href="#">
-                Privacidad
-              </a>
-              <span className="opacity-50">|</span>
-              <a className="hover:text-white" href="#">
-                Arrepentimiento
-              </a>
-            </div>
+            <span>
+              © {new Date().getFullYear()} Amargo y Dulce. Todos los derechos
+              reservados.
+            </span>
           </div>
         </div>
       </div>

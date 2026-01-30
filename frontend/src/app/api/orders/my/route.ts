@@ -14,8 +14,8 @@ function pickIdForOps(row: any) {
   // Strapi v5: documentId; v4: id
   return (
     row?.documentId ??
-    row?.id ??
     row?.attributes?.documentId ??
+    row?.id ??
     row?.attributes?.id ??
     null
   );
@@ -56,38 +56,54 @@ export async function GET() {
   }
 
   const me = meRes.json;
-  const userId = me?.id ?? null; // v4 users/me devuelve id
+
+  // Strapi v5 suele tener documentId en user
+  const userDocumentId = String(me?.documentId ?? "").trim();
+  const userId = me?.id ?? null; // por compat
   const userEmail = String(me?.email || "").trim().toLowerCase();
 
-  if (!userId && !userEmail) {
+  if (!userDocumentId && !userId && !userEmail) {
     return NextResponse.json(
-      { error: "No se pudo resolver usuario (sin id/email)" },
+      { error: "No se pudo resolver usuario (sin documentId/id/email)" },
       { status: 500 }
     );
   }
 
   // 2) Pedidos del usuario (preferimos relación user)
-  const sp = new URLSearchParams();
-  sp.set("pagination[pageSize]", "50");
-  sp.set("sort[0]", "createdAt:desc");
-  sp.set("populate", "*");
+  // En v5 la relación se filtra por documentId:
+  // filters[user][documentId][$eq]=<docId>
+  let ordersRes: { r: Response; json: any } | null = null;
 
-  // ✅ con la relación nueva en Order: user
-  if (userId) {
-    // Strapi v4 relation filter
+  if (userDocumentId) {
+    const sp = new URLSearchParams();
+    sp.set("pagination[pageSize]", "50");
+    sp.set("sort[0]", "createdAt:desc");
+    sp.set("populate", "*");
+    sp.set("filters[user][documentId][$eq]", userDocumentId);
+
+    ordersRes = await fetchJson(`${strapiBase}/api/orders?${sp.toString()}`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  } else if (userId) {
+    // fallback: algunos setups siguen aceptando id
+    const sp = new URLSearchParams();
+    sp.set("pagination[pageSize]", "50");
+    sp.set("sort[0]", "createdAt:desc");
+    sp.set("populate", "*");
     sp.set("filters[user][id][$eq]", String(userId));
+
+    ordersRes = await fetchJson(`${strapiBase}/api/orders?${sp.toString()}`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
   }
 
-  let ordersRes = await fetchJson(`${strapiBase}/api/orders?${sp.toString()}`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-  });
-
-  const dataByUser = Array.isArray(ordersRes.json?.data) ? ordersRes.json.data : [];
+  const dataByUser =
+    ordersRes?.r?.ok && Array.isArray(ordersRes.json?.data) ? ordersRes.json.data : [];
 
   // 3) Fallback por email (para pedidos viejos sin user seteado)
   const shouldFallback =
-    (!!userEmail && ordersRes.r.ok && dataByUser.length === 0) ||
-    (!!userEmail && !ordersRes.r.ok);
+    !!userEmail &&
+    (!ordersRes || !ordersRes.r.ok || (ordersRes.r.ok && dataByUser.length === 0));
 
   if (shouldFallback) {
     const sp2 = new URLSearchParams();
@@ -101,10 +117,10 @@ export async function GET() {
     });
   }
 
-  if (!ordersRes.r.ok) {
+  if (!ordersRes || !ordersRes.r.ok) {
     return NextResponse.json(
-      { error: "Strapi error", status: ordersRes.r.status, details: ordersRes.json },
-      { status: ordersRes.r.status }
+      { error: "Strapi error", status: ordersRes?.r?.status, details: ordersRes?.json },
+      { status: ordersRes?.r?.status || 500 }
     );
   }
 
@@ -112,15 +128,19 @@ export async function GET() {
 
   const orders = data.map((row: any) => ({
     id: pickIdForOps(row),
+
     orderNumber: pickField(row, "orderNumber"),
     orderStatus: pickField(row, "orderStatus"),
     total: pickField(row, "total"),
     createdAt: pickField(row, "createdAt"),
+
+    // ✅ Envío / Retiro
+    shippingMethod: pickField(row, "shippingMethod"),
+    shippingCost: pickField(row, "shippingCost"),
+    pickupPoint: pickField(row, "pickupPoint"),
+
     shippingAddress: pickField(row, "shippingAddress"),
     items: pickField(row, "items"),
-    // opcional, por si querés debug:
-    // user: pickField(row, "user"),
-    // email: pickField(row, "email"),
   }));
 
   return NextResponse.json({ orders }, { status: 200 });

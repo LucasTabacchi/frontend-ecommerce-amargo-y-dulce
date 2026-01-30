@@ -13,7 +13,7 @@ export const dynamic = "force-dynamic";
  *
  * Modos:
  * 1) Con cookie strapi_jwt (usuario logueado):
- *    - Verifica ownership (order.user === me.id) o fallback por email.
+ *    - Verifica ownership (order.user === me.documentId / me.id) o fallback por email.
  *    - Devuelve datos completos del pedido.
  *
  * 2) Sin cookie (guest / retorno de MP en /gracias):
@@ -42,9 +42,18 @@ async function fetchStrapi(url: string, bearer: string) {
 }
 
 function flattenRow(row: any) {
-  // Strapi v4: { id, attributes: {...} }
-  // Strapi v5: suele venir "flat" o similar; mantenemos compat.
-  return row?.attributes ? { id: row.id, ...row.attributes } : row;
+  // v4: { id, attributes: {...} }
+  // v5: a veces viene "flat"
+  if (!row) return row;
+  if (row?.attributes) {
+    // IMPORTANT: preservamos documentId que en v5 suele estar afuera de attributes
+    return {
+      id: row.id ?? null,
+      documentId: row.documentId ?? row?.attributes?.documentId ?? null,
+      ...row.attributes,
+    };
+  }
+  return row;
 }
 
 function normalizeOrderRow(row: any) {
@@ -60,20 +69,22 @@ function normalizeOrderRow(row: any) {
 }
 
 function pickOwnerInfo(row: any) {
+  // Intentamos cubrir v4/v5:
   // v4: row.attributes.user.data.id
-  // v5: row.user?.id o row.user?.data?.id (depende)
-  const userId =
+  // v5: row.user?.documentId / row.user?.id
+  const userIdOrDoc =
+    row?.user?.documentId ??
     row?.user?.id ??
-    row?.user?.data?.id ??
     row?.user?.data?.documentId ??
-    row?.attributes?.user?.data?.id ??
+    row?.user?.data?.id ??
     row?.attributes?.user?.data?.documentId ??
+    row?.attributes?.user?.data?.id ??
     null;
 
   const email = row?.email ?? row?.attributes?.email ?? null;
 
   return {
-    userId: userId != null ? String(userId) : null,
+    userIdOrDoc: userIdOrDoc != null ? String(userIdOrDoc) : null,
     email: typeof email === "string" ? email.trim().toLowerCase() : null,
   };
 }
@@ -81,6 +92,7 @@ function pickOwnerInfo(row: any) {
 /** Campos seguros para modo "guest" (sin PII) */
 function pickSafePublicFields(row: any) {
   const flat = flattenRow(row);
+
   return {
     documentId: flat?.documentId ?? row?.documentId ?? null,
     id: flat?.id ?? row?.id ?? null,
@@ -99,13 +111,17 @@ function pickSafePublicFields(row: any) {
     discountTotal: flat?.discountTotal ?? null,
     coupon: flat?.coupon ?? null,
 
+    // ✅ shipping (no es PII)
+    shippingMethod: flat?.shippingMethod ?? null,
+    shippingCost: flat?.shippingCost ?? null,
+    pickupPoint: flat?.pickupPoint ?? null,
+
     createdAt: flat?.createdAt ?? null,
     updatedAt: flat?.updatedAt ?? null,
   };
 }
 
 function buildFieldsQuerySafe() {
-  // pedimos solo fields mínimos (sin populate) para guest
   const q = new URLSearchParams();
   const fields = [
     "documentId",
@@ -120,6 +136,10 @@ function buildFieldsQuerySafe() {
     "subtotal",
     "discountTotal",
     "coupon",
+    // ✅ shipping
+    "shippingMethod",
+    "shippingCost",
+    "pickupPoint",
     "createdAt",
     "updatedAt",
   ];
@@ -139,11 +159,9 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
     return NextResponse.json({ error: "Falta id" }, { status: 400 });
   }
 
-  // Tokens
   const jwt = cookies().get("strapi_jwt")?.value || null;
   const serverToken = process.env.STRAPI_API_TOKEN || process.env.STRAPI_TOKEN || null;
 
-  // Helpers de respuesta
   const returnFull = (row: any) => {
     const normalized = normalizeOrderRow(row);
     return NextResponse.json({ data: normalized.data }, { status: 200 });
@@ -160,121 +178,124 @@ export async function GET(_: Request, { params }: { params: { id: string } }) {
   if (jwt) {
     // 0) Usuario logueado
     const meRes = await fetchStrapi(`${strapiBase}/api/users/me`, jwt);
+
+    // Si el jwt está roto/expirado, caemos a guest (si hay serverToken)
     if (!meRes.res.ok) {
-      // si el jwt está roto/expirado, caemos a guest (si hay serverToken) para que /gracias no explote
       if (!serverToken) {
         return NextResponse.json(
           { error: "JWT inválido o expirado", status: meRes.res.status, details: meRes.json },
           { status: 401 }
         );
       }
-    }
+      // cae a modo guest abajo
+    } else {
+      const me = meRes.json;
+      const meId = me?.id != null ? String(me.id) : null;
+      const meDoc = me?.documentId != null ? String(me.documentId) : null;
+      const meEmail = typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
 
-    const me = meRes.json;
-    const meId = me?.id != null ? String(me.id) : null;
-    const meEmail = typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
+      async function authorizeAndReturn(row: any) {
+        const flat = flattenRow(row);
+        const { userIdOrDoc, email } = pickOwnerInfo(flat);
 
-    async function authorizeAndReturn(row: any) {
-      const { userId, email } = pickOwnerInfo(row);
+        const okByUserDoc = !!meDoc && !!userIdOrDoc && userIdOrDoc === meDoc;
+        const okByUserId = !!meId && !!userIdOrDoc && userIdOrDoc === meId;
+        const okByEmail = !!meEmail && !!email && email === meEmail;
 
-      const okByUser = !!meId && !!userId && userId === meId;
-      const okByEmail = !!meEmail && !!email && email === meEmail;
+        if (!okByUserDoc && !okByUserId && !okByEmail) {
+          return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        }
 
-      if (!okByUser && !okByEmail) {
-        return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+        return returnFull(row);
       }
 
-      return returnFull(row);
-    }
+      // 1) Intento directo por documentId usando JWT
+      {
+        const url = `${strapiBase}/api/orders/${encodeURIComponent(idOrNumber)}?populate=*`;
+        const { res, json } = await fetchStrapi(url, jwt);
 
-    // 1) Intento directo por documentId usando JWT
-    {
-      const url = `${strapiBase}/api/orders/${encodeURIComponent(idOrNumber)}?populate=*`;
-      const { res, json } = await fetchStrapi(url, jwt);
+        if (res.ok && json?.data) return authorizeAndReturn(json.data);
 
-      if (res.ok && json?.data) return authorizeAndReturn(json.data);
-
-      // si es 401/403 por permisos, intentamos fallback con serverToken (si existe) y seguimos chequeando ownership con me
-      const canFallback = (res.status === 401 || res.status === 403) && !!serverToken;
-      if (!res.ok && res.status !== 404 && !canFallback) {
-        return NextResponse.json(
-          { error: "Strapi error", status: res.status, details: json },
-          { status: res.status }
-        );
-      }
-
-      if (canFallback) {
-        const fb = await fetchStrapi(url, serverToken!);
-        if (fb.res.ok && fb.json?.data) return authorizeAndReturn(fb.json.data);
-      }
-    }
-
-    // 2) Buscar por orderNumber usando JWT
-    {
-      const q = new URLSearchParams();
-      q.set("filters[orderNumber][$eq]", idOrNumber);
-      q.set("pagination[pageSize]", "1");
-      q.set("populate", "*");
-
-      const url = `${strapiBase}/api/orders?${q.toString()}`;
-      const { res, json } = await fetchStrapi(url, jwt);
-
-      if (res.ok) {
-        const row = json?.data?.[0];
-        if (row) return authorizeAndReturn(row);
-      } else {
         const canFallback = (res.status === 401 || res.status === 403) && !!serverToken;
-        if (!canFallback) {
+        if (!res.ok && res.status !== 404 && !canFallback) {
           return NextResponse.json(
             { error: "Strapi error", status: res.status, details: json },
             { status: res.status }
           );
         }
-        const fb = await fetchStrapi(url, serverToken!);
-        if (fb.res.ok) {
-          const row = fb.json?.data?.[0];
-          if (row) return authorizeAndReturn(row);
+
+        if (canFallback) {
+          const fb = await fetchStrapi(url, serverToken!);
+          if (fb.res.ok && fb.json?.data) return authorizeAndReturn(fb.json.data);
         }
       }
-    }
 
-    // 3) Fallback por id numérico
-    if (isNumeric(idOrNumber)) {
-      const q = new URLSearchParams();
-      q.set("filters[id][$eq]", idOrNumber);
-      q.set("pagination[pageSize]", "1");
-      q.set("populate", "*");
+      // 2) Buscar por orderNumber usando JWT
+      {
+        const q = new URLSearchParams();
+        q.set("filters[orderNumber][$eq]", idOrNumber);
+        q.set("pagination[pageSize]", "1");
+        q.set("populate", "*");
 
-      const url = `${strapiBase}/api/orders?${q.toString()}`;
-      const { res, json } = await fetchStrapi(url, jwt);
+        const url = `${strapiBase}/api/orders?${q.toString()}`;
+        const { res, json } = await fetchStrapi(url, jwt);
 
-      if (res.ok) {
-        const row = json?.data?.[0];
-        if (row) return authorizeAndReturn(row);
-      } else {
-        const canFallback = (res.status === 401 || res.status === 403) && !!serverToken;
-        if (!canFallback) {
-          return NextResponse.json(
-            { error: "Strapi error", status: res.status, details: json },
-            { status: res.status }
-          );
-        }
-        const fb = await fetchStrapi(url, serverToken!);
-        if (fb.res.ok) {
-          const row = fb.json?.data?.[0];
+        if (res.ok) {
+          const row = json?.data?.[0];
           if (row) return authorizeAndReturn(row);
+        } else {
+          const canFallback = (res.status === 401 || res.status === 403) && !!serverToken;
+          if (!canFallback) {
+            return NextResponse.json(
+              { error: "Strapi error", status: res.status, details: json },
+              { status: res.status }
+            );
+          }
+          const fb = await fetchStrapi(url, serverToken!);
+          if (fb.res.ok) {
+            const row = fb.json?.data?.[0];
+            if (row) return authorizeAndReturn(row);
+          }
         }
       }
-    }
 
-    return NextResponse.json({ error: "Order not found", id: idOrNumber }, { status: 404 });
+      // 3) Fallback por id numérico
+      if (isNumeric(idOrNumber)) {
+        const q = new URLSearchParams();
+        q.set("filters[id][$eq]", idOrNumber);
+        q.set("pagination[pageSize]", "1");
+        q.set("populate", "*");
+
+        const url = `${strapiBase}/api/orders?${q.toString()}`;
+        const { res, json } = await fetchStrapi(url, jwt);
+
+        if (res.ok) {
+          const row = json?.data?.[0];
+          if (row) return authorizeAndReturn(row);
+        } else {
+          const canFallback = (res.status === 401 || res.status === 403) && !!serverToken;
+          if (!canFallback) {
+            return NextResponse.json(
+              { error: "Strapi error", status: res.status, details: json },
+              { status: res.status }
+            );
+          }
+          const fb = await fetchStrapi(url, serverToken!);
+          if (fb.res.ok) {
+            const row = fb.json?.data?.[0];
+            if (row) return authorizeAndReturn(row);
+          }
+        }
+      }
+
+      return NextResponse.json({ error: "Order not found", id: idOrNumber }, { status: 404 });
+    }
   }
 
   // =========================
   // MODO 2: GUEST (SIN JWT)
   // =========================
   if (!serverToken) {
-    // Sin jwt y sin token server: no se puede consultar nada
     return NextResponse.json({ error: "No autenticado" }, { status: 401 });
   }
 

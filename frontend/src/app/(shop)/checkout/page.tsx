@@ -42,6 +42,33 @@ function safeUUID() {
   return `ref_${Date.now()}_${Math.random().toString(16).slice(2)}`;
 }
 
+function safeText(v: any) {
+  return String(v ?? "").trim();
+}
+
+function hasCartDiscount(items: any[]) {
+  return (items || []).some((it) => {
+    const off = Number(it?.off ?? 0);
+    return Number.isFinite(off) && off > 0;
+  });
+}
+
+type ShippingMethod = "delivery" | "pickup";
+
+function calcShippingARS(baseTotal: number, method: ShippingMethod) {
+  if (method === "pickup") return 0;
+
+  // Delivery según tu política
+  if (baseTotal > 65000) return 0;
+  if (baseTotal > 40000) return 4500;
+  return 9000;
+}
+
+const PICKUP_POINT = {
+  name: "Amargo y Dulce",
+  address: "Gascón 349 - Concepción del Uruguay",
+};
+
 /* ================= types ================= */
 
 type UiState =
@@ -87,8 +114,10 @@ type Address = {
   isDefault?: boolean | null;
 };
 
-// ✅ auth/me
-type MeResponse = { user: { email?: string | null; name?: string | null } | null };
+// ✅ auth/me (ahora incluye dni)
+type MeResponse = {
+  user: { email?: string | null; name?: string | null; dni?: string | null } | null;
+};
 
 function toNum(v: any, def = 0) {
   const n = typeof v === "number" ? v : Number(v);
@@ -103,9 +132,7 @@ function normalizeQuote(data: any, fallbackSubtotal: number): Quote {
     subtotal: s,
     discountTotal: d,
     total: tot,
-    appliedPromotions: Array.isArray(data?.appliedPromotions)
-      ? data.appliedPromotions
-      : [],
+    appliedPromotions: Array.isArray(data?.appliedPromotions) ? data.appliedPromotions : [],
   };
 }
 
@@ -125,8 +152,16 @@ export default function CheckoutPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
 
+  // ✅ DNI
+  const [dni, setDni] = useState("");
+  const [dniSaving, setDniSaving] = useState(false);
+  const [dniError, setDniError] = useState<string | null>(null);
+
   // obligatorios
   const [phone, setPhone] = useState("");
+
+  // ✅ método de entrega
+  const [shippingMethod, setShippingMethod] = useState<ShippingMethod>("delivery");
 
   // shippingAddress
   const [street, setStreet] = useState("");
@@ -142,7 +177,7 @@ export default function CheckoutPage() {
   const [addresses, setAddresses] = useState<Address[]>([]);
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
 
-  // ✅ usuario (para autocompletar email)
+  // ✅ usuario (para autocompletar email/nombre/dni)
   const [me, setMe] = useState<MeResponse>({ user: null });
 
   // cupón
@@ -154,11 +189,12 @@ export default function CheckoutPage() {
 
   // ✅ error general
   const [error, setError] = useState<string | null>(null);
-  // ✅ errores de stock (vienen del backend /api/mp/create-preference con 409)
+  // ✅ errores de stock
   const [stockProblems, setStockProblems] = useState<StockProblem[]>([]);
 
   const trimmedName = name.trim();
   const trimmedEmail = email.trim();
+  const trimmedDni = dni.trim();
   const trimmedPhone = phone.trim();
 
   const trimmedStreet = street.trim();
@@ -171,15 +207,16 @@ export default function CheckoutPage() {
   const redirectedStatus = sp.get("status") || "";
   const redirectedOrderId = sp.get("orderId") || "";
 
+  // ✅ Si el carrito tiene items con descuento, no permitimos cupón
+  const cartHasDiscount = useMemo(() => hasCartDiscount(cartItems as any[]), [cartItems]);
+
   // Redirigir si vuelve con query
   useEffect(() => {
     const status = sp.get("status");
     const orderId = sp.get("orderId");
     if (orderId && status) {
       router.replace(
-        `/gracias?status=${encodeURIComponent(
-          status
-        )}&orderId=${encodeURIComponent(orderId)}`
+        `/gracias?status=${encodeURIComponent(status)}&orderId=${encodeURIComponent(orderId)}`
       );
     }
   }, [sp, router]);
@@ -202,9 +239,8 @@ export default function CheckoutPage() {
     }
   }, [redirectedOrderId, redirectedStatus]);
 
-  /* ================== AUTOFILL EMAIL ================== */
+  /* ================== AUTOFILL (ME + LOCALSTORAGE) ================== */
 
-  // 1) Traer /api/auth/me (si está logueado) y autocompletar email + nombre (si están vacíos)
   useEffect(() => {
     let alive = true;
 
@@ -218,9 +254,11 @@ export default function CheckoutPage() {
 
         const uEmail = String(j?.user?.email ?? "").trim();
         const uName = String(j?.user?.name ?? "").trim();
+        const uDni = String(j?.user?.dni ?? "").trim();
 
         if (uEmail && isEmptyish(email)) setEmail(uEmail);
         if (uName && isEmptyish(name)) setName(uName);
+        if (uDni && isEmptyish(dni)) setDni(uDni);
       } catch {
         if (!alive) return;
         setMe({ user: null });
@@ -233,7 +271,6 @@ export default function CheckoutPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // 2) Fallback: si no está logueado, intenta leer email guardado en localStorage (sin pisar)
   useEffect(() => {
     if (!isEmptyish(email)) return;
     try {
@@ -243,6 +280,47 @@ export default function CheckoutPage() {
     } catch {}
   }, [email]);
 
+  useEffect(() => {
+    if (!isEmptyish(dni)) return;
+    try {
+      const saved = localStorage.getItem("amg_dni") || "";
+      const s = saved.trim();
+      if (s) setDni(s);
+    } catch {}
+  }, [dni]);
+
+  async function persistDniIfLogged(nextDniRaw: string) {
+    const u = me?.user;
+    if (!u) return;
+
+    const clean = safeText(nextDniRaw);
+    if (!clean) return;
+    if (!/^\d{7,8}$/.test(clean)) return;
+    if (String(u.dni ?? "").trim() === clean) return;
+
+    try {
+      setDniSaving(true);
+      setDniError(null);
+
+      const r = await fetch("/api/auth/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dni: clean }),
+      });
+
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(j?.error || "No se pudo guardar el DNI.");
+
+      setMe((prev) => ({
+        user: prev.user ? { ...prev.user, dni: clean } : prev.user,
+      }));
+    } catch (e: any) {
+      setDniError(e?.message || "Error guardando DNI.");
+    } finally {
+      setDniSaving(false);
+    }
+  }
+
   /* ================== direcciones guardadas ================== */
 
   async function loadAddresses() {
@@ -251,7 +329,6 @@ export default function CheckoutPage() {
     try {
       const r = await fetch("/api/addresses", { cache: "no-store" });
 
-      // si no está logueado, puede devolver 401
       if (r.status === 401) {
         setAddresses([]);
         setSelectedAddressId("");
@@ -259,20 +336,14 @@ export default function CheckoutPage() {
       }
 
       const j = await r.json().catch(() => null);
-      const list: Address[] = Array.isArray(j?.data)
-        ? j.data
-        : Array.isArray(j)
-        ? j
-        : [];
+      const list: Address[] = Array.isArray(j?.data) ? j.data : Array.isArray(j) ? j : [];
 
-      // orden: default primero (por si el backend no ordena)
       const sorted = [...list].sort(
         (a, b) => Number(Boolean(b.isDefault)) - Number(Boolean(a.isDefault))
       );
 
       setAddresses(sorted);
 
-      // ✅ selecciona default o primera
       const def = sorted.find((x) => Boolean(x.isDefault));
       const first = sorted[0];
       if (def?.id) setSelectedAddressId(def.id);
@@ -288,19 +359,15 @@ export default function CheckoutPage() {
   }
 
   useEffect(() => {
-    // Intentamos cargar siempre: si está guest, responde 401 y no molesta.
     loadAddresses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const selectedAddress = useMemo(() => {
-    return (
-      addresses.find((a) => String(a.id) === String(selectedAddressId)) || null
-    );
+    return addresses.find((a) => String(a.id) === String(selectedAddressId)) || null;
   }, [addresses, selectedAddressId]);
 
   function applyAddressToForm(a: Address) {
-    // Solo pisa campos si vienen con datos
     if (a.street) setStreet(a.street);
     if (a.number) setNumber(a.number);
     if (a.city) setCity(a.city);
@@ -308,23 +375,16 @@ export default function CheckoutPage() {
     if (a.zip) setPostalCode(a.zip);
     if (a.notes) setNotes(a.notes);
 
-    // opcional: si el address trae phone, autocompleta teléfono
     if (a.phone && isEmptyish(phone)) setPhone(a.phone);
-
-    // opcional: si el address trae nombre completo, autocompleta nombre
     if (a.fullName && isEmptyish(name)) setName(a.fullName);
-
-    // ✅ NO TOCAR email acá (se completa desde /auth/me o localStorage)
   }
 
-  // ✅ Auto-aplicar al cambiar selección (recomendado)
   function onChangeAddress(nextId: string) {
     setSelectedAddressId(nextId);
     const next = addresses.find((a) => String(a.id) === String(nextId));
     if (next) applyAddressToForm(next);
   }
 
-  // Auto-aplicar predeterminada SOLO si el usuario aún no completó el form
   useEffect(() => {
     if (!selectedAddress) return;
 
@@ -352,10 +412,6 @@ export default function CheckoutPage() {
     }, 0);
   }, [cartItems]);
 
-  /**
-   * ✅ Payload quote: IGUAL que carrito
-   * Enviamos SOLO id + qty (el backend trae precios reales y calcula promos)
-   */
   const payloadItems = useMemo(() => {
     return (cartItems as any[])
       .map((it) => ({
@@ -365,7 +421,7 @@ export default function CheckoutPage() {
       .filter((x) => Number.isFinite(x.id) && x.id > 0);
   }, [cartItems]);
 
-  /* ================= quote PRO (igual que carrito, con fallback) ================= */
+  /* ================= quote PRO ================= */
 
   const [quote, setQuote] = useState<Quote>({
     subtotal: 0,
@@ -398,8 +454,8 @@ export default function CheckoutPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             items: payloadItems,
-            coupon: coupon.trim(),
-            shipping: 0,
+            coupon: cartHasDiscount ? "" : coupon.trim(),
+            shipping: 0, // promos no dependen del shipping por ahora
           }),
           cache: "no-store",
         });
@@ -436,15 +492,20 @@ export default function CheckoutPage() {
       alive = false;
       clearTimeout(t);
     };
-  }, [payloadItems, coupon, uiSubtotal]);
+  }, [payloadItems, coupon, uiSubtotal, cartHasDiscount]);
 
-  const effectiveSubtotal = payloadItems.length
-    ? quote.subtotal || Math.round(uiSubtotal)
-    : 0;
+  const effectiveSubtotal = payloadItems.length ? quote.subtotal || Math.round(uiSubtotal) : 0;
   const effectiveDiscount = payloadItems.length ? quote.discountTotal : 0;
   const effectiveTotal = payloadItems.length
     ? quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)
     : 0;
+
+  // ✅ Envío y total final (usamos effectiveTotal como base)
+  const shippingCost = useMemo(
+    () => calcShippingARS(effectiveTotal, shippingMethod),
+    [effectiveTotal, shippingMethod]
+  );
+  const grandTotal = useMemo(() => Math.max(0, effectiveTotal + shippingCost), [effectiveTotal, shippingCost]);
 
   /* ================= polling ================= */
 
@@ -461,8 +522,7 @@ export default function CheckoutPage() {
 
         if (!alive) return;
 
-        const orderStatus =
-          json?.data?.attributes?.orderStatus ?? json?.orderStatus ?? null;
+        const orderStatus = json?.data?.attributes?.orderStatus ?? json?.orderStatus ?? null;
 
         if (orderStatus === "paid") {
           setUi({ kind: "paid", orderId: ui.orderId });
@@ -503,7 +563,7 @@ export default function CheckoutPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           items: payloadItems,
-          coupon: coupon.trim(),
+          coupon: cartHasDiscount ? "" : coupon.trim(),
           shipping: 0,
         }),
         cache: "no-store",
@@ -511,22 +571,12 @@ export default function CheckoutPage() {
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        return {
-          subtotal: fallbackS,
-          discountTotal: 0,
-          total: fallbackS,
-          appliedPromotions: [],
-        };
+        return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
       }
 
       return normalizeQuote(data, fallbackS);
     } catch {
-      return {
-        subtotal: fallbackS,
-        discountTotal: 0,
-        total: fallbackS,
-        appliedPromotions: [],
-      };
+      return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
     }
   }
 
@@ -535,22 +585,35 @@ export default function CheckoutPage() {
     setError(null);
     setStockProblems([]);
 
+    try {
+      localStorage.setItem("amg_dni", safeText(dni));
+    } catch {}
+
     if (!cartItems.length) return setError("Tu carrito está vacío.");
     if (trimmedName.length < 2) return setError("Ingresá un nombre válido.");
     if (!trimmedEmail.includes("@")) return setError("Ingresá un email válido.");
 
+    if (trimmedDni.length > 0 && !/^\d{7,8}$/.test(trimmedDni)) {
+      return setError("Ingresá un DNI válido (7 u 8 dígitos).");
+    }
+
     if (trimmedPhone.length < 6) return setError("Ingresá un teléfono válido.");
-    if (trimmedStreet.length < 2) return setError("Ingresá la calle.");
-    if (trimmedNumber.length < 1) return setError("Ingresá el número/altura.");
-    if (trimmedCity.length < 2) return setError("Ingresá la ciudad.");
-    if (trimmedProvince.length < 2) return setError("Ingresá la provincia.");
-    if (trimmedPostalCode.length < 4)
-      return setError("Ingresá un código postal válido.");
+
+    // ✅ Validación de dirección SOLO si es delivery
+    if (shippingMethod === "delivery") {
+      if (trimmedStreet.length < 2) return setError("Ingresá la calle.");
+      if (trimmedNumber.length < 1) return setError("Ingresá el número/altura.");
+      if (trimmedCity.length < 2) return setError("Ingresá la ciudad.");
+      if (trimmedProvince.length < 2) return setError("Ingresá la provincia.");
+      if (trimmedPostalCode.length < 4) return setError("Ingresá un código postal válido.");
+    }
 
     localStorage.setItem("amg_email", trimmedEmail.toLowerCase());
 
     try {
       setLoading(true);
+
+      await persistDniIfLogged(trimmedDni);
 
       const finalQuote = await fetchFinalQuote();
       const mpExternalReference = safeUUID();
@@ -560,6 +623,9 @@ export default function CheckoutPage() {
         throw new Error("Total inválido. Revisá tu carrito o promociones.");
       }
 
+      const shippingFinal = calcShippingARS(totalNum, shippingMethod);
+      const grandTotalFinal = Math.max(0, totalNum + shippingFinal);
+
       /* 1️⃣ Crear orden */
       const createRes = await fetch("/api/orders/create", {
         method: "POST",
@@ -568,26 +634,48 @@ export default function CheckoutPage() {
           name: trimmedName,
           email: trimmedEmail,
           phone: trimmedPhone,
+          dni: trimmedDni || null,
 
-          shippingAddress: {
-            source: selectedAddress?.id ? "saved_address" : "manual",
-            addressId: selectedAddress?.id ?? null,
-            label: selectedAddress?.label ?? null,
+          // ✅ Shipping policy snapshot
+          shippingMethod,
+          shippingCost: shippingFinal,
+          pickupPoint: shippingMethod === "pickup" ? `${PICKUP_POINT.name} (${PICKUP_POINT.address})` : null,
 
-            street: trimmedStreet,
-            number: trimmedNumber,
-            city: trimmedCity,
-            province: trimmedProvince,
-            postalCode: trimmedPostalCode,
-            notes: trimmedNotes || null,
-            text: `${trimmedStreet} ${trimmedNumber}, ${trimmedCity}, ${trimmedProvince} (${trimmedPostalCode})`,
-          },
+          // ✅ shippingAddress: solo si es delivery
+          shippingAddress:
+            shippingMethod === "pickup"
+              ? {
+                  source: "pickup",
+                  addressId: null,
+                  label: "Retiro en sucursal",
+                  street: null,
+                  number: null,
+                  city: null,
+                  province: null,
+                  postalCode: null,
+                  notes: null,
+                  text: `Retiro en sucursal ${PICKUP_POINT.name} - ${PICKUP_POINT.address}`,
+                }
+              : {
+                  source: selectedAddress?.id ? "saved_address" : "manual",
+                  addressId: selectedAddress?.id ?? null,
+                  label: selectedAddress?.label ?? null,
+                  street: trimmedStreet,
+                  number: trimmedNumber,
+                  city: trimmedCity,
+                  province: trimmedProvince,
+                  postalCode: trimmedPostalCode,
+                  notes: trimmedNotes || null,
+                  text: `${trimmedStreet} ${trimmedNumber}, ${trimmedCity}, ${trimmedProvince} (${trimmedPostalCode})`,
+                },
 
           subtotal: Math.round(toNum(finalQuote.subtotal, 0)),
           discountTotal: Math.round(toNum(finalQuote.discountTotal, 0)),
           appliedPromotions: finalQuote.appliedPromotions,
-          coupon: coupon.trim() || null,
-          total: totalNum,
+          coupon: cartHasDiscount ? null : coupon.trim() || null,
+
+          // ✅ Total final con envío
+          total: grandTotalFinal,
 
           mpExternalReference,
 
@@ -609,15 +697,12 @@ export default function CheckoutPage() {
         throw new Error(pickErrorMessage(created, "No se pudo crear la orden"));
       }
 
-      const orderId: string | undefined =
-        created?.orderDocumentId || created?.orderId;
+      const orderId: string | undefined = created?.orderDocumentId || created?.orderId;
       const orderNumericId: string | undefined = created?.orderNumericId;
       const mpExtFromServer: string | undefined = created?.mpExternalReference;
 
       if (!orderId) {
-        throw new Error(
-          "No se recibió orderDocumentId/orderId desde /api/orders/create"
-        );
+        throw new Error("No se recibió orderDocumentId/orderId desde /api/orders/create");
       }
 
       const mpExternalReferenceFinal = mpExtFromServer || mpExternalReference;
@@ -631,13 +716,9 @@ export default function CheckoutPage() {
           unit_price: Number(priceWithOff(Number(it.price) || 0, it.off)),
           productDocumentId: it?.documentId ?? it?.productDocumentId ?? null,
         }))
-        .filter(
-          (x: any) =>
-            x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0
-        );
+        .filter((x: any) => x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0);
 
-      if (mpItems.length === 0)
-        throw new Error("No hay items válidos para MercadoPago.");
+      if (mpItems.length === 0) throw new Error("No hay items válidos para MercadoPago.");
 
       const prefRes = await fetch("/api/mp/create-preference", {
         method: "POST",
@@ -648,10 +729,15 @@ export default function CheckoutPage() {
           mpExternalReference: mpExternalReferenceFinal,
           items: mpItems,
 
-          total: totalNum,
+          // 👇 enviamos el shipping para que el server lo cobre en MP
+          shippingMethod,
+          shippingCost: shippingFinal,
+
+          // Totales informativos
+          total: grandTotalFinal,
           subtotal: Math.round(toNum(finalQuote.subtotal, 0)),
           discountTotal: Math.round(toNum(finalQuote.discountTotal, 0)),
-          coupon: coupon.trim() || null,
+          coupon: cartHasDiscount ? null : coupon.trim() || null,
           appliedPromotions: finalQuote.appliedPromotions,
         }),
       });
@@ -662,9 +748,7 @@ export default function CheckoutPage() {
         const probs = Array.isArray(pref?.problems) ? pref.problems : [];
         setStockProblems(
           probs.map((p: any) => ({
-            productDocumentId: String(
-              p?.productDocumentId ?? p?.documentId ?? ""
-            ),
+            productDocumentId: String(p?.productDocumentId ?? p?.documentId ?? ""),
             title: String(p?.title ?? "Producto"),
             requested: Number(p?.requested ?? 0),
             available: Number(p?.available ?? 0),
@@ -674,17 +758,13 @@ export default function CheckoutPage() {
       }
 
       if (!prefRes.ok) {
-        throw new Error(
-          pickErrorMessage(pref, "No se pudo crear la preferencia MP")
-        );
+        throw new Error(pickErrorMessage(pref, "No se pudo crear la preferencia MP"));
       }
 
-      const checkoutUrl: string | undefined =
-        pref?.sandbox_init_point || pref?.init_point;
-      if (!checkoutUrl)
-        throw new Error(
-          "MercadoPago no devolvió init_point / sandbox_init_point."
-        );
+      const checkoutUrl: string | undefined = pref?.sandbox_init_point || pref?.init_point;
+      if (!checkoutUrl) {
+        throw new Error("MercadoPago no devolvió init_point / sandbox_init_point.");
+      }
 
       window.location.href = checkoutUrl;
     } catch (err: any) {
@@ -703,6 +783,8 @@ export default function CheckoutPage() {
     coupon.trim().length > 0 &&
     !quoting &&
     (quote.appliedPromotions?.length ?? 0) === 0;
+
+  const showAddressFields = shippingMethod === "delivery";
 
   return (
     <main>
@@ -733,65 +815,111 @@ export default function CheckoutPage() {
 
         {ui.kind === "form" && (
           <form onSubmit={handleSubmit} className="max-w-md space-y-4">
-            {/* ✅ Direcciones guardadas */}
+            {/* ✅ Método de entrega */}
             <div className="rounded border p-3">
-              <div className="flex items-center justify-between">
-                <div className="text-sm font-semibold">Dirección guardada</div>
-                <Link href="/mi-perfil" className="text-xs underline">
-                  Administrar
-                </Link>
-              </div>
+              <div className="text-sm font-semibold">Método de entrega</div>
 
-              {addrLoading ? (
-                <div className="mt-2 text-xs opacity-70">
-                  Cargando direcciones…
-                </div>
-              ) : addrError ? (
-                <div className="mt-2 text-xs text-red-600">{addrError}</div>
-              ) : addresses.length === 0 ? (
-                <div className="mt-2 text-xs opacity-70">
-                  No tenés direcciones guardadas (podés cargar una en Mi Perfil).
-                </div>
-              ) : (
-                <div className="mt-2">
-                  <select
-                    className="w-full border p-2 text-sm"
-                    value={selectedAddressId}
-                    onChange={(e) => onChangeAddress(e.target.value)}
-                  >
-                    {addresses.map((a) => {
-                      const label =
-                        a.label ||
-                        (a.street
-                          ? `${a.street}${a.number ? ` ${a.number}` : ""}`
-                          : "Dirección");
-                      const extra = a.isDefault ? " (Predeterminada)" : "";
-                      return (
-                        <option key={a.id} value={a.id}>
-                          {label}
-                          {extra}
-                        </option>
-                      );
-                    })}
-                  </select>
-
-                  {/* preview */}
-                  {selectedAddress ? (
-                    <div className="mt-2 text-xs text-neutral-600">
-                      {selectedAddress.street ? `${selectedAddress.street}` : ""}
-                      {selectedAddress.number
-                        ? ` ${selectedAddress.number}`
-                        : ""}
-                      {selectedAddress.city ? `, ${selectedAddress.city}` : ""}
-                      {selectedAddress.province
-                        ? `, ${selectedAddress.province}`
-                        : ""}
-                      {selectedAddress.zip ? ` (${selectedAddress.zip})` : ""}
+              <div className="mt-3 space-y-2 text-sm">
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="radio"
+                    name="shippingMethod"
+                    value="delivery"
+                    checked={shippingMethod === "delivery"}
+                    onChange={() => setShippingMethod("delivery")}
+                  />
+                  <div>
+                    <div className="font-semibold">Envío a domicilio</div>
+                    <div className="text-xs text-neutral-600">
+                      Estándar {formatARS(9000)} · &gt; {formatARS(40000)}: {formatARS(4500)} · &gt;{" "}
+                      {formatARS(65000)}: GRATIS
                     </div>
-                  ) : null}
-                </div>
-              )}
+                  </div>
+                </label>
+
+                <label className="flex cursor-pointer items-start gap-3">
+                  <input
+                    type="radio"
+                    name="shippingMethod"
+                    value="pickup"
+                    checked={shippingMethod === "pickup"}
+                    onChange={() => setShippingMethod("pickup")}
+                  />
+                  <div>
+                    <div className="font-semibold">Retiro en sucursal</div>
+                    <div className="text-xs text-neutral-600">
+                      {PICKUP_POINT.name} ({PICKUP_POINT.address}) · GRATIS
+                    </div>
+                  </div>
+                </label>
+              </div>
             </div>
+
+            {/* ✅ Direcciones guardadas (solo si es delivery) */}
+            {showAddressFields && (
+              <div className="rounded border p-3">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-semibold">Dirección guardada</div>
+                  <Link href="/mi-perfil" className="text-xs underline">
+                    Administrar
+                  </Link>
+                </div>
+
+                {addrLoading ? (
+                  <div className="mt-2 text-xs opacity-70">Cargando direcciones…</div>
+                ) : addrError ? (
+                  <div className="mt-2 text-xs text-red-600">{addrError}</div>
+                ) : addresses.length === 0 ? (
+                  <div className="mt-2 text-xs opacity-70">
+                    No tenés direcciones guardadas (podés cargar una en Mi Perfil).
+                  </div>
+                ) : (
+                  <div className="mt-2">
+                    <select
+                      className="w-full border p-2 text-sm"
+                      value={selectedAddressId}
+                      onChange={(e) => onChangeAddress(e.target.value)}
+                    >
+                      {addresses.map((a) => {
+                        const label =
+                          a.label ||
+                          (a.street ? `${a.street}${a.number ? ` ${a.number}` : ""}` : "Dirección");
+                        const extra = a.isDefault ? " (Predeterminada)" : "";
+                        return (
+                          <option key={a.id} value={a.id}>
+                            {label}
+                            {extra}
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {selectedAddress ? (
+                      <div className="mt-2 text-xs text-neutral-600">
+                        {selectedAddress.street ? `${selectedAddress.street}` : ""}
+                        {selectedAddress.number ? ` ${selectedAddress.number}` : ""}
+                        {selectedAddress.city ? `, ${selectedAddress.city}` : ""}
+                        {selectedAddress.province ? `, ${selectedAddress.province}` : ""}
+                        {selectedAddress.zip ? ` (${selectedAddress.zip})` : ""}
+                      </div>
+                    ) : null}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Info de retiro */}
+            {!showAddressFields && (
+              <div className="rounded border p-3 text-sm">
+                <div className="font-semibold">Retiro en sucursal</div>
+                <div className="mt-1 text-neutral-700">
+                  {PICKUP_POINT.name} — {PICKUP_POINT.address}
+                </div>
+                <div className="mt-1 text-xs text-neutral-600">
+                  Te vamos a avisar por email cuando tu pedido esté listo para retirar.
+                </div>
+              </div>
+            )}
 
             <input
               value={name}
@@ -800,6 +928,7 @@ export default function CheckoutPage() {
               className="w-full border p-2"
               required
             />
+
             <input
               value={email}
               onChange={(e) => setEmail(e.target.value)}
@@ -808,6 +937,29 @@ export default function CheckoutPage() {
               className="w-full border p-2"
               required
             />
+
+            {/* ✅ DNI */}
+            <div>
+              <input
+                value={dni}
+                onChange={(e) => {
+                  setDniError(null);
+                  setDni(e.target.value);
+                }}
+                onBlur={() => persistDniIfLogged(dni)}
+                placeholder="DNI (opcional)"
+                inputMode="numeric"
+                className="w-full border p-2"
+              />
+              <p className="mt-1 text-xs text-neutral-500">
+                {me.user
+                  ? "Si estás logueado, lo guardamos en tus datos personales."
+                  : "Podés completarlo para este pedido (lo recordamos en este dispositivo)."}
+              </p>
+              {dniSaving ? <p className="mt-1 text-xs text-neutral-500">Guardando DNI…</p> : null}
+              {dniError ? <p className="mt-1 text-xs text-red-600">{dniError}</p> : null}
+            </div>
+
             <input
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
@@ -817,68 +969,90 @@ export default function CheckoutPage() {
               required
             />
 
-            <input
-              value={street}
-              onChange={(e) => setStreet(e.target.value)}
-              placeholder="Calle"
-              className="w-full border p-2"
-              required
-            />
-            <input
-              value={number}
-              onChange={(e) => setNumber(e.target.value)}
-              placeholder="Número / Altura"
-              className="w-full border p-2"
-              required
-            />
-            <input
-              value={city}
-              onChange={(e) => setCity(e.target.value)}
-              placeholder="Ciudad"
-              className="w-full border p-2"
-              required
-            />
-            <input
-              value={province}
-              onChange={(e) => setProvince(e.target.value)}
-              placeholder="Provincia"
-              className="w-full border p-2"
-              required
-            />
-            <input
-              value={postalCode}
-              onChange={(e) => setPostalCode(e.target.value)}
-              placeholder="Código postal"
-              className="w-full border p-2"
-              inputMode="numeric"
-              required
-            />
+            {/* ✅ Campos dirección SOLO si es delivery */}
+            {showAddressFields && (
+              <>
+                <input
+                  value={street}
+                  onChange={(e) => setStreet(e.target.value)}
+                  placeholder="Calle"
+                  className="w-full border p-2"
+                  required
+                />
+                <input
+                  value={number}
+                  onChange={(e) => setNumber(e.target.value)}
+                  placeholder="Número / Altura"
+                  className="w-full border p-2"
+                  required
+                />
+                <input
+                  value={city}
+                  onChange={(e) => setCity(e.target.value)}
+                  placeholder="Ciudad"
+                  className="w-full border p-2"
+                  required
+                />
+                <input
+                  value={province}
+                  onChange={(e) => setProvince(e.target.value)}
+                  placeholder="Provincia"
+                  className="w-full border p-2"
+                  required
+                />
+                <input
+                  value={postalCode}
+                  onChange={(e) => setPostalCode(e.target.value)}
+                  placeholder="Código postal"
+                  className="w-full border p-2"
+                  inputMode="numeric"
+                  required
+                />
 
-            <textarea
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="Notas para esta entrega (opcional)"
-              className="w-full border p-2"
-              rows={2}
-            />
+                <div>
+                  <textarea
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    placeholder="Notas para esta entrega (opcional)"
+                    className="w-full border p-2"
+                    rows={2}
+                  />
+                  <p className="mt-1 text-xs text-neutral-500">
+                    Si usás una dirección guardada, podés cambiar estas notas solo para este pedido.
+                  </p>
+                </div>
+              </>
+            )}
 
             {/* Cupón */}
-            <input
-              value={coupon}
-              onChange={(e) => {
-                setCouponTouched(true);
-                setCoupon(e.target.value);
-              }}
-              placeholder="Cupón (opcional)"
-              className="w-full border p-2"
-            />
+            <div>
+              <input
+                value={coupon}
+                onChange={(e) => {
+                  setCouponTouched(true);
+                  setCoupon(e.target.value);
+                }}
+                placeholder="Cupón (opcional)"
+                className="w-full border p-2"
+                disabled={cartHasDiscount}
+              />
+
+              <p className="mt-1 text-xs text-neutral-500">
+                El cupón aplica solo a productos sin descuento.
+              </p>
+
+              {cartHasDiscount && (
+                <p className="mt-1 text-xs text-amber-700">
+                  Tu carrito tiene productos con descuento, por eso el cupón no se puede usar.
+                </p>
+              )}
+            </div>
 
             {showInvalidCoupon ? (
-              <div className="text-xs text-red-600">
-                Cupón inválido o no aplicable.
-              </div>
+              <div className="text-xs text-red-600">Cupón inválido o no aplicable.</div>
             ) : null}
 
+            {/* Resumen */}
             <div className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span>Subtotal</span>
@@ -890,22 +1064,21 @@ export default function CheckoutPage() {
                 <span>-{formatARS(effectiveDiscount)}</span>
               </div>
 
-              <div className="mt-2 flex items-center justify-between font-semibold">
-                <span>Total</span>
-                <span>{formatARS(effectiveTotal)}</span>
+              <div className="mt-2 flex items-center justify-between">
+                <span>Envío</span>
+                <span>{shippingCost === 0 ? "GRATIS" : formatARS(shippingCost)}</span>
               </div>
 
-              {quoting ? (
-                <div className="mt-2 text-xs opacity-70">
-                  Calculando promociones…
-                </div>
-              ) : null}
+              <div className="mt-2 flex items-center justify-between font-semibold">
+                <span>Total</span>
+                <span>{formatARS(grandTotal)}</span>
+              </div>
+
+              {quoting ? <div className="mt-2 text-xs opacity-70">Calculando promociones…</div> : null}
 
               {quote.appliedPromotions?.length ? (
                 <div className="mt-3">
-                  <div className="text-xs font-semibold">
-                    Promociones aplicadas
-                  </div>
+                  <div className="text-xs font-semibold">Promociones aplicadas</div>
                   <ul className="mt-1 space-y-1 text-xs">
                     {quote.appliedPromotions.map((p) => (
                       <li key={p.id} className="flex justify-between gap-3">

@@ -12,6 +12,7 @@ type MeResponse =
         username?: string;
         email?: string;
         name?: string;
+        dni?: string | null; // ✅
       };
     };
 
@@ -79,6 +80,12 @@ export function ProfilePanel({
   const [form, setForm] = useState<AddressPayload>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
 
+  // ✅ DNI state (debajo del email)
+  const [dni, setDni] = useState("");
+  const [dniSaving, setDniSaving] = useState(false);
+  const [dniError, setDniError] = useState<string | null>(null);
+  const [dniSavedMsg, setDniSavedMsg] = useState<string | null>(null);
+
   async function refreshMe() {
     try {
       const res = await fetch("/api/auth/me", { cache: "no-store" });
@@ -114,6 +121,12 @@ export function ProfilePanel({
 
   const user = "user" in me ? me.user : null;
 
+  // ✅ precargar DNI cuando llega el user
+  useEffect(() => {
+    if (!user) return;
+    setDni(String((user as any)?.dni ?? ""));
+  }, [user?.id]);
+
   async function handleLogout() {
     try {
       // ✅ Si el Header nos pasa onLogout, usamos eso (desaparece el nombre al instante)
@@ -127,6 +140,46 @@ export function ProfilePanel({
     } finally {
       onClose?.();
       if (variant === "page") router.push("/");
+    }
+  }
+
+  // ✅ guardar DNI en Strapi via Next API
+  async function saveDni() {
+    const clean = safeText(dni);
+    setDniError(null);
+    setDniSavedMsg(null);
+
+    if (!user) {
+      setDniError("Tenés que iniciar sesión para guardar tu DNI.");
+      return;
+    }
+
+    // validación mínima (ARG: 7 u 8 dígitos) — ajustá si querés
+    if (clean.length > 0 && !/^\d{7,8}$/.test(clean)) {
+      setDniError("Ingresá un DNI válido (7 u 8 dígitos).");
+      return;
+    }
+
+    try {
+      setDniSaving(true);
+
+      // OJO: esto requiere que tengas implementado PUT /api/auth/me
+      const r = await fetch("/api/auth/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ dni: clean || null }),
+      });
+
+      const j = await r.json().catch(() => null);
+      if (!r.ok) throw new Error(j?.error || "No se pudo guardar el DNI.");
+
+      setDniSavedMsg("DNI guardado.");
+      await refreshMe();
+      setTimeout(() => setDniSavedMsg(null), 2000);
+    } catch (e: any) {
+      setDniError(e?.message || "Error guardando DNI.");
+    } finally {
+      setDniSaving(false);
     }
   }
 
@@ -225,10 +278,13 @@ export function ProfilePanel({
       };
 
       if (payload.street.length < 2) throw new Error("Ingresá la calle.");
-      if (payload.number.length < 1) throw new Error("Ingresá el número/altura.");
+      if (payload.number.length < 1)
+        throw new Error("Ingresá el número/altura.");
       if (payload.city.length < 2) throw new Error("Ingresá la ciudad.");
-      if (payload.province.length < 2) throw new Error("Ingresá la provincia.");
-      if (payload.zip.length < 3) throw new Error("Ingresá el código postal.");
+      if (payload.province.length < 2)
+        throw new Error("Ingresá la provincia.");
+      if (payload.zip.length < 3)
+        throw new Error("Ingresá el código postal.");
 
       const url = isEdit ? `/api/addresses/${editingId}` : `/api/addresses`;
       const method = isEdit ? "PUT" : "POST";
@@ -285,7 +341,8 @@ export function ProfilePanel({
 
       const j = await r.json().catch(() => null);
 
-      if (!r.ok) throw new Error(j?.error || "Error al marcar como predeterminada.");
+      if (!r.ok)
+        throw new Error(j?.error || "Error al marcar como predeterminada.");
 
       await loadAddresses();
     } catch (e: any) {
@@ -302,7 +359,8 @@ export function ProfilePanel({
 
   const padClass = variant === "dropdown" ? "p-5" : "py-10";
 
-  const scrollClass = variant === "dropdown" ? "max-h-[min(75vh,720px)] overflow-auto" : "";
+  const scrollClass =
+    variant === "dropdown" ? "max-h-[min(75vh,720px)] overflow-auto" : "";
 
   return (
     <div className={rootClass}>
@@ -310,7 +368,9 @@ export function ProfilePanel({
         <div className="flex items-start justify-between gap-3">
           <div>
             <h2 className="text-xl font-extrabold text-neutral-900">Mi perfil</h2>
-            <p className="mt-1 text-sm text-neutral-600">Tus datos y accesos rápidos.</p>
+            <p className="mt-1 text-sm text-neutral-600">
+              Tus datos y accesos rápidos.
+            </p>
           </div>
 
           {variant === "dropdown" && onClose ? (
@@ -332,7 +392,8 @@ export function ProfilePanel({
             ) : !user ? (
               <div className="space-y-3">
                 <p className="text-sm text-neutral-700">
-                  No estás logueado. Iniciá sesión para ver tu perfil y tus pedidos.
+                  No estás logueado. Iniciá sesión para ver tu perfil y tus
+                  pedidos.
                 </p>
 
                 <div className="flex gap-2">
@@ -372,6 +433,44 @@ export function ProfilePanel({
                   </div>
                 </div>
 
+                {/* ✅ DNI debajo del mail */}
+                <div>
+                  <div className="text-sm text-neutral-500">DNI</div>
+                  <input
+                    value={dni}
+                    onChange={(e) => {
+                      setDni(e.target.value);
+                      setDniError(null);
+                      setDniSavedMsg(null);
+                    }}
+                    placeholder="DNI (7 u 8 dígitos)"
+                    inputMode="numeric"
+                    className="mt-1 w-full rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
+                  />
+
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={saveDni}
+                      disabled={dniSaving}
+                      className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                    >
+                      {dniSaving ? "Guardando…" : "Guardar DNI"}
+                    </button>
+
+                    <span className="text-xs text-neutral-500">
+                      Se guarda en tus datos personales.
+                    </span>
+                  </div>
+
+                  {dniError ? (
+                    <p className="mt-1 text-xs text-red-600">{dniError}</p>
+                  ) : null}
+                  {dniSavedMsg ? (
+                    <p className="mt-1 text-xs text-green-600">{dniSavedMsg}</p>
+                  ) : null}
+                </div>
+
                 <div className="h-px bg-neutral-200" />
 
                 <div className="flex flex-wrap gap-2">
@@ -407,7 +506,9 @@ export function ProfilePanel({
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="text-lg font-extrabold text-neutral-900">Direcciones guardadas</div>
+                <div className="text-lg font-extrabold text-neutral-900">
+                  Direcciones guardadas
+                </div>
                 <p className="mt-1 text-sm text-neutral-600">
                   Elegí una en el checkout para completar más rápido.
                 </p>
@@ -443,7 +544,10 @@ export function ProfilePanel({
               ) : (
                 <div className="space-y-3">
                   {sortedAddresses.map((a) => (
-                    <div key={String(a.id)} className="rounded-xl border border-neutral-200 p-4">
+                    <div
+                      key={String(a.id)}
+                      className="rounded-xl border border-neutral-200 p-4"
+                    >
                       <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex flex-wrap items-center gap-2">
@@ -464,7 +568,8 @@ export function ProfilePanel({
                           </div>
 
                           <div className="text-sm text-neutral-700">
-                            {(a.city || "") + (a.province ? `, ${a.province}` : "")}
+                            {(a.city || "") +
+                              (a.province ? `, ${a.province}` : "")}
                             {a.zip ? ` (${a.zip})` : ""}
                           </div>
 
@@ -477,7 +582,9 @@ export function ProfilePanel({
                           )}
 
                           {a.notes ? (
-                            <div className="mt-1 text-xs text-neutral-500">Nota: {a.notes}</div>
+                            <div className="mt-1 text-xs text-neutral-500">
+                              Nota: {a.notes}
+                            </div>
                           ) : null}
                         </div>
 
@@ -542,7 +649,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Etiqueta</label>
                     <input
                       value={form.label ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, label: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, label: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Casa / Trabajo"
                     />
@@ -552,7 +661,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Nombre completo</label>
                     <input
                       value={form.fullName ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, fullName: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, fullName: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Como figura para el envío"
                     />
@@ -562,7 +673,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Teléfono</label>
                     <input
                       value={form.phone ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, phone: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Ej: 351 555-555"
                     />
@@ -572,7 +685,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Calle</label>
                     <input
                       value={form.street ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, street: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, street: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Ej: Av. Siempre Viva"
                     />
@@ -582,7 +697,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Número</label>
                     <input
                       value={form.number ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, number: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, number: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="123"
                     />
@@ -592,7 +709,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Piso (opcional)</label>
                     <input
                       value={form.floor ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, floor: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, floor: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="2"
                     />
@@ -602,7 +721,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Dpto (opcional)</label>
                     <input
                       value={form.apartment ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, apartment: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, apartment: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="A"
                     />
@@ -612,7 +733,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Código postal</label>
                     <input
                       value={form.zip ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, zip: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, zip: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="5000"
                     />
@@ -622,7 +745,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Ciudad</label>
                     <input
                       value={form.city ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, city: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, city: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Córdoba"
                     />
@@ -632,7 +757,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Provincia</label>
                     <input
                       value={form.province ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, province: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, province: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Córdoba"
                     />
@@ -642,7 +769,9 @@ export function ProfilePanel({
                     <label className="text-xs font-semibold">Notas (opcional)</label>
                     <input
                       value={form.notes ?? ""}
-                      onChange={(e) => setForm((p) => ({ ...p, notes: e.target.value }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, notes: e.target.value }))
+                      }
                       className="mt-1 w-full rounded border px-3 py-2"
                       placeholder="Ej: timbre roto, llamar antes..."
                     />
@@ -652,7 +781,9 @@ export function ProfilePanel({
                     <input
                       type="checkbox"
                       checked={Boolean(form.isDefault)}
-                      onChange={(e) => setForm((p) => ({ ...p, isDefault: e.target.checked }))}
+                      onChange={(e) =>
+                        setForm((p) => ({ ...p, isDefault: e.target.checked }))
+                      }
                     />
                     Usar como predeterminada
                   </label>
@@ -665,7 +796,11 @@ export function ProfilePanel({
                     type="button"
                     disabled={saving}
                   >
-                    {saving ? "Guardando…" : editingId ? "Guardar cambios" : "Guardar dirección"}
+                    {saving
+                      ? "Guardando…"
+                      : editingId
+                      ? "Guardar cambios"
+                      : "Guardar dirección"}
                   </button>
 
                   <button

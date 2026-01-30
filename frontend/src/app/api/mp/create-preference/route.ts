@@ -93,7 +93,6 @@ async function getOrderFromStrapi(strapiBase: string, token: string, orderId: st
     return { ok: false as const, status: r.status, json };
   }
 
-  // v4 puede venir con attributes; v5 suele venir flat
   const row = json.data;
   const flat = row?.attributes ? { id: row.id, documentId: row.documentId, ...row.attributes } : row;
 
@@ -102,11 +101,7 @@ async function getOrderFromStrapi(strapiBase: string, token: string, orderId: st
 
 /* ===================== STOCK VALIDATION (BEFORE PAY) ===================== */
 
-async function validateStockOrThrow(
-  strapiBase: string,
-  token: string,
-  items: any[]
-) {
+async function validateStockOrThrow(strapiBase: string, token: string, items: any[]) {
   const need = new Map<string, { requested: number; title?: string }>();
 
   for (const it of Array.isArray(items) ? items : []) {
@@ -124,7 +119,6 @@ async function validateStockOrThrow(
   const docIds = Array.from(need.keys());
   if (!docIds.length) return;
 
-  // Buscar productos por documentId
   const sp = new URLSearchParams();
   sp.set("pagination[pageSize]", String(Math.min(docIds.length, 100)));
   sp.set("populate", "*");
@@ -175,9 +169,7 @@ async function validateStockOrThrow(
     }
 
     const stock = pickStock(row);
-
-    // si stock es null => no validamos (producto sin control de stock)
-    if (stock === null) continue;
+    if (stock === null) continue; // sin control de stock
 
     if (stock < requested) {
       problems.push({
@@ -205,18 +197,12 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Body inválido (se esperaba JSON)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Body inválido (se esperaba JSON)" }, { status: 400 });
   }
 
   const accessToken = process.env.MP_ACCESS_TOKEN;
   if (!accessToken) {
-    return NextResponse.json(
-      { error: "Falta MP_ACCESS_TOKEN en el servidor" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN en el servidor" }, { status: 500 });
   }
 
   const rawSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
@@ -243,13 +229,10 @@ export async function POST(req: Request) {
 
   const orderId = String(body?.orderId ?? "").trim();
   if (!orderId) {
-    return NextResponse.json(
-      { error: "Falta orderId (documentId real de Strapi)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Falta orderId (documentId real de Strapi)" }, { status: 400 });
   }
 
-  // ✅ 0) Traemos la orden REAL desde Strapi (no confiamos en lo que manda el front)
+  // ✅ 0) Traer la orden REAL desde Strapi
   const orderRes = await getOrderFromStrapi(strapiBase, strapiToken, orderId);
   if (!orderRes.ok) {
     return NextResponse.json(
@@ -265,10 +248,13 @@ export async function POST(req: Request) {
   const order = orderRes.data;
 
   const orderNumber = order?.orderNumber ? String(order.orderNumber) : null;
+
   const mpExternalReference =
     typeof order?.mpExternalReference === "string" && order.mpExternalReference.trim()
       ? order.mpExternalReference.trim()
-      : (typeof body?.mpExternalReference === "string" ? body.mpExternalReference.trim() : "");
+      : typeof body?.mpExternalReference === "string"
+        ? body.mpExternalReference.trim()
+        : "";
 
   if (!mpExternalReference) {
     return NextResponse.json(
@@ -279,12 +265,10 @@ export async function POST(req: Request) {
 
   const items = Array.isArray(order?.items) ? order.items : [];
   if (!items.length) {
-    return NextResponse.json(
-      { error: "La orden no tiene items válidos en Strapi" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "La orden no tiene items válidos en Strapi" }, { status: 400 });
   }
 
+  // ✅ total final (YA incluye envío según tu checkout)
   const totalNumber = Number(order?.total);
   if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
     return NextResponse.json(
@@ -293,7 +277,7 @@ export async function POST(req: Request) {
     );
   }
 
-  // ✅ 1) VALIDAR STOCK ANTES DE PAGAR (contra Strapi)
+  // ✅ 1) Validar stock antes de pagar
   try {
     await validateStockOrThrow(strapiBase, strapiToken, items);
   } catch (e: any) {
@@ -309,26 +293,26 @@ export async function POST(req: Request) {
     );
   }
 
-  // ✅ 2) Normalizar items SOLO para sanity check (pero cobramos 1 item con el total final)
-  const normalizedItems: MPItem[] = items
+  // ✅ 2) Sanity check de items (por si hay basura)
+  const sanityItems: MPItem[] = items
     .map((it: any) => {
-      const title = String(it?.title ?? "Producto").trim();
+      const title = String(it?.title ?? "Producto").trim() || "Producto";
       const quantityRaw = Number(it?.qty ?? it?.quantity ?? 1);
       const quantity = Number.isFinite(quantityRaw) ? Math.max(1, Math.floor(quantityRaw)) : 1;
       const unit_price = Number(it?.unit_price ?? it?.price ?? 0);
 
-      return { title: title || "Producto", quantity, unit_price, currency_id: "ARS" as const };
+      return { title, quantity, unit_price, currency_id: "ARS" as const };
     })
-    .filter((it) => it.title && it.quantity > 0 && Number.isFinite(it.unit_price) && it.unit_price > 0);
+    .filter((it) => it.quantity > 0 && Number.isFinite(it.unit_price) && it.unit_price >= 0);
 
-  if (normalizedItems.length === 0) {
+  if (sanityItems.length === 0) {
     return NextResponse.json(
       { error: "No hay items válidos en la orden para crear la preferencia" },
       { status: 400 }
     );
   }
 
-  // 🔒 Cobrar EXACTAMENTE el total final de la orden en Strapi
+  // 🔒 Cobrar EXACTAMENTE el total final de Strapi (incluye envío)
   const chargeItems: MPItem[] = [
     {
       title: orderNumber ? `Pedido ${orderNumber}` : "Compra Amargo y Dulce",
@@ -357,7 +341,15 @@ export async function POST(req: Request) {
       orderId,
       orderNumber: orderNumber ?? undefined,
       mpExternalReference: external_reference,
-      // si querés, guardamos algo del total original
+
+      // 👇 útil para auditoría / postventa
+      shippingMethod: order?.shippingMethod ?? undefined,
+      shippingCost:
+        order?.shippingCost !== undefined && order?.shippingCost !== null
+          ? String(Math.round(Number(order.shippingCost) || 0))
+          : undefined,
+      pickupPoint: order?.pickupPoint ?? undefined,
+
       total: String(Math.round(totalNumber)),
     }),
   };
@@ -378,15 +370,17 @@ export async function POST(req: Request) {
     const data = await res.json().catch(() => null);
 
     if (!res.ok) {
-      console.error("[create-preference] MP error (short):", {
+      console.error("[create-preference] MP error:", {
         status: res.status,
         message: pickMpErrorMessage(data, "MercadoPago rechazó la preferencia"),
+        details: data,
       });
 
       return NextResponse.json(
         {
           error: pickMpErrorMessage(data, "MercadoPago rechazó la preferencia"),
           status: res.status,
+          details: data,
         },
         { status: res.status || 500 }
       );
@@ -401,9 +395,6 @@ export async function POST(req: Request) {
     });
   } catch (e: any) {
     console.error("[create-preference] fetch error:", e?.message || e);
-    return NextResponse.json(
-      { error: "Error conectando con MercadoPago" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Error conectando con MercadoPago" }, { status: 500 });
   }
 }
