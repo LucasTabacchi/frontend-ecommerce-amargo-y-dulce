@@ -60,6 +60,21 @@ function pickFlat(row: any) {
   return row;
 }
 
+function pickDocumentIdFromAny(node: any): string | null {
+  if (!node) return null;
+
+  const direct = node?.documentId ?? node?.document_id ?? null;
+  if (direct && String(direct).trim()) return String(direct).trim();
+
+  const attr = node?.attributes?.documentId ?? node?.attributes?.document_id ?? null;
+  if (attr && String(attr).trim()) return String(attr).trim();
+
+  const d = node?.data ?? null;
+  if (d) return pickDocumentIdFromAny(d);
+
+  return null;
+}
+
 // ✅ RC_YYYYMMDD_AMG-0172
 function buildInvoiceNumber(orderNumber?: string | null) {
   const ts = new Date();
@@ -73,17 +88,15 @@ function buildInvoiceNumber(orderNumber?: string | null) {
 /**
  * FIND invoice by number (robusto)
  */
-async function findInvoiceByNumber(
-  strapiBase: string,
-  token: string,
-  number: string
-) {
+async function findInvoiceByNumber(strapiBase: string, token: string, number: string) {
   // Intento A: populate[0]=pdf
   {
     const sp = new URLSearchParams();
     sp.set("pagination[pageSize]", "1");
     sp.set("filters[number][$eq]", number);
     sp.set("populate[0]", "pdf");
+    // opcional: también traemos order para debug
+    sp.set("populate[1]", "order");
     const url = `${strapiBase}/api/invoices?${sp.toString()}`;
 
     const r = await fetchStrapiText(url, token);
@@ -105,6 +118,7 @@ async function findInvoiceByNumber(
     sp.set("pagination[pageSize]", "1");
     sp.set("filters[number][$eq]", number);
     sp.append("populate", "pdf");
+    sp.append("populate", "order");
     const url = `${strapiBase}/api/invoices?${sp.toString()}`;
 
     const r = await fetchStrapiText(url, token);
@@ -142,11 +156,7 @@ async function findInvoiceByNumber(
 /**
  * ✅ Trae una orden por documentId usando el endpoint de LISTA (find)
  */
-async function fetchOrderByDocumentId(
-  strapiBase: string,
-  token: string,
-  orderDocumentId: string
-) {
+async function fetchOrderByDocumentId(strapiBase: string, token: string, orderDocumentId: string) {
   const sp = new URLSearchParams();
   sp.set("pagination[pageSize]", "1");
   sp.set("filters[documentId][$eq]", orderDocumentId);
@@ -183,13 +193,7 @@ async function fetchOrderByDocumentId(
  * Fuente robusta para PDFKit en Next
  */
 function applyPdfFont(doc: any) {
-  const fontPath = path.join(
-    process.cwd(),
-    "src",
-    "assets",
-    "fonts",
-    "DejaVuSans.ttf"
-  );
+  const fontPath = path.join(process.cwd(), "src", "assets", "fonts", "DejaVuSans.ttf");
 
   try {
     const buf = fs.readFileSync(fontPath);
@@ -201,12 +205,7 @@ function applyPdfFont(doc: any) {
     const isOtf = headAscii === "OTTO";
 
     if (!size || size < 1000 || (!isTtf && !isOtf)) {
-      console.warn("[invoice/pdf] Font inválida, uso Helvetica:", {
-        fontPath,
-        size,
-        headHex,
-        headAscii,
-      });
+      console.warn("[invoice/pdf] Font inválida, uso Helvetica:", { fontPath, size, headHex, headAscii });
       doc.font("Helvetica");
       return;
     }
@@ -214,10 +213,7 @@ function applyPdfFont(doc: any) {
     doc.registerFont("DejaVu", fontPath);
     doc.font("DejaVu");
   } catch (e: any) {
-    console.warn(
-      "[invoice/pdf] No pude aplicar fuente (uso Helvetica):",
-      e?.message || e
-    );
+    console.warn("[invoice/pdf] No pude aplicar fuente (uso Helvetica):", e?.message || e);
     doc.font("Helvetica");
   }
 }
@@ -226,9 +222,7 @@ async function renderPdfBuffer(order: any) {
   const doc = new PDFDocument({ size: "A4", margin: 50 });
   const chunks: Buffer[] = [];
 
-  doc.on("data", (c: any) =>
-    chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c))
-  );
+  doc.on("data", (c: any) => chunks.push(Buffer.isBuffer(c) ? c : Buffer.from(c)));
   const done = new Promise<Buffer>((resolve, reject) => {
     doc.on("end", () => resolve(Buffer.concat(chunks)));
     doc.on("error", reject);
@@ -264,10 +258,7 @@ async function renderPdfBuffer(order: any) {
 
   doc.fontSize(18).text("Amargo y Dulce", { align: "left" });
   doc.moveDown(0.2);
-  doc
-    .fontSize(12)
-    .fillColor("#444")
-    .text("Comprobante / Recibo", { align: "left" });
+  doc.fontSize(12).fillColor("#444").text("Comprobante / Recibo", { align: "left" });
   doc.moveDown(1);
 
   doc.fillColor("#000");
@@ -284,9 +275,7 @@ async function renderPdfBuffer(order: any) {
   doc.fontSize(11).text(
     `Entrega: ${
       shippingMethod === "pickup"
-        ? `Retiro en sucursal${
-            pickupPoint ? ` (${pickupPoint})` : ""
-          } — GRATIS`
+        ? `Retiro en sucursal${pickupPoint ? ` (${pickupPoint})` : ""} — GRATIS`
         : `Envío a domicilio — ${moneyARS(shippingCost)}`
     }`
   );
@@ -303,9 +292,7 @@ async function renderPdfBuffer(order: any) {
     const line = qty * unit;
 
     doc.text(`${title}`);
-    doc
-      .fillColor("#444")
-      .text(`  ${qty} x ${moneyARS(unit)} = ${moneyARS(line)}`);
+    doc.fillColor("#444").text(`  ${qty} x ${moneyARS(unit)} = ${moneyARS(line)}`);
     doc.fillColor("#000");
     doc.moveDown(0.2);
   });
@@ -314,22 +301,14 @@ async function renderPdfBuffer(order: any) {
 
   doc.fontSize(11).text(`Subtotal: ${moneyARS(subtotal)}`, { align: "right" });
   doc.text(`Descuento: -${moneyARS(discountTotal)}`, { align: "right" });
-  doc.text(
-    `Envío: ${
-      shippingMethod === "pickup" ? moneyARS(0) : moneyARS(shippingCost)
-    }`,
-    { align: "right" }
-  );
+  doc.text(`Envío: ${shippingMethod === "pickup" ? moneyARS(0) : moneyARS(shippingCost)}`, { align: "right" });
   doc.fontSize(13).text(`TOTAL: ${moneyARS(total)}`, { align: "right" });
 
   doc.moveDown(1.2);
-  doc
-    .fontSize(9)
-    .fillColor("#666")
-    .text(
-      "Este comprobante no constituye factura fiscal. Conservá este documento como constancia de tu compra.",
-      { align: "left" }
-    );
+  doc.fontSize(9).fillColor("#666").text(
+    "Este comprobante no constituye factura fiscal. Conservá este documento como constancia de tu compra.",
+    { align: "left" }
+  );
 
   doc.end();
   return done;
@@ -344,20 +323,29 @@ function pickPdfUrlFromInvoice(inv: any): string | null {
 }
 
 /**
- * ✅ Crear invoice SIN order/orderNumber (Strapi los rechaza en tu caso)
- * Intentamos varias formas de setear el media `pdf`.
+ * ✅ Crear invoice (primero intentamos con relación order)
+ * En tu caso Strapi rechazaba orderNumber, pero la relación `order` SÍ existe en el schema,
+ * entonces la estrategia correcta es: NO enviar orderNumber, pero SÍ enviar order connect.
  */
-async function createInvoiceMinimal(params: {
+async function createInvoiceWithOrderFallback(params: {
   strapiBase: string;
   token: string;
   baseInvoiceData: any;
   fileId: number;
+  orderDocumentId: string; // ✅ documentId
 }) {
-  const { strapiBase, token, baseInvoiceData, fileId } = params;
+  const { strapiBase, token, baseInvoiceData, fileId, orderDocumentId } = params;
 
   const createUrl = `${strapiBase}/api/invoices`;
 
   const candidates: any[] = [
+    // 1) pdf: fileId + order connect (documentId)
+    { data: { ...baseInvoiceData, order: { connect: [orderDocumentId] }, pdf: fileId } },
+
+    // 2) pdf connect + order connect
+    { data: { ...baseInvoiceData, order: { connect: [orderDocumentId] }, pdf: { connect: [fileId] } } },
+
+    // 3) sin order (fallback total)
     { data: { ...baseInvoiceData, pdf: fileId } },
     { data: { ...baseInvoiceData, pdf: { connect: [fileId] } } },
     { data: { ...baseInvoiceData, pdf: { data: fileId } } },
@@ -384,12 +372,9 @@ async function createInvoiceMinimal(params: {
       json = { _raw: text || null };
     }
 
-    if (res.ok)
-      return {
-        ok: true as const,
-        data: json?.data ?? json,
-        payloadUsed: payload,
-      };
+    if (res.ok) {
+      return { ok: true as const, data: json?.data ?? json, payloadUsed: payload };
+    }
 
     lastErr = { status: res.status, details: json, payloadTried: payload };
   }
@@ -397,73 +382,94 @@ async function createInvoiceMinimal(params: {
   return { ok: false as const, ...lastErr };
 }
 
+/**
+ * ✅ Si ya existía y quedó sin link, lo intentamos por PUT usando documentId (Strapi v5)
+ */
+async function connectExistingInvoiceToOrder(params: {
+  strapiBase: string;
+  token: string;
+  invoiceDocumentId: string;
+  orderDocumentId: string;
+}) {
+  const { strapiBase, token, invoiceDocumentId, orderDocumentId } = params;
+
+  const url = `${strapiBase}/api/invoices/${encodeURIComponent(invoiceDocumentId)}`;
+
+  const res = await fetch(url, {
+    method: "PUT",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      data: {
+        order: { connect: [orderDocumentId] },
+      },
+    }),
+    cache: "no-store",
+  });
+
+  const text = await res.text().catch(() => "");
+  let json: any = null;
+  try {
+    json = text ? JSON.parse(text) : null;
+  } catch {
+    json = { _raw: text || null };
+  }
+
+  if (!res.ok) {
+    const err: any = new Error("STRAPI_CONNECT_INVOICE_ORDER_FAILED");
+    err.status = res.status;
+    err.details = json;
+    err.url = url;
+    throw err;
+  }
+
+  return json;
+}
+
 export async function POST(req: Request) {
   const strapiBase = normalizeStrapiBase(
-    process.env.STRAPI_URL ||
-      process.env.NEXT_PUBLIC_STRAPI_URL ||
-      "http://localhost:1337"
+    process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
   );
 
   const tokenRaw = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
   const token = tokenRaw ? normalizeBearer(tokenRaw) : "";
   if (!token) {
-    return NextResponse.json(
-      { error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN (server)" },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "Falta STRAPI_TOKEN / STRAPI_API_TOKEN (server)" }, { status: 500 });
   }
 
   let body: any = null;
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json(
-      { error: "Body inválido (se esperaba JSON)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Body inválido (se esperaba JSON)" }, { status: 400 });
   }
 
-  const orderId = String(body?.orderId ?? "").trim();
+  const orderId = String(body?.orderId ?? "").trim(); // ✅ documentId
   if (!orderId) {
-    return NextResponse.json(
-      { error: "Falta orderId (documentId)" },
-      { status: 400 }
-    );
+    return NextResponse.json({ error: "Falta orderId (documentId)" }, { status: 400 });
   }
 
-  // 1) Traer orden
+  // 1) Traer orden (por documentId)
   let order: any = null;
   try {
     order = await fetchOrderByDocumentId(strapiBase, token, orderId);
   } catch (e: any) {
     return NextResponse.json(
-      {
-        error: "No se pudo obtener la orden",
-        status: e?.status || 500,
-        url: e?.url,
-        details: e?.details || e?.message,
-      },
+      { error: "No se pudo obtener la orden", status: e?.status || 500, url: e?.url, details: e?.details || e?.message },
       { status: e?.status || 500 }
     );
   }
 
   if (!order) {
-    return NextResponse.json(
-      { error: "Orden no encontrada", orderId },
-      { status: 404 }
-    );
+    return NextResponse.json({ error: "Orden no encontrada", orderId }, { status: 404 });
   }
 
   // Solo generar si está paid
   const status = String(order?.orderStatus ?? "").toLowerCase();
   if (status !== "paid") {
-    return NextResponse.json(
-      {
-        error: "La orden todavía no está pagada",
-        orderStatus: order?.orderStatus,
-      },
-      { status: 409 }
-    );
+    return NextResponse.json({ error: "La orden todavía no está pagada", orderStatus: order?.orderStatus }, { status: 409 });
   }
 
   // 2) invoiceNumber + check existe
@@ -473,25 +479,29 @@ export async function POST(req: Request) {
   try {
     const existing = await findInvoiceByNumber(strapiBase, token, invoiceNumber);
     if (existing) {
+      // ✅ Si existe, intentamos asegurar relación usando documentId (Strapi v5)
+      try {
+        const invoiceDocId = pickDocumentIdFromAny(existing);
+        if (invoiceDocId) {
+          await connectExistingInvoiceToOrder({
+            strapiBase,
+            token,
+            invoiceDocumentId: invoiceDocId,
+            orderDocumentId: orderId,
+          });
+        } else {
+          console.warn("[invoice] existing: no pude obtener documentId de invoice para linkear", { invoiceNumber });
+        }
+      } catch (e: any) {
+        console.warn("[invoice] existing: no pude conectar invoice->order:", e?.status, e?.details || e?.message);
+      }
+
       const pdfUrl = pickPdfUrlFromInvoice(existing);
-      return NextResponse.json(
-        {
-          ok: true,
-          alreadyExists: true,
-          invoiceNumber,
-          pdfUrl,
-          invoice: existing,
-        },
-        { status: 200 }
-      );
+      return NextResponse.json({ ok: true, alreadyExists: true, invoiceNumber, pdfUrl, invoice: existing }, { status: 200 });
     }
   } catch (e: any) {
     return NextResponse.json(
-      {
-        error: "Strapi error (find invoice by number)",
-        status: e?.status || 500,
-        details: e?.details || e?.message,
-      },
+      { error: "Strapi error (find invoice by number)", status: e?.status || 500, details: e?.details || e?.message },
       { status: 400 }
     );
   }
@@ -501,10 +511,7 @@ export async function POST(req: Request) {
   try {
     pdfBuffer = await renderPdfBuffer(order);
   } catch (e: any) {
-    return NextResponse.json(
-      { error: "No se pudo generar el PDF", details: e?.message || e },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: "No se pudo generar el PDF", details: e?.message || e }, { status: 500 });
   }
 
   const filename = `${invoiceNumber}.pdf`;
@@ -512,11 +519,7 @@ export async function POST(req: Request) {
   // 4) Upload a Strapi
   const uploadUrl = `${strapiBase}/api/upload`;
   const form = new FormData();
-  form.append(
-    "files",
-    new Blob([pdfBuffer], { type: "application/pdf" }),
-    filename
-  );
+  form.append("files", new Blob([pdfBuffer], { type: "application/pdf" }), filename);
 
   const uploadRes = await fetch(uploadUrl, {
     method: "POST",
@@ -535,21 +538,15 @@ export async function POST(req: Request) {
 
   if (!uploadRes.ok || !Array.isArray(uploaded) || !uploaded[0]?.id) {
     return NextResponse.json(
-      {
-        error: "No se pudo subir el PDF a Strapi",
-        status: uploadRes.status,
-        details: uploaded,
-      },
+      { error: "No se pudo subir el PDF a Strapi", status: uploadRes.status, details: uploaded },
       { status: 500 }
     );
   }
 
   const fileId = uploaded[0].id;
-  const uploadedPdfUrl = uploaded?.[0]?.url
-    ? String(uploaded[0].url).trim()
-    : null;
+  const uploadedPdfUrl = uploaded?.[0]?.url ? String(uploaded[0].url).trim() : null;
 
-  // 5) Crear Invoice SOLO con campos válidos
+  // 5) Crear Invoice (intentando dejarla linkeada al Order)
   const baseInvoiceData: any = {
     number: invoiceNumber,
     issuedAt: new Date().toISOString(),
@@ -557,11 +554,12 @@ export async function POST(req: Request) {
     currency: "ARS",
   };
 
-  const createdRes = await createInvoiceMinimal({
+  const createdRes = await createInvoiceWithOrderFallback({
     strapiBase,
     token,
     baseInvoiceData,
     fileId,
+    orderDocumentId: orderId, // ✅ documentId
   });
 
   if (!createdRes.ok) {
@@ -571,7 +569,7 @@ export async function POST(req: Request) {
         status: createdRes.status,
         details: createdRes.details,
         payloadTried: createdRes.payloadTried,
-        note: "Tu Strapi rechaza order/orderNumber. Creamos invoice solo con pdf + number + totals.",
+        note: "Probamos crear invoice con order connect + pdf. Si falla, revisar permisos/relación en Strapi.",
       },
       { status: 500 }
     );
@@ -588,13 +586,7 @@ export async function POST(req: Request) {
   const pdfUrl = (fetched ? pickPdfUrlFromInvoice(fetched) : null) || uploadedPdfUrl || null;
 
   return NextResponse.json(
-    {
-      ok: true,
-      invoiceNumber,
-      pdfUrl,
-      invoice: createdRes.data,
-      fetched,
-    },
+    { ok: true, invoiceNumber, pdfUrl, invoice: createdRes.data, fetched },
     { status: 200 }
   );
 }
