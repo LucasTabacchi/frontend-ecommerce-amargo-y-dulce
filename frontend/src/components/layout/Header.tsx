@@ -67,7 +67,7 @@ export function Header() {
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
 
-  // ✅ Profile dropdown
+  // ✅ Profile dropdown (desktop)
   const [profileOpen, setProfileOpen] = useState(false);
   const profileBoxRef = useRef<HTMLDivElement | null>(null);
 
@@ -115,6 +115,7 @@ export function Header() {
       setMe(null);
       setLoginOpen(false);
       setProfileOpen(false);
+      setMobileOpen(false);
       router.refresh();
     }
   }
@@ -126,6 +127,17 @@ export function Header() {
     setOpenSuggest(false);
     setActiveIndex(-1);
     setLoginOpen(true);
+  }
+
+  // ✅ click en user desde MOBILE: si no hay sesión -> login; si hay sesión -> /mi-perfil
+  function onUserPressMobile() {
+    if (meLoading) return;
+    if (!me) {
+      openLogin();
+      return;
+    }
+    setMobileOpen(false);
+    router.push("/mi-perfil");
   }
 
   // ✅ mount
@@ -178,7 +190,7 @@ export function Header() {
     return () => document.removeEventListener("mousedown", onDocMouseDown);
   }, []);
 
-  // ✅ click afuera: cierra profile panel
+  // ✅ click afuera: cierra profile dropdown (desktop)
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
       if (!profileOpen) return;
@@ -197,7 +209,6 @@ export function Header() {
     setOpenSuggest(false);
     setActiveIndex(-1);
     setMobileOpen(false);
-    // NO cierro login acá: si venís de Google y vuelve, querés que siga vivo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
@@ -441,17 +452,15 @@ export function Header() {
 
             <div className="relative" ref={profileBoxRef}>
               {!me && !meLoading ? (
-                <>
-                  <button
-                    onClick={openLogin}
-                    className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
-                    type="button"
-                    aria-expanded={loginOpen}
-                  >
-                    <User className="h-5 w-5" />
-                    Iniciar sesión
-                  </button>
-                </>
+                <button
+                  onClick={openLogin}
+                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
+                  type="button"
+                  aria-expanded={loginOpen}
+                >
+                  <User className="h-5 w-5" />
+                  Iniciar sesión
+                </button>
               ) : (
                 <>
                   <button
@@ -500,6 +509,20 @@ export function Header() {
 
           {/* MOBILE */}
           <div className="flex items-center justify-end gap-2 md:hidden">
+            {/* Usuario: si no hay sesión abre login; si hay sesión va a /mi-perfil */}
+            <button
+              type="button"
+              onClick={onUserPressMobile}
+              className="inline-flex h-11 max-w-[170px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-[14px] font-medium text-neutral-800"
+              aria-label={me ? "Mi perfil" : "Iniciar sesión"}
+              disabled={meLoading}
+            >
+              <User className="h-5 w-5" />
+              <span className="truncate">
+                {meLoading ? "…" : me ? displayName : "Iniciar sesión"}
+              </span>
+            </button>
+
             <Link
               href="/carrito"
               className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
@@ -537,63 +560,12 @@ export function Header() {
                 <NavLink href="/sobre-nosotros" onClick={() => setMobileOpen(false)}>
                   Sobre nosotros
                 </NavLink>
-
-                {me && !meLoading && (
-                  <NavLink href="/mi-perfil" onClick={() => setMobileOpen(false)}>
-                    Mi perfil
-                  </NavLink>
-                )}
-
-                {me && !meLoading && (
-                  <NavLink href="/mis-pedidos" onClick={() => setMobileOpen(false)}>
-                    Mis pedidos
-                  </NavLink>
-                )}
               </nav>
-
-              <div className="mt-4 flex gap-3">
-                {!me && !meLoading ? (
-                  <button
-                    onClick={openLogin}
-                    className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
-                    type="button"
-                  >
-                    <User className="h-5 w-5" />
-                    Iniciar sesión
-                  </button>
-                ) : (
-                  <button
-                    onClick={() => {
-                      setMobileOpen(false);
-                      logout();
-                    }}
-                    className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
-                    type="button"
-                    disabled={meLoading}
-                  >
-                    <LogOut className="h-5 w-5" />
-                    {meLoading ? "Cargando…" : "Cerrar sesión"}
-                  </button>
-                )}
-
-                <Link
-                  href="/carrito"
-                  onClick={() => setMobileOpen(false)}
-                  className="relative flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
-                >
-                  <span className="relative inline-flex">
-                    <ShoppingCart className="h-5 w-5" />
-                    <CartBadge />
-                  </span>
-                  Carrito
-                </Link>
-              </div>
             </div>
           </div>
         )}
       </Container>
 
-      {/* ✅ IMPORTANTÍSIMO: el modal se renderiza UNA sola vez, afuera del menú mobile */}
       <LoginModal
         open={loginOpen}
         onClose={() => setLoginOpen(false)}

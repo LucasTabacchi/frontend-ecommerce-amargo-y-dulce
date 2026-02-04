@@ -295,8 +295,6 @@ async function tryGenerateInvoice(params: { siteUrl: string; orderId: string }) 
       j?.alreadyExists ? "alreadyExists" : "created"
     );
 
-    // ✅ Esperado (por tu generate corregido):
-    // { ok:true, invoiceNumber, pdfUrl, ... }
     return { ok: true as const, data: j };
   } catch (e: any) {
     console.error("[Webhook] invoice generate fetch error:", e?.message || e);
@@ -304,7 +302,6 @@ async function tryGenerateInvoice(params: { siteUrl: string; orderId: string }) 
   }
 }
 
-// Fallback: buscar invoice por orderNumber (si existe ese campo en invoices)
 async function findInvoiceByOrderNumber(params: {
   strapiBase: string;
   token: string;
@@ -392,10 +389,16 @@ export async function POST(req: Request) {
       }
 
       if (!paymentId) {
-        return NextResponse.json({ ok: true, skipped: "no_payment_yet" }, { status: 200 });
+        return NextResponse.json(
+          { ok: true, skipped: "no_payment_yet" },
+          { status: 200 }
+        );
       }
     } else {
-      return NextResponse.json({ ok: true, skipped: "unsupported_topic" }, { status: 200 });
+      return NextResponse.json(
+        { ok: true, skipped: "unsupported_topic" },
+        { status: 200 }
+      );
     }
 
     let payment: any;
@@ -415,17 +418,25 @@ export async function POST(req: Request) {
       payment?.metadata?.external_reference;
 
     if (!mpExternalReferenceRaw) {
-      console.warn("[Webhook] pago sin external_reference/mpExternalReference", { paymentId, mpStatus });
-      return NextResponse.json({ ok: true, skipped: "missing_external_reference" }, { status: 200 });
+      console.warn("[Webhook] pago sin external_reference/mpExternalReference", {
+        paymentId,
+        mpStatus,
+      });
+      return NextResponse.json(
+        { ok: true, skipped: "missing_external_reference" },
+        { status: 200 }
+      );
     }
 
     const mpExternalReference = String(mpExternalReferenceRaw);
 
     const strapiBase = normalizeStrapiBase(
-      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
+      process.env.STRAPI_URL ||
+        process.env.NEXT_PUBLIC_STRAPI_URL ||
+        "http://localhost:1337"
     );
 
-    const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
+    const token = process.env.STRAPI_TOKEN || (process.env as any).STRAPI_API_TOKEN;
     if (!token) {
       console.error("[Webhook] falta STRAPI_API_TOKEN / STRAPI_TOKEN");
       return NextResponse.json({ ok: true }, { status: 200 });
@@ -433,14 +444,24 @@ export async function POST(req: Request) {
 
     let order: Awaited<ReturnType<typeof findOrderByMpExternalReference>> = null;
     try {
-      order = await findOrderByMpExternalReference(strapiBase, token, mpExternalReference);
+      order = await findOrderByMpExternalReference(
+        strapiBase,
+        token,
+        mpExternalReference
+      );
     } catch (e: any) {
-      console.error("[Webhook] no pude buscar order por mpExternalReference:", e?.message || e);
+      console.error(
+        "[Webhook] no pude buscar order por mpExternalReference:",
+        e?.message || e
+      );
       return NextResponse.json({ ok: true }, { status: 200 });
     }
 
     if (!order) {
-      console.warn("[Webhook] order NO encontrada para mpExternalReference:", mpExternalReference);
+      console.warn(
+        "[Webhook] order NO encontrada para mpExternalReference:",
+        mpExternalReference
+      );
       return NextResponse.json({ ok: true, skipped: "order_not_found" }, { status: 200 });
     }
 
@@ -458,7 +479,10 @@ export async function POST(req: Request) {
       },
     };
 
-    console.log("[Webhook] order ids:", { documentId: order.documentId, numericId: order.numericId });
+    console.log("[Webhook] order ids:", {
+      documentId: order.documentId,
+      numericId: order.numericId,
+    });
     console.log("[Webhook] prevStatus -> nextStatus:", prevStatus, "->", nextStatus);
     console.log("[Webhook] stockAdjusted:", order.stockAdjusted);
 
@@ -476,8 +500,6 @@ export async function POST(req: Request) {
 
     const becamePaid = prevStatus !== "paid" && nextStatus === "paid";
 
-    // ---- tu lógica de stock queda igual ----
-
     const siteUrl =
       process.env.SITE_URL ||
       process.env.NEXT_PUBLIC_SITE_URL ||
@@ -492,9 +514,13 @@ export async function POST(req: Request) {
 
     // ✅ Email cuando recién pasa a paid (una sola vez)
     if (becamePaid) {
-      const to = order.email;
+      const customerEmail = order.email ? String(order.email).trim() : "";
+
+      // ✅ MODIFICACIÓN: si existe TEST_EMAIL_TO (dev/test), override; si no, usar email real del comprador
+      const testTo = (process.env.TEST_EMAIL_TO || "").trim();
+      const to = testTo && testTo.includes("@") ? testTo : customerEmail;
+
       if (to) {
-        // 1) Preferimos lo que devuelve /invoices/generate (ya trae invoiceNumber + pdfUrl)
         let invoiceNumber: string | null = invGenerated?.invoiceNumber
           ? String(invGenerated.invoiceNumber).trim()
           : null;
@@ -503,7 +529,6 @@ export async function POST(req: Request) {
           ? ensureAbsoluteUrl(String(invGenerated.pdfUrl).trim(), strapiBase)
           : null;
 
-        // 2) Fallback: si no vino pdfUrl, intentamos buscar en Strapi por orderNumber (si existe ese campo)
         if ((!invoicePdfUrl || !invoiceNumber) && order.orderNumber) {
           try {
             const invRes = await findInvoiceByOrderNumber({
@@ -513,21 +538,24 @@ export async function POST(req: Request) {
             });
 
             if (invRes.ok && invRes.data) {
-              if (!invoiceNumber && invRes.data.invoiceNumber) invoiceNumber = invRes.data.invoiceNumber;
-              if (!invoicePdfUrl && invRes.data.pdfUrl) invoicePdfUrl = ensureAbsoluteUrl(invRes.data.pdfUrl, strapiBase);
+              if (!invoiceNumber && invRes.data.invoiceNumber)
+                invoiceNumber = invRes.data.invoiceNumber;
+              if (!invoicePdfUrl && invRes.data.pdfUrl)
+                invoicePdfUrl = ensureAbsoluteUrl(invRes.data.pdfUrl, strapiBase);
             }
           } catch (e: any) {
             console.error("[Webhook] Error buscando invoice fallback:", e?.message || e);
           }
         }
 
-        const invoiceFilename =
-          invoiceNumber ? `${sanitizeFileBaseName(invoiceNumber)}.pdf` : null;
+        const invoiceFilename = invoiceNumber
+          ? `${sanitizeFileBaseName(invoiceNumber)}.pdf`
+          : null;
 
         try {
           await sendOrderConfirmationEmail({
             siteUrl,
-            email: to,
+            email: to, // ✅ usa override test o email real del comprador
             name: order.name,
             orderNumber: order.orderNumber ?? undefined,
             total: order.total ?? undefined,
@@ -543,6 +571,8 @@ export async function POST(req: Request) {
 
           console.log("[Webhook] Email de confirmación enviado:", {
             to,
+            customerEmail,
+            usedTestOverride: !!(testTo && testTo.includes("@")),
             orderNumber: order.orderNumber,
             invoiceNumber,
             hasPdf: !!invoicePdfUrl,
@@ -552,7 +582,9 @@ export async function POST(req: Request) {
           console.error("[Webhook] Error enviando email:", e?.message || e);
         }
       } else {
-        console.warn("[Webhook] Order paid pero sin email en order:", { documentId: order.documentId });
+        console.warn("[Webhook] Order paid pero sin email en order:", {
+          documentId: order.documentId,
+        });
       }
     }
 
