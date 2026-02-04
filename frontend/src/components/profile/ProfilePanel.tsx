@@ -88,7 +88,10 @@ export function ProfilePanel({
 
   async function refreshMe() {
     try {
-      const res = await fetch("/api/auth/me", { cache: "no-store" });
+      const res = await fetch("/api/auth/me", {
+        cache: "no-store",
+        credentials: "include", // ✅ FIX mobile
+      });
       const data = (await res.json()) as MeResponse;
       setMe(data);
     } catch {
@@ -134,7 +137,10 @@ export function ProfilePanel({
         await onLogout();
       } else {
         // Fallback: si se usa en /mi-perfil como página sin Header
-        await fetch("/api/auth/logout", { method: "POST" });
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          credentials: "include", // ✅ FIX mobile
+        });
         router.refresh();
       }
     } finally {
@@ -168,6 +174,7 @@ export function ProfilePanel({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ dni: clean || null }),
+        credentials: "include", // ✅ FIX mobile
       });
 
       const j = await r.json().catch(() => null);
@@ -187,7 +194,10 @@ export function ProfilePanel({
     setAddrLoading(true);
     setAddrError(null);
     try {
-      const r = await fetch("/api/addresses", { cache: "no-store" });
+      const r = await fetch("/api/addresses", {
+        cache: "no-store",
+        credentials: "include", // ✅ FIX mobile
+      });
 
       if (r.status === 401) {
         setAddresses([]);
@@ -278,13 +288,10 @@ export function ProfilePanel({
       };
 
       if (payload.street.length < 2) throw new Error("Ingresá la calle.");
-      if (payload.number.length < 1)
-        throw new Error("Ingresá el número/altura.");
+      if (payload.number.length < 1) throw new Error("Ingresá el número/altura.");
       if (payload.city.length < 2) throw new Error("Ingresá la ciudad.");
-      if (payload.province.length < 2)
-        throw new Error("Ingresá la provincia.");
-      if (payload.zip.length < 3)
-        throw new Error("Ingresá el código postal.");
+      if (payload.province.length < 2) throw new Error("Ingresá la provincia.");
+      if (payload.zip.length < 3) throw new Error("Ingresá el código postal.");
 
       const url = isEdit ? `/api/addresses/${editingId}` : `/api/addresses`;
       const method = isEdit ? "PUT" : "POST";
@@ -293,6 +300,7 @@ export function ProfilePanel({
         method,
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
+        credentials: "include", // ✅ FIX mobile
       });
 
       const j = await r.json().catch(() => null);
@@ -314,7 +322,10 @@ export function ProfilePanel({
     setAddrError(null);
 
     try {
-      const r = await fetch(`/api/addresses/${id}`, { method: "DELETE" });
+      const r = await fetch(`/api/addresses/${id}`, {
+        method: "DELETE",
+        credentials: "include", // ✅ FIX mobile
+      });
       const j = await r.json().catch(() => null);
 
       if (!r.ok) throw new Error(j?.error || "Error al eliminar.");
@@ -337,6 +348,7 @@ export function ProfilePanel({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ isDefault: true }),
+        credentials: "include", // ✅ FIX mobile
       });
 
       const j = await r.json().catch(() => null);
@@ -475,9 +487,9 @@ export function ProfilePanel({
 
                 <div className="flex flex-wrap gap-2">
                   <Link
-                  href="/facturas"
-                  onClick={() => onClose?.()}
-                  className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
+                    href="/facturas"
+                    onClick={() => onClose?.()}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
                   >
                     Mis recibos
                   </Link>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "./Container";
 import { Search, ShoppingCart, User, Menu, X, LogOut } from "lucide-react";
@@ -71,6 +71,30 @@ export function Header() {
   const [profileOpen, setProfileOpen] = useState(false);
   const profileBoxRef = useRef<HTMLDivElement | null>(null);
 
+  // ✅ buscador (desktop + mobile comparten estado)
+  const [query, setQuery] = useState("");
+
+  // ✅ autocomplete state
+  const [openSuggest, setOpenSuggest] = useState(false);
+  const [loadingSuggest, setLoadingSuggest] = useState(false);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [activeIndex, setActiveIndex] = useState(-1);
+
+  // ✅ refs separados para evitar conflictos desktop vs mobile
+  const suggestBoxRefDesktop = useRef<HTMLDivElement | null>(null);
+  const suggestBoxRefMobile = useRef<HTMLDivElement | null>(null);
+
+  const debounceRef = useRef<number | null>(null);
+
+  // ✅ claves únicas para a11y (desktop + mobile)
+  const ids = useMemo(() => {
+    const rnd = Math.random().toString(36).slice(2);
+    return {
+      desktop: `suggestions-desktop-${rnd}`,
+      mobile: `suggestions-mobile-${rnd}`,
+    };
+  }, []);
+
   async function refreshMe() {
     setMeLoading(true);
     try {
@@ -88,7 +112,6 @@ export function Header() {
     try {
       await fetch("/api/auth/logout", { method: "POST" });
     } finally {
-      // ✅ limpia UI instantáneo
       setMe(null);
       setLoginOpen(false);
       setProfileOpen(false);
@@ -96,6 +119,16 @@ export function Header() {
     }
   }
 
+  function openLogin() {
+    // ✅ cerrá todo lo demás antes de abrir
+    setProfileOpen(false);
+    setMobileOpen(false);
+    setOpenSuggest(false);
+    setActiveIndex(-1);
+    setLoginOpen(true);
+  }
+
+  // ✅ mount
   useEffect(() => {
     refreshMe();
 
@@ -104,21 +137,6 @@ export function Header() {
     return () => window.removeEventListener("focus", onFocus);
   }, []);
 
-  // ✅ buscador (desktop + mobile comparten estado)
-  const [query, setQuery] = useState("");
-
-  // ✅ autocomplete state
-  const [openSuggest, setOpenSuggest] = useState(false);
-  const [loadingSuggest, setLoadingSuggest] = useState(false);
-  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
-  const [activeIndex, setActiveIndex] = useState(-1);
-
-  // ✅ refs separados para evitar conflictos desktop vs mobile
-  const suggestBoxRefDesktop = useRef<HTMLDivElement | null>(null);
-  const suggestBoxRefMobile = useRef<HTMLDivElement | null>(null);
-
-  const debounceRef = useRef<number | null>(null);
-
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();
@@ -126,7 +144,7 @@ export function Header() {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
-  // ESC cierra menú mobile, modal login, sugerencias y perfil
+  // ✅ ESC cierra menú mobile, modal login, sugerencias y perfil
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -179,6 +197,7 @@ export function Header() {
     setOpenSuggest(false);
     setActiveIndex(-1);
     setMobileOpen(false);
+    // NO cierro login acá: si venís de Google y vuelve, querés que siga vivo
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
 
@@ -286,8 +305,8 @@ export function Header() {
 
   function SearchBox({ variant }: { variant: "desktop" | "mobile" }) {
     const showDropdown = openSuggest && query.trim().length >= 2;
-
     const ref = variant === "desktop" ? suggestBoxRefDesktop : suggestBoxRefMobile;
+    const listId = variant === "desktop" ? ids.desktop : ids.mobile;
 
     return (
       <div ref={ref} className="relative w-full">
@@ -316,7 +335,12 @@ export function Header() {
             }
             aria-autocomplete="list"
             aria-expanded={showDropdown}
-            aria-controls={variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"}
+            aria-controls={listId}
+            aria-activedescendant={
+              activeIndex >= 0 && suggestions[activeIndex]
+                ? `${listId}-opt-${activeIndex}`
+                : undefined
+            }
           />
         </form>
 
@@ -326,13 +350,14 @@ export function Header() {
               {loadingSuggest ? "Buscando..." : suggestions.length ? "Sugerencias" : "Sin resultados"}
             </div>
 
-            <ul
-              id={variant === "desktop" ? "suggestions-desktop" : "suggestions-mobile"}
-              role="listbox"
-              className="max-h-80 overflow-auto"
-            >
+            <ul id={listId} role="listbox" className="max-h-80 overflow-auto">
               {suggestions.map((s, idx) => (
-                <li key={String(s.id ?? s.slug ?? s.title)}>
+                <li
+                  key={String(s.id ?? s.slug ?? s.title)}
+                  id={`${listId}-opt-${idx}`}
+                  role="option"
+                  aria-selected={idx === activeIndex}
+                >
                   <button
                     type="button"
                     onClick={() => pickSuggestion(s)}
@@ -406,7 +431,7 @@ export function Header() {
           </div>
 
           {/* CENTRO */}
-          <div className="hidden lg:flex justify-center">
+          <div className="hidden justify-center lg:flex">
             <div className="relative w-full max-w-[760px]">{SearchBox({ variant: "desktop" })}</div>
           </div>
 
@@ -418,7 +443,7 @@ export function Header() {
               {!me && !meLoading ? (
                 <>
                   <button
-                    onClick={() => setLoginOpen(true)}
+                    onClick={openLogin}
                     className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
                     type="button"
                     aria-expanded={loginOpen}
@@ -426,13 +451,14 @@ export function Header() {
                     <User className="h-5 w-5" />
                     Iniciar sesión
                   </button>
-
-                  <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
                 </>
               ) : (
                 <>
                   <button
-                    onClick={() => setProfileOpen((v) => !v)}
+                    onClick={() => {
+                      setLoginOpen(false);
+                      setProfileOpen((v) => !v);
+                    }}
                     className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
                     type="button"
                     aria-expanded={profileOpen}
@@ -478,6 +504,7 @@ export function Header() {
               href="/carrito"
               className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
               aria-label="Carrito"
+              onClick={() => setMobileOpen(false)}
             >
               <ShoppingCart className="h-5 w-5" />
               <CartBadge />
@@ -527,10 +554,7 @@ export function Header() {
               <div className="mt-4 flex gap-3">
                 {!me && !meLoading ? (
                   <button
-                    onClick={() => {
-                      setMobileOpen(false);
-                      setLoginOpen(true);
-                    }}
+                    onClick={openLogin}
                     className="flex h-11 flex-1 items-center justify-center gap-2 rounded-md border border-neutral-200 bg-white text-[15px] font-medium"
                     type="button"
                   >
@@ -568,6 +592,16 @@ export function Header() {
           </div>
         )}
       </Container>
+
+      {/* ✅ IMPORTANTÍSIMO: el modal se renderiza UNA sola vez, afuera del menú mobile */}
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onSuccess={() => {
+          refreshMe();
+          router.refresh();
+        }}
+      />
     </header>
   );
 }
