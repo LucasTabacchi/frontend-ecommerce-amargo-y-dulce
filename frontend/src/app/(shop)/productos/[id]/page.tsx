@@ -1,12 +1,18 @@
-import { notFound } from "next/navigation";
+// src/app/(shop)/productos/[id]/page.tsx
+import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
+import { Metadata } from "next";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
+
+interface Props {
+  params: { id: string };
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -23,35 +29,6 @@ function pickAttr(row: any) {
   return row?.attributes ?? row ?? {};
 }
 
-/**
- * Soporta:
- * - v5 plano: images: [{ url, formats }]
- * - v5 data:  images: { data: [{ url/formats or attributes }] }
- * - v4:       images: { data: [{ attributes: { url, formats } }] }
- * - single:   images: { url/formats }
- */
-function pickImage(rowOrAttr: any) {
-  const attr = pickAttr(rowOrAttr);
-
-  const v4 = attr?.images?.data?.[0]?.attributes;
-
-  const v5first =
-    Array.isArray(attr?.images)
-      ? attr.images?.[0]
-      : Array.isArray(attr?.images?.data)
-      ? attr.images.data?.[0]
-      : attr?.images;
-
-  const v5 = (v5first as any)?.attributes ?? v5first;
-
-  const img = v4 || v5;
-  if (!img) return "";
-
-  const f = (img as any)?.formats;
-  const url = f?.medium?.url || f?.small?.url || f?.thumbnail?.url || (img as any)?.url || "";
-  return strapiMediaUrl(url);
-}
-
 function asNum(v: any, fallback = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
@@ -62,70 +39,146 @@ function toStrOrNull(v: any) {
   return s ? s : null;
 }
 
-export default async function ProductDetailPage({ params }: { params: { id: string } }) {
-  const pid = String(params.id || "").trim();
-  if (!pid) return notFound();
+function richTextToPlainText(v: any) {
+  if (!v) return "";
+  if (typeof v === "string") return v;
 
-  const isNumeric = /^\d+$/.test(pid);
+  if (Array.isArray(v)) {
+    return v
+      .map((block) =>
+        Array.isArray(block?.children)
+          ? block.children.map((c: any) => c?.text ?? "").join("")
+          : ""
+      )
+      .join("\n")
+      .trim();
+  }
 
-  let row: any | null = null;
+  return String(v);
+}
+
+function pickImage(rowOrAttr: any) {
+  const attr = pickAttr(rowOrAttr);
+
+  const v5first = Array.isArray(attr?.images)
+    ? attr.images?.[0]
+    : Array.isArray(attr?.images?.data)
+    ? attr.images.data?.[0]
+    : attr?.images;
+
+  const img = v5first?.attributes ?? v5first;
+  if (!img) return "";
+
+  const f = img?.formats;
+  const url =
+    f?.medium?.url ||
+    f?.small?.url ||
+    f?.thumbnail?.url ||
+    img?.url ||
+    "";
+
+  return strapiMediaUrl(url);
+}
+
+async function getProduct(pid: string) {
+  const clean = String(pid || "").trim();
+  if (!clean) return null;
+
+  const isNumeric = /^\d+$/.test(clean);
 
   try {
+    // ✅ Si llega un ID numérico, resolvemos con findOne y redirigimos
+    if (isNumeric) {
+      const res = await fetcher<any>(`/products/${clean}?populate=*`, {
+        next: { revalidate: 3600 },
+      });
+
+      const row = res?.data ?? null;
+      const documentId =
+        row?.documentId ??
+        row?.attributes?.documentId ??
+        null;
+
+      if (documentId) {
+        redirect(`/productos/${documentId}`);
+      }
+
+      return row;
+    }
+
+    // ✅ Si llega documentId o slug
     const sp = new URLSearchParams();
     sp.set("populate", "*");
     sp.set("pagination[pageSize]", "1");
+    sp.set("status", "published");
+    sp.set("filters[$or][0][documentId][$eq]", clean);
+    sp.set("filters[$or][1][slug][$eq]", clean);
 
-    if (isNumeric) {
-      // ✅ legacy: id numérico
-      sp.set("filters[id][$eq]", pid);
-    } else {
-      // ✅ v5: documentId o fallback por slug
-      sp.set("filters[$or][0][documentId][$eq]", pid);
-      sp.set("filters[$or][1][slug][$eq]", pid);
-    }
+    const list = await fetcher<any>(`/products?${sp.toString()}`, {
+      next: { revalidate: 3600 },
+    });
 
-    // ✅ OJO: para ver producto no deberías requerir auth
-    const list = await fetcher<any>(`/api/products?${sp.toString()}`);
-    row = list?.data?.[0] ?? null;
-  } catch {
-    return notFound();
+    return list?.data?.[0] ?? null;
+  } catch (e) {
+    console.error("[productos/[id]] getProduct error:", e);
+    return null;
   }
+}
 
+export async function generateMetadata({ params }: Props): Promise<Metadata> {
+  const product = await getProduct(params.id);
+  if (!product) return { title: "Producto no encontrado" };
+
+  const attr = pickAttr(product);
+
+  const title = String(attr?.title ?? "Producto");
+  const description =
+    richTextToPlainText(attr?.description) ||
+    `Comprá ${title} en nuestra tienda online.`;
+
+  const img = pickImage(product);
+
+  return {
+    title,
+    description,
+    openGraph: {
+      title,
+      description,
+      images: img ? [{ url: img }] : [],
+    },
+  };
+}
+
+export default async function ProductDetailPage({ params }: Props) {
+  const row = await getProduct(params.id);
   if (!row) return notFound();
 
   const attr = pickAttr(row);
 
-  // ✅ id numérico de Strapi (siempre existe)
   const id = asNum(row?.id ?? attr?.id, NaN);
   if (!Number.isFinite(id)) return notFound();
 
-  // ✅ documentId (Strapi v5)
   const documentId =
     toStrOrNull(row?.documentId) ??
     toStrOrNull(attr?.documentId) ??
-    toStrOrNull(attr?.document_id) ??
     null;
 
-  const title = String(attr?.title ?? row?.title ?? "Producto");
-  const description = String(attr?.description ?? row?.description ?? "");
-  const category = attr?.category ?? row?.category ?? null;
+  const title = String(attr?.title ?? "Producto");
+  const description = richTextToPlainText(attr?.description);
+  const category = attr?.category ?? null;
 
-  const price = asNum(attr?.price ?? row?.price, 0);
-
-  const offRaw = attr?.off ?? row?.off ?? 0;
-  const off = asNum(offRaw, 0);
+  const price = asNum(attr?.price, 0);
+  const off = asNum(attr?.off, 0);
   const hasOff = off > 0;
-  const finalPrice = hasOff ? Math.round(price * (1 - off / 100)) : price;
+  const finalPrice = hasOff
+    ? Math.round(price * (1 - off / 100))
+    : price;
 
-  const stockRaw = attr?.stock ?? row?.stock ?? null;
-  const stock = stockRaw == null ? null : asNum(stockRaw, 0);
+  const stock = attr?.stock != null ? asNum(attr?.stock, 0) : null;
+  const slug = String(attr?.slug ?? "").trim() || String(id);
+  const outOfStock = stock != null && stock <= 0;
 
   const imageUrl = pickImage(row);
-
-  // slug puede ser null -> fallback seguro
-  const slug = String(attr?.slug ?? row?.slug ?? "").trim() || String(id);
-
-  const outOfStock = stock != null && stock <= 0;
 
   return (
     <main>
@@ -142,7 +195,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
         <div className="pt-6 pb-6">
           <h1 className="text-3xl font-extrabold text-neutral-900">{title}</h1>
           {category && (
-            <p className="mt-1 text-sm font-semibold text-neutral-500">{String(category)}</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-500">
+              {String(category)}
+            </p>
           )}
         </div>
 
@@ -176,7 +231,7 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
             <div className="flex items-end justify-between gap-4">
               <div>
                 <div className="flex items-baseline gap-3">
-                  <div className="text-3xl font-extrabold tracking-tight text-neutral-900">
+                  <div className="text-3xl font-extrabold text-neutral-900">
                     {formatARS(finalPrice)}
                   </div>
 
@@ -197,7 +252,9 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
               {stock != null && (
                 <div
                   className={`rounded-full px-3 py-1 text-xs font-bold ${
-                    stock > 0 ? "bg-emerald-50 text-emerald-700" : "bg-red-50 text-red-700"
+                    stock > 0
+                      ? "bg-emerald-50 text-emerald-700"
+                      : "bg-red-50 text-red-700"
                   }`}
                 >
                   {stock > 0 ? `Stock: ${stock}` : "Sin stock"}
@@ -207,25 +264,14 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
 
             {description && (
               <div className="mt-5">
-                <h2 className="text-sm font-extrabold text-neutral-900">Descripción</h2>
+                <h2 className="text-sm font-extrabold text-neutral-900">
+                  Descripción
+                </h2>
                 <p className="mt-2 text-sm leading-6 text-neutral-700 whitespace-pre-line">
                   {description}
                 </p>
               </div>
             )}
-
-            <div className="mt-6 rounded-xl bg-neutral-50 p-4 text-sm text-neutral-700">
-              <ul className="space-y-2">
-                <li className="flex items-start gap-2">
-                  <span className="mt-0.5">•</span>
-                  <span>Retiro / Envío coordinado (podés ajustar este texto).</span>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="mt-0.5">•</span>
-                  <span>Pagá con MercadoPago.</span>
-                </li>
-              </ul>
-            </div>
 
             <div className="mt-6">
               <AddToCartButton
@@ -237,10 +283,10 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
                   price,
                   off: hasOff ? off : undefined,
                   imageUrl,
-                  stock, // ✅ IMPORTANTE
+                  stock,
                 }}
               />
-              
+
               {outOfStock ? (
                 <p className="mt-3 text-center text-xs font-semibold text-red-700">
                   Este producto no tiene stock disponible.
@@ -254,9 +300,11 @@ export default async function ProductDetailPage({ params }: { params: { id: stri
           </aside>
         </div>
 
-        {/* ✅ Reviews: pasamos documentId si existe (clave en v5) */}
         <div className="pb-14">
-          <ProductReviews productDocumentId={documentId ?? undefined} productId={id} />
+          <ProductReviews
+            productDocumentId={documentId ?? undefined}
+            productId={id}
+          />
         </div>
       </Container>
     </main>

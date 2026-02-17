@@ -1,20 +1,30 @@
 import Link from "next/link";
 import Image from "next/image";
+import { Metadata } from "next";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { toCardItem } from "@/lib/strapi-mappers";
 
-export const dynamic = "force-dynamic";
+// ✅ Revalidar cada hora (ISR)
+export const revalidate = 3600;
+
+export const metadata: Metadata = {
+  title: "Productos | Chocolates Artesanales",
+  description: "Explorá nuestra amplia variedad de chocolates y bombones artesanales.",
+};
 
 type StrapiListResponse<T> = {
-  data: Array<{ id: number; attributes: T }>;
+  data: Array<{ id: number; attributes: T; documentId?: string }>;
   meta?: any;
 };
 
-type ProductAttributes = any;
-
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
+}
+
+function toStrOrNull(v: any) {
+  const s = String(v ?? "").trim();
+  return s ? s : null;
 }
 
 export default async function ProductosPage({
@@ -22,8 +32,7 @@ export default async function ProductosPage({
 }: {
   searchParams?: { q?: string };
 }) {
-  const qRaw = (searchParams?.q || "").trim();
-  const q = qRaw.length ? qRaw : "";
+  const q = (searchParams?.q || "").trim();
 
   let products: any[] = [];
   let errorMsg: string | null = null;
@@ -34,29 +43,49 @@ export default async function ProductosPage({
     sp.set("pagination[pageSize]", "100");
     sp.set("sort[0]", "createdAt:desc");
 
-    // ✅ Solo publicados (draft/publish)
-    sp.set("filters[publishedAt][$notNull]", "true");
+    // ✅ IMPORTANTE:
+    // En Strapi v5, el "published" se maneja con status=published.
+    // El filtro publishedAt puede no comportarse como esperás según configuración.
+    sp.set("status", "published");
 
     if (q) {
-      // ✅ Búsqueda por varios campos (si alguno no existe, no rompe)
       sp.set("filters[$or][0][title][$containsi]", q);
       sp.set("filters[$or][1][slug][$containsi]", q);
+
+      // ✅ Si description ahora es RichText (blocks), este filtro puede fallar/ser ignorado.
+      // Lo dejamos para compatibilidad; si te da problemas, lo sacamos.
       sp.set("filters[$or][2][description][$containsi]", q);
     }
 
-    // ✅ IMPORTANTE: pedir a Strapi con auth:true (Bearer token server-side)
-    const res = await fetcher<StrapiListResponse<ProductAttributes>>(
-      `/api/products?${sp.toString()}`,
-      { auth: true }
-    );
+    // ✅ Server Component: pegamos directo a Strapi (evita salto por API interna)
+    const res = await fetcher<StrapiListResponse<any>>(`/products?${sp.toString()}`, {
+      // ✅ Para listar productos NO debería requerir auth.
+      // Si tu fetcher usa auth=true para pegarle a Strapi con token, dejalo.
+      // Pero para storefront público, esto debería ser false.
+      auth: false,
+      next: { revalidate: q ? 0 : 3600 },
+    });
 
     const raw = Array.isArray(res?.data) ? res.data : [];
 
-    // ✅ mapper devuelve imageUrl listo
-    products = raw.map((item: any) => toCardItem(item));
+    // ✅ Aseguramos que cada card tenga documentId disponible (si tu mapper no lo preserva)
+    products = raw.map((item: any) => {
+      const card = toCardItem(item);
+
+      const documentId =
+        toStrOrNull(item?.documentId) ||
+        toStrOrNull(item?.attributes?.documentId) ||
+        toStrOrNull(card?.documentId);
+
+      return {
+        ...card,
+        // guardamos también el numérico por si querés usarlo para keys / fallback
+        id: card?.id ?? item?.id,
+        documentId,
+      };
+    });
   } catch (err: any) {
     errorMsg = err?.message || "No se pudieron cargar los productos.";
-    products = [];
   }
 
   return (
@@ -71,16 +100,13 @@ export default async function ProductosPage({
                 <span className="font-semibold text-neutral-900">“{q}”</span>
               </>
             ) : (
-              "Explorá nuestros productos."
+              "Explorá nuestros productos artesanales."
             )}
           </p>
 
           {q && (
             <div className="mt-4 flex items-center gap-3">
-              <Link
-                href="/productos"
-                className="text-sm underline text-neutral-700"
-              >
+              <Link href="/productos" className="text-sm underline text-neutral-700">
                 Limpiar búsqueda
               </Link>
               <span className="text-sm text-neutral-400">•</span>
@@ -93,25 +119,11 @@ export default async function ProductosPage({
 
         {errorMsg ? (
           <div className="rounded-xl border bg-white p-6 text-sm text-neutral-800">
-            <div className="font-semibold">
-              No se pudieron cargar los productos
-            </div>
-            <p className="mt-2 text-neutral-600">{errorMsg}</p>
-            <div className="mt-4">
-              <Link className="underline" href="/">
-                Volver al inicio
-              </Link>
-            </div>
+            <p>{errorMsg}</p>
           </div>
         ) : products.length === 0 ? (
           <div className="rounded-xl border bg-white p-6 text-sm text-neutral-700">
-            {q ? (
-              <>
-                No encontramos resultados para <b>“{q}”</b>.
-              </>
-            ) : (
-              "No hay productos todavía. Cargalos en Strapi y volvé a intentar."
-            )}
+            No encontramos resultados para su búsqueda.
           </div>
         ) : (
           <div className="pb-14">
@@ -124,12 +136,12 @@ export default async function ProductosPage({
                     ? Math.round(basePrice * (1 - p.off / 100))
                     : basePrice;
 
-                // ✅ IMPORTANTÍSIMO: SIEMPRE navegar por ID numérico (tu detalle funciona con id DB)
-                const href = `/productos/${p.id}`;
+                // ✅ URL estable: documentId (Strapi v5). Fallback: id numérico.
+                const href = `/productos/${p.documentId || p.id}`;
 
                 return (
                   <Link
-                    key={String(p.id)}
+                    key={String(p.documentId || p.id)}
                     href={href}
                     className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
                   >
@@ -139,7 +151,7 @@ export default async function ProductosPage({
                           src={p.imageUrl}
                           alt={p.title ?? "Producto"}
                           fill
-                          className="object-cover"
+                          className="object-cover transition group-hover:scale-105"
                           sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, (max-width: 1280px) 30vw, 22vw"
                         />
                       ) : (
@@ -147,9 +159,8 @@ export default async function ProductosPage({
                           Sin imagen
                         </div>
                       )}
-
                       {hasOff && (
-                        <span className="absolute right-3 top-3 rounded-full bg-red-50 px-2 py-1 text-xs font-bold text-red-700">
+                        <span className="absolute right-3 top-3 rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
                           -{p.off}%
                         </span>
                       )}
@@ -159,13 +170,6 @@ export default async function ProductosPage({
                       <div className="truncate text-base font-extrabold text-neutral-900">
                         {p.title ?? "Producto"}
                       </div>
-
-                      {p.category && (
-                        <div className="mt-1 text-xs font-semibold text-neutral-500">
-                          {String(p.category)}
-                        </div>
-                      )}
-
                       <div className="mt-4">
                         {finalPrice != null ? (
                           <div className="flex items-baseline gap-2">
@@ -179,14 +183,8 @@ export default async function ProductosPage({
                             )}
                           </div>
                         ) : (
-                          <div className="text-sm text-neutral-600">
-                            Precio no disponible
-                          </div>
+                          <div className="text-sm text-neutral-600">Precio no disponible</div>
                         )}
-                      </div>
-
-                      <div className="mt-4 text-sm font-semibold text-red-700 opacity-0 transition group-hover:opacity-100">
-                        Ver detalle →
                       </div>
                     </div>
                   </Link>

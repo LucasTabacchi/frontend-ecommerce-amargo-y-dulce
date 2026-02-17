@@ -89,7 +89,8 @@ export async function validateStockOrThrow(items: CartItem[]) {
     sp.set(`filters[$or][${i}][documentId][$eq]`, doc);
   });
 
-  const res = await fetcher<{ data: ProductRow[] }>(`/api/products?${sp.toString()}`, {
+  // ✅ Server-only (auth:true): pegamos directo a Strapi
+  const res = await fetcher<{ data: ProductRow[] }>(`/products?${sp.toString()}`, {
     auth: true,
   });
 

@@ -91,16 +91,49 @@ export default function GraciasPage() {
   const clear = useCartStore((s) => s.clear);
   const hasHydrated = useCartStore((s) => s.hasHydrated);
 
-  const orderId = sp.get("orderId") || "";
-  const externalRef = sp.get("external_reference") || "";
+  // ✅ Evita hydration mismatch: no dependemos de searchParams en SSR/primer render
+  const [isMounted, setIsMounted] = useState(false);
 
-  const initialStatus = normalizeStatus(sp.get("status"));
-  const [status, setStatus] = useState<StatusKind>(initialStatus);
+  // Valores derivados de la URL (solo cliente)
+  const [orderId, setOrderId] = useState<string>("");
+  const [externalRef, setExternalRef] = useState<string>("");
+
+  // Estado UI
+  const [status, setStatus] = useState<StatusKind>("pending");
   const [hint, setHint] = useState<string | null>(null);
+  const [orderNumber, setOrderNumber] = useState<string>("");
+
+  // ✅ para evitar re-poll innecesario cuando llega orderNumber
+  const orderNumberRef = useRef("");
+  useEffect(() => {
+    orderNumberRef.current = orderNumber;
+  }, [orderNumber]);
 
   const clearedRef = useRef(false);
   const resolvedRef = useRef<StatusKind | null>(null);
-  const latestUrlStatusRef = useRef<StatusKind>(initialStatus);
+
+  // Montaje (cliente)
+  useEffect(() => {
+    setIsMounted(true);
+  }, []);
+
+  // ✅ Leer params solo luego de montar, y sincronizar si cambian
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const nextOrderId = sp.get("orderId") || "";
+    const nextExternalRef = sp.get("external_reference") || "";
+    const nextUrlStatus = normalizeStatus(sp.get("status"));
+
+    setOrderId(nextOrderId);
+    setExternalRef(nextExternalRef);
+
+    // Si todavía no resolvimos por Strapi, usamos status de URL como fallback
+    if (!resolvedRef.current) {
+      setStatus(nextUrlStatus);
+      setHint(null);
+    }
+  }, [isMounted, sp]);
 
   // ✅ Vaciar carrito cuando la UI esté en success (1 sola vez) y el store ya hidrató
   useEffect(() => {
@@ -112,20 +145,9 @@ export default function GraciasPage() {
     clear();
   }, [status, clear, hasHydrated]);
 
-  // Si cambia la URL, usamos status solo como fallback si no resolvimos por Strapi
+  // Poll a Strapi para resolver estado real + orderNumber
   useEffect(() => {
-    const nextUrlStatus = normalizeStatus(sp.get("status"));
-    latestUrlStatusRef.current = nextUrlStatus;
-
-    if (!resolvedRef.current) {
-      setStatus(nextUrlStatus);
-      setHint(null);
-      // ❌ NO reseteamos clearedRef acá (puede generar comportamientos raros)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sp]);
-
-  useEffect(() => {
+    if (!isMounted) return;
     if (!orderId) return;
 
     let alive = true;
@@ -141,10 +163,17 @@ export default function GraciasPage() {
 
         if (!alive) return;
 
+        const data = json?.data;
+
         const orderStatus: string | null =
-          json?.data?.attributes?.orderStatus ??
-          json?.data?.orderStatus ??
-          null;
+          data?.attributes?.orderStatus ?? data?.orderStatus ?? null;
+
+        const fetchedOrderNumber: string =
+          data?.orderNumber ?? data?.attributes?.orderNumber ?? "";
+
+        if (fetchedOrderNumber && fetchedOrderNumber !== orderNumberRef.current) {
+          setOrderNumber(fetchedOrderNumber);
+        }
 
         const nextUi = mapOrderStatusToUi(orderStatus);
 
@@ -160,7 +189,6 @@ export default function GraciasPage() {
 
         setStatus((prev) => (prev === "success" ? "success" : nextUi));
 
-        // backup: si llega a success por acá, intentamos vaciar (aunque igual lo hace el effect de arriba)
         if (nextUi === "success" && hasHydrated && !clearedRef.current) {
           clearedRef.current = true;
           clear();
@@ -202,7 +230,7 @@ export default function GraciasPage() {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [orderId, clear, hasHydrated]);
+  }, [isMounted, orderId, clear, hasHydrated]);
 
   const statusLabel =
     status === "success"
@@ -217,7 +245,8 @@ export default function GraciasPage() {
     <main>
       <Container>
         <div className="py-10">
-          <StatusBadge status={status} />
+          {/* ✅ Mientras no montó: render estable (sin depender de query) */}
+          <StatusBadge status={isMounted ? status : "pending"} />
 
           <div className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
             <h2 className="text-lg font-extrabold text-neutral-900">Detalle del pedido</h2>
@@ -226,11 +255,20 @@ export default function GraciasPage() {
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-neutral-600">Pedido</span>
                 <span className="font-semibold text-neutral-900 break-all">
-                  {orderId || "—"}
+                  {isMounted && orderNumber ? (
+                    orderNumber
+                  ) : (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="inline-block h-4 w-44 animate-pulse rounded bg-neutral-200 align-middle" />
+                      <span className="text-xs text-neutral-500">
+                        {isMounted ? "Generando…" : "Cargando…"}
+                      </span>
+                    </span>
+                  )}
                 </span>
               </div>
 
-              {externalRef && (
+              {isMounted && externalRef && (
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-neutral-600">Referencia</span>
                   <span className="font-semibold text-neutral-900 break-all">
@@ -241,7 +279,9 @@ export default function GraciasPage() {
 
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <span className="text-neutral-600">Estado</span>
-                <span className="font-semibold text-neutral-900">{statusLabel}</span>
+                <span className="font-semibold text-neutral-900">
+                  {isMounted ? statusLabel : "—"}
+                </span>
               </div>
             </div>
 
@@ -267,7 +307,7 @@ export default function GraciasPage() {
                 Seguir comprando
               </Link>
 
-              {status === "success" && orderId && (
+              {isMounted && status === "success" && orderId && (
                 <Link
                   href={`/mis-pedidos/${encodeURIComponent(orderId)}`}
                   className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
@@ -277,14 +317,14 @@ export default function GraciasPage() {
               )}
             </div>
 
-            {status === "pending" && (
+            {isMounted && status === "pending" && (
               <p className="mt-4 text-xs text-neutral-500">
                 {hint ||
                   "Si el estado no cambia, refrescá la página o revisá tu email. El webhook puede tardar unos segundos."}
               </p>
             )}
 
-            {status === "success" && (
+            {isMounted && status === "success" && (
               <p className="mt-4 text-xs text-neutral-500">
                 Si no te llega el email de confirmación, revisá Spam/Promociones.
               </p>

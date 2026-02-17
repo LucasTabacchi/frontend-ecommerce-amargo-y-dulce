@@ -186,7 +186,7 @@ export default function MisPedidosPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="text-sm text-neutral-600">Pedido</div>
-                        <div className="text-base font-extrabold text-neutral-900">
+                        <div className="text-base font-extrabold text-neutral-900 break-words">
                           {o.orderNumber || String(o.id)}
                         </div>
                         {dateLabel && (
@@ -198,7 +198,7 @@ export default function MisPedidosPage() {
                         <StatusPill status={String(o.orderStatus || "")} />
                         <div className="text-right">
                           <div className="text-sm text-neutral-600">Total</div>
-                          <div className="text-base font-extrabold text-neutral-900">
+                          <div className="text-base font-extrabold text-neutral-900 whitespace-nowrap">
                             {formatARS(totalNum)}
                           </div>
                         </div>

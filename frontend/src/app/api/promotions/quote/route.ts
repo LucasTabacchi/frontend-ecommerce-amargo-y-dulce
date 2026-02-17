@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { fetcher } from "@/lib/fetcher";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type QuoteBody = {
   items?: Array<{ id: number; qty: number }>;

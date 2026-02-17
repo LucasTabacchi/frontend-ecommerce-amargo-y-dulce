@@ -1,13 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "./Container";
-import { Search, ShoppingCart, User, Menu, X, LogOut } from "lucide-react";
+import { Search, ShoppingCart, User, Menu, X } from "lucide-react";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
+import { useCartStore } from "@/store/cart.store";
 
 type Suggestion = {
   id: string | number | null;
@@ -17,6 +18,12 @@ type Suggestion = {
 };
 
 type MeResponse = { user: any | null };
+
+function normalizeQty(v: any) {
+  const n = Number(v);
+  if (!Number.isFinite(n)) return 0;
+  return Math.max(0, Math.floor(n));
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -56,6 +63,18 @@ function safeName(v: any) {
 
 export function Header() {
   const router = useRouter();
+
+  // ✅ evita hydration mismatch: en SSR siempre contamos 0, y en cliente ya mostramos el real
+  const [isMounted, setIsMounted] = useState(false);
+  useEffect(() => setIsMounted(true), []);
+
+  const cartCount = useCartStore((st) =>
+    typeof (st as any).totalItems === "function"
+      ? (st as any).totalItems()
+      : (st as any).items.reduce((acc: number, it: any) => acc + normalizeQty(it?.qty), 0)
+  );
+  const safeCartCount = isMounted ? cartCount : 0;
+
   const pathname = usePathname();
   const sp = useSearchParams();
 
@@ -86,14 +105,16 @@ export function Header() {
 
   const debounceRef = useRef<number | null>(null);
 
-  // ✅ claves únicas para a11y (desktop + mobile)
+  // ✅ IDs estables SSR/cliente (reemplaza Math.random)
+  const reactId = useId();
+  const stableId = useMemo(() => reactId.replace(/[:]/g, ""), [reactId]);
+
   const ids = useMemo(() => {
-    const rnd = Math.random().toString(36).slice(2);
     return {
-      desktop: `suggestions-desktop-${rnd}`,
-      mobile: `suggestions-mobile-${rnd}`,
+      desktop: `suggestions-desktop-${stableId}`,
+      mobile: `suggestions-mobile-${stableId}`,
     };
-  }, []);
+  }, [stableId]);
 
   async function refreshMe() {
     setMeLoading(true);
@@ -219,6 +240,32 @@ export function Header() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname, sp]);
+
+  // ✅ Trigger de login por URL: ?login=1&next=/checkout
+  // Abre el modal UNA vez y luego limpia el parámetro login=1 para que no se re-dispare solo.
+  useEffect(() => {
+    if (!isMounted) return;
+
+    const wantsLogin = sp.get("login") === "1";
+    if (!wantsLogin) return;
+
+    // cerramos otras cosas por prolijidad
+    setProfileOpen(false);
+    setMobileOpen(false);
+    setOpenSuggest(false);
+    setActiveIndex(-1);
+
+    setLoginOpen(true);
+
+    // ✅ limpiar "login=1" pero mantener "next"
+    const next = sp.get("next");
+    if (next) {
+      router.replace(`${pathname}?next=${encodeURIComponent(next)}`);
+    } else {
+      router.replace(pathname);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isMounted, sp, pathname]);
 
   function goSearch(raw: string) {
     const q = raw.trim();
@@ -381,7 +428,7 @@ export function Header() {
                   >
                     <span className="truncate">{s.title}</span>
                     {typeof s.price === "number" && (
-                      <span className="ml-3 shrink-0 text-xs text-neutral-600">
+                      <span className="ml-3 shrink-0 text-xs text-neutral-600 whitespace-nowrap">
                         {formatARS(s.price)}
                       </span>
                     )}
@@ -498,18 +545,25 @@ export function Header() {
             <Link
               href="/carrito"
               className="relative flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
+              aria-label={
+                safeCartCount > 0
+                  ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
+                  : "Carrito"
+              }
             >
               <span className="relative inline-flex">
                 <ShoppingCart className="h-5 w-5" />
                 <CartBadge />
               </span>
               Carrito
+              <span className="sr-only">
+                {safeCartCount > 0 ? `, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}` : ""}
+              </span>
             </Link>
           </div>
 
           {/* MOBILE */}
           <div className="flex items-center justify-end gap-2 md:hidden">
-            {/* Usuario: si no hay sesión abre login; si hay sesión va a /mi-perfil */}
             <button
               type="button"
               onClick={onUserPressMobile}
@@ -526,7 +580,11 @@ export function Header() {
             <Link
               href="/carrito"
               className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
-              aria-label="Carrito"
+              aria-label={
+                safeCartCount > 0
+                  ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
+                  : "Carrito"
+              }
               onClick={() => setMobileOpen(false)}
             >
               <ShoppingCart className="h-5 w-5" />
@@ -571,6 +629,14 @@ export function Header() {
         onClose={() => setLoginOpen(false)}
         onSuccess={() => {
           refreshMe();
+          setLoginOpen(false);
+
+          const next = sp.get("next");
+          if (next) {
+            router.push(next);
+            return;
+          }
+
           router.refresh();
         }}
       />

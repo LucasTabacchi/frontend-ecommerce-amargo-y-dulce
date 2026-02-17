@@ -10,38 +10,37 @@ type HomeBestSellersProps = {
 
 /**
  * Sección del home: "PRODUCTOS MÁS COMPRADOS"
- * - Recibe productos desde la Home (Strapi)
- * - Renderiza ProductCard sin mocks
+ * - Implementa un grid intrínseco que se adapta automáticamente al contenido.
+ * - Utiliza espaciado fluido para márgenes y paddings.
  */
 export function HomeBestSellers({ products }: HomeBestSellersProps) {
   if (!products || products.length === 0) return null;
 
   return (
-    <section className="py-10 md:py-14">
-      {/* ✅ más ancho y con padding lateral como el carrusel/hero */}
-      <div className="mx-auto w-full max-w-7xl px-4 sm:px-6 lg:px-8">
+    <section className="py-fluid-lg">
+      <div className="mx-auto w-full max-w-7xl px-fluid-sm md:px-fluid-md lg:px-fluid-lg">
         <div className="flex items-center justify-center">
-          <h2 className="text-xs font-extrabold tracking-[0.35em] text-neutral-900">
+          <h2 className="text-fluid-xs font-extrabold tracking-[0.35em] text-neutral-900">
             PRODUCTOS MÁS COMPRADOS
           </h2>
         </div>
 
-        {/* ✅ grid más “grande” (más gap + mismo ancho del hero) */}
-        <div className="mt-10 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-3">
+        {/* ✅ Grid intrínseco con auto-fit y minmax */}
+        <div className="mt-fluid-md grid grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))] gap-fluid-md">
           {products.map((p: any) => (
             <div
               key={String(p.documentId ?? p.id)}
-              className="w-full h-full"
+              className="w-full"
             >
               <ProductCard item={p} />
             </div>
           ))}
         </div>
 
-        <div className="mt-10 flex justify-center">
+        <div className="mt-fluid-md flex justify-center">
           <Link
             href="/productos"
-            className="rounded-full bg-orange-600 px-6 py-2 text-sm font-bold text-white hover:bg-orange-700 transition-colors"
+            className="rounded-full bg-orange-600 px-fluid-md py-2 text-fluid-sm font-bold text-white hover:bg-orange-700 transition-colors"
           >
             Más productos
           </Link>

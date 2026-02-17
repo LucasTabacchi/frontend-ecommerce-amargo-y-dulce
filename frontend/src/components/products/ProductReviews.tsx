@@ -7,7 +7,7 @@ type ReviewItem = {
   rating: number;
   title?: string;
   text?: string; // en UI mostramos esto (sale de comment/text/body)
-  name?: string;
+  // name?: string;
   createdAt?: string;
 };
 
@@ -44,7 +44,7 @@ function normalizeReviewRow(r: any): ReviewItem {
     rating: Number.isFinite(ratingNum) ? ratingNum : 0,
     title: String(a?.title ?? r?.title ?? "").trim() || undefined,
     text,
-    name: String(a?.name ?? r?.name ?? "").trim() || undefined,
+    // name: String(a?.name ?? r?.name ?? "").trim() || undefined,
     createdAt: String(a?.createdAt ?? r?.createdAt ?? "").trim() || undefined,
   };
 }
@@ -102,7 +102,7 @@ export function ProductReviews({
 
   // form
   const [rating, setRating] = useState(5);
-  const [name, setName] = useState("");
+  // const [name, setName] = useState("");
   const [title, setTitle] = useState("");
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
@@ -179,7 +179,7 @@ export function ProductReviews({
           productId: pidOk ? Number(productId) : undefined,
           productDocumentId: productDocumentId || undefined,
           rating: ratingNum,
-          name: name.trim() || undefined,
+          // name: name.trim() || undefined,
           title: title.trim() || undefined,
           comment: text.trim(), // ✅ Strapi field
         }),
@@ -189,7 +189,7 @@ export function ProductReviews({
       if (!r.ok) throw new Error(json?.error || `HTTP ${r.status}`);
 
       // reset
-      setName("");
+      // setName("");
       setTitle("");
       setText("");
       setRating(5);
@@ -250,7 +250,7 @@ export function ProductReviews({
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <label className="grid gap-1">
+          {/* <label className="grid gap-1">
             <span className="text-xs font-semibold text-neutral-600">
               Nombre (opcional)
             </span>
@@ -261,7 +261,7 @@ export function ProductReviews({
               placeholder="Ej: Lucas"
               disabled={submitting}
             />
-          </label>
+          </label> */}
 
           <label className="grid gap-1">
             <span className="text-xs font-semibold text-neutral-600">
@@ -320,7 +320,7 @@ export function ProductReviews({
                   </div>
                 </div>
                 <div className="text-xs text-neutral-500">
-                  {r.name ? `${r.name} · ` : ""}
+                  {/* {r.name ? `${r.name} · ` : ""} */}
                   {formatDate(r.createdAt)}
                 </div>
               </div>

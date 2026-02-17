@@ -1,5 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Evita que el build requiera acceso a Google Fonts (útil en CI/entornos sin red)
+  optimizeFonts: false,
   images: {
     remotePatterns: [
       // 🧪 Strapi local (desarrollo)

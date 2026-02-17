@@ -31,9 +31,9 @@ export function AddToCartDetail({
       <div className="flex items-center gap-2">
         <button
           onClick={dec}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-50"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-50"
           type="button"
-          aria-label="Restar"
+          aria-label={`Disminuir cantidad de ${item.title}`}
           disabled={disabled}
         >
           <Minus className="h-4 w-4" />
@@ -45,9 +45,9 @@ export function AddToCartDetail({
 
         <button
           onClick={inc}
-          className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-50"
+          className="inline-flex h-11 w-11 items-center justify-center rounded-full border border-neutral-200 bg-white hover:bg-neutral-50 disabled:opacity-50"
           type="button"
-          aria-label="Sumar"
+          aria-label={`Aumentar cantidad de ${item.title}`}
           disabled={disabled}
         >
           <Plus className="h-4 w-4" />

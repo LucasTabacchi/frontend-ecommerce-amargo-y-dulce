@@ -44,6 +44,10 @@ export async function fetcher<T>(url: string, options: FetcherOptions = {}): Pro
 
   // ✅ Solo agregamos Authorization si options.auth === true
   if (options.auth === true) {
+    // Seguridad: nunca permitir auth en el browser
+    if (typeof window !== "undefined") {
+      throw new Error("fetcher(auth:true) solo puede ejecutarse en el servidor");
+    }
     if (!token || token.length < 10) {
       throw new Error("Falta STRAPI_API_TOKEN/STRAPI_TOKEN para request con auth:true");
     }
@@ -53,7 +57,9 @@ export async function fetcher<T>(url: string, options: FetcherOptions = {}): Pro
   const res = await fetch(fullUrl, {
     ...options,
     headers,
-    cache: "no-store",
+    // ✅ No forzamos cache:no-store.
+    // En Server Components, Next decide cache/revalidate según `next`/`cache` del caller.
+    // En Route Handlers/mutations, el caller debería pasar `cache: 'no-store'`.
   });
 
   if (!res.ok) {

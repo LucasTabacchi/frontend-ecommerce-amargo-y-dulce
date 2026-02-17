@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 function getBase() {
   return (
     process.env.STRAPI_URL ||

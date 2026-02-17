@@ -4,9 +4,9 @@ import { Chrome } from "lucide-react";
 
 export default function LoginPage() {
   return (
-    <main className="min-h-screen bg-[#FAF7F2]">
+    <main className="min-h-screen min-h-[100dvh] bg-[#FAF7F2]">
       <Container>
-        <div className="flex min-h-screen items-center justify-center py-12">
+        <div className="flex min-h-screen min-h-[100dvh] items-center justify-center py-12">
           <div className="w-full max-w-md rounded-2xl border border-neutral-200 bg-white p-8 shadow-sm">
             {/* Logo / Marca */}
             <Link href="/" className="block text-center leading-none">

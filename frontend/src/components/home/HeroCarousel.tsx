@@ -43,7 +43,6 @@ export function HeroCarousel({
 
   const total = safeSlides.length;
 
-  // si cambia la cantidad de slides, nos aseguramos de quedar en un índice válido
   useEffect(() => {
     if (!total) return;
     setIndex((i) => (i >= total ? 0 : i));
@@ -73,7 +72,7 @@ export function HeroCarousel({
   const imgSrc = normalizePublicImageSrc(current.image);
 
   return (
-    <section className="relative overflow-hidden rounded-2xl border bg-white">
+    <section className="relative overflow-hidden rounded-2xl border bg-white min-h-[40dvh] md:min-h-0">
       {current.href ? (
         <Link href={current.href} className="block" aria-label={`Ir a ${current.href}`}>
           <HeroSlide imgSrc={imgSrc} current={current} />
@@ -90,7 +89,7 @@ export function HeroCarousel({
           <button
             type="button"
             onClick={prev}
-            className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 px-2.5 py-1.5 text-sm font-bold shadow hover:bg-white md:left-3 md:px-3 md:py-2"
+            className="absolute left-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-2 text-sm font-bold shadow hover:bg-white md:left-4"
             aria-label="Anterior"
           >
             ‹
@@ -98,7 +97,7 @@ export function HeroCarousel({
           <button
             type="button"
             onClick={next}
-            className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 px-2.5 py-1.5 text-sm font-bold shadow hover:bg-white md:right-3 md:px-3 md:py-2"
+            className="absolute right-2 top-1/2 z-10 -translate-y-1/2 rounded-full bg-white/90 p-2 text-sm font-bold shadow hover:bg-white md:right-4"
             aria-label="Siguiente"
           >
             ›
@@ -108,7 +107,7 @@ export function HeroCarousel({
 
       {/* Dots */}
       {total > 1 && (
-        <div className="absolute bottom-2 left-0 right-0 z-10 flex justify-center gap-2 md:bottom-3">
+        <div className="absolute bottom-4 left-0 right-0 z-10 flex justify-center gap-2">
           {safeSlides.map((s, i) => (
             <button
               key={s.id}
@@ -116,7 +115,7 @@ export function HeroCarousel({
               onClick={() => setIndex(i)}
               className={[
                 "h-2 w-2 rounded-full transition md:h-2.5 md:w-2.5",
-                i === index ? "bg-red-600" : "bg-white/80",
+                i === index ? "bg-red-600 w-4 md:w-5" : "bg-white/80",
               ].join(" ")}
               aria-label={`Ir a slide ${i + 1}`}
             />
@@ -132,17 +131,15 @@ function HeroSlide({ imgSrc, current }: { imgSrc: string; current: Slide }) {
 
   return (
     <>
-      {/* ✅ Mantiene desktop como antes (aspect ratio),
-          pero controla mejor el alto en mobile */}
       <div className="relative w-full bg-neutral-100">
-        <div className="relative h-[260px] w-full sm:h-[320px] md:aspect-[16/7] md:h-auto">
+        <div className="relative h-[40dvh] w-full sm:h-[50dvh] md:aspect-[21/9] md:h-auto">
           {imgSrc && !imgError ? (
             <Image
               src={imgSrc}
               alt={current.alt}
               fill
               priority
-              sizes="(max-width: 768px) 100vw, 1200px"
+              sizes="100vw"
               className="object-cover"
               onError={() => setImgError(true)}
             />
@@ -151,34 +148,25 @@ function HeroSlide({ imgSrc, current }: { imgSrc: string; current: Slide }) {
               No se pudo cargar la imagen
             </div>
           )}
-          {/* leve overlay para legibilidad */}
-          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/25 via-black/0 to-black/0" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent" />
         </div>
       </div>
 
       {(current.title || current.subtitle || current.cta) && (
-        <div className="absolute inset-0 flex items-end">
-          {/* ✅ Mobile compacto, Desktop igual que antes (desde md) */}
-          <div
-            className={[
-              // mobile: más chico
-              "m-3 w-[calc(100%-1.5rem)] max-w-[280px] rounded-2xl bg-white/85 p-3 backdrop-blur",
-              // desktop: igual que antes
-              "md:m-5 md:w-auto md:max-w-none md:bg-white/80 md:p-5",
-            ].join(" ")}
-          >
+        <div className="absolute inset-0 flex items-center justify-start p-fluid-md md:p-fluid-lg">
+          <div className="max-w-[85%] rounded-2xl bg-white/85 p-fluid-md backdrop-blur md:max-w-xl md:p-fluid-lg">
             {current.title && (
-              <div className="text-base font-extrabold text-neutral-900 md:text-xl">
+              <div className="text-fluid-lg font-extrabold text-neutral-900 md:text-fluid-2xl">
                 {current.title}
               </div>
             )}
             {current.subtitle && (
-              <div className="mt-1 text-xs text-neutral-700 md:text-sm">
+              <div className="mt-2 text-fluid-xs text-neutral-700 md:text-fluid-sm">
                 {current.subtitle}
               </div>
             )}
             {current.cta && (
-              <div className="mt-2 inline-flex rounded-full bg-red-600 px-3 py-1.5 text-xs font-bold text-white md:mt-3 md:px-4 md:py-2 md:text-sm">
+              <div className="mt-4 inline-flex rounded-full bg-red-600 px-fluid-md py-2 text-fluid-xs font-bold text-white md:mt-6 md:text-fluid-sm">
                 {current.cta}
               </div>
             )}

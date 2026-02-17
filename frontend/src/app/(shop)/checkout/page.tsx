@@ -516,6 +516,7 @@ export default function CheckoutPage() {
     const startedAt = Date.now();
 
     async function tick() {
+      if (ui.kind === "form") return;
       try {
         const res = await fetch(`/api/orders/${ui.orderId}`, { cache: "no-store" });
         const json = await res.json();
@@ -792,7 +793,7 @@ export default function CheckoutPage() {
         <h1 className="text-3xl font-extrabold py-8">Checkout</h1>
 
         {(error || stockProblems.length > 0) && (
-          <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700">
+          <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700" role="alert" aria-live="assertive">
             {error ? <div className="font-semibold">{error}</div> : null}
 
             {stockProblems.length > 0 && (
@@ -1056,22 +1057,22 @@ export default function CheckoutPage() {
             <div className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span>Subtotal</span>
-                <span>{formatARS(effectiveSubtotal)}</span>
+                <span className="whitespace-nowrap">{formatARS(effectiveSubtotal)}</span>
               </div>
 
               <div className="mt-2 flex items-center justify-between">
                 <span>Descuento</span>
-                <span>-{formatARS(effectiveDiscount)}</span>
+                <span className="whitespace-nowrap">-{formatARS(effectiveDiscount)}</span>
               </div>
 
               <div className="mt-2 flex items-center justify-between">
                 <span>Envío</span>
-                <span>{shippingCost === 0 ? "GRATIS" : formatARS(shippingCost)}</span>
+                <span className="whitespace-nowrap">{shippingCost === 0 ? "GRATIS" : formatARS(shippingCost)}</span>
               </div>
 
               <div className="mt-2 flex items-center justify-between font-semibold">
                 <span>Total</span>
-                <span>{formatARS(grandTotal)}</span>
+                <span className="whitespace-nowrap">{formatARS(grandTotal)}</span>
               </div>
 
               {quoting ? <div className="mt-2 text-xs opacity-70">Calculando promociones…</div> : null}

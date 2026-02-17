@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
@@ -42,7 +43,7 @@ export async function PUT(req: Request, ctx: { params: { id: string } }) {
         ...authHeaders(),
         "Content-Type": "application/json",
         Accept: "application/json",
-      },
+      } as HeadersInit,
       body: JSON.stringify({ data: { ...body } }),
       cache: "no-store",
     });
@@ -74,7 +75,7 @@ export async function DELETE(_req: Request, ctx: { params: { id: string } }) {
       headers: {
         ...authHeaders(),
         Accept: "application/json",
-      },
+      } as HeadersInit,
       cache: "no-store",
     });
 

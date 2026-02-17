@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function pickNotificationInfo(url: URL, body: any) {
   const typeFromQuery =

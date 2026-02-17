@@ -293,7 +293,7 @@ export default function PedidoDetallePage() {
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm text-neutral-600">Pedido</div>
-                    <div className="text-xl font-extrabold text-neutral-900">
+                    <div className="text-xl font-extrabold text-neutral-900 break-words">
                       {order.orderNumber || String(order.documentId || order.id || id)}
                     </div>
                     {createdLabel && <div className="mt-1 text-sm text-neutral-600">{createdLabel}</div>}
@@ -304,7 +304,7 @@ export default function PedidoDetallePage() {
                 <div className="mt-5 space-y-3 text-sm">
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-neutral-600">Total</span>
-                    <span className="font-extrabold text-neutral-900">{formatARS(totalNum)}</span>
+                    <span className="font-extrabold text-neutral-900 whitespace-nowrap">{formatARS(totalNum)}</span>
                   </div>
 
                   {order.shippingAddress?.text && (
@@ -369,7 +369,7 @@ export default function PedidoDetallePage() {
 
                 <div className="mt-5 flex items-center justify-between rounded-xl bg-neutral-50 p-4">
                   <span className="text-sm font-semibold text-neutral-700">Total</span>
-                  <span className="text-base font-extrabold text-neutral-900">{formatARS(totalNum)}</span>
+                  <span className="text-base font-extrabold text-neutral-900 whitespace-nowrap">{formatARS(totalNum)}</span>
                 </div>
               </div>
             </div>

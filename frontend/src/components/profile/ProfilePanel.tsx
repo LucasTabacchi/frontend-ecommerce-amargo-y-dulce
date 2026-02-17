@@ -287,11 +287,11 @@ export function ProfilePanel({
         isDefault: Boolean(form.isDefault),
       };
 
-      if (payload.street.length < 2) throw new Error("Ingresá la calle.");
-      if (payload.number.length < 1) throw new Error("Ingresá el número/altura.");
-      if (payload.city.length < 2) throw new Error("Ingresá la ciudad.");
-      if (payload.province.length < 2) throw new Error("Ingresá la provincia.");
-      if (payload.zip.length < 3) throw new Error("Ingresá el código postal.");
+      if ((payload.street?.length ?? 0) < 2) throw new Error("Ingresá la calle.");
+      if ((payload.number?.length ?? 0) < 1) throw new Error("Ingresá el número/altura.");
+      if ((payload.city?.length ?? 0) < 2) throw new Error("Ingresá la ciudad.");
+      if ((payload.province?.length ?? 0) < 2) throw new Error("Ingresá la provincia.");
+      if ((payload.zip?.length ?? 0) < 3) throw new Error("Ingresá el código postal.");
 
       const url = isEdit ? `/api/addresses/${editingId}` : `/api/addresses`;
       const method = isEdit ? "PUT" : "POST";

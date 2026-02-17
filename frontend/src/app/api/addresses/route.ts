@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
@@ -62,7 +63,7 @@ export async function GET() {
         headers: {
           ...authHeaders(),
           Accept: "application/json",
-        },
+        } as HeadersInit,
         cache: "no-store",
       }
     );
@@ -103,7 +104,7 @@ export async function POST(req: Request) {
         ...authHeaders(),
         "Content-Type": "application/json",
         Accept: "application/json",
-      },
+      } as HeadersInit,
       body: JSON.stringify({
         data: {
           label: body.label ?? null,

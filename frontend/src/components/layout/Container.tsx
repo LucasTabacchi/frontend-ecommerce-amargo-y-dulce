@@ -1,3 +1,13 @@
-export function Container({ children }: { children: React.ReactNode }) {
-  return <div className="w-full px-4 sm:px-6 lg:px-14">{children}</div>;
+export function Container({ 
+  children, 
+  className = "" 
+}: { 
+  children: React.ReactNode;
+  className?: string;
+}) {
+  return (
+    <div className={`mx-auto w-full max-w-7xl px-fluid-sm md:px-fluid-md lg:px-fluid-lg ${className}`}>
+      {children}
+    </div>
+  );
 }

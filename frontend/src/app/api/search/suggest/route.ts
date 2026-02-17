@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { fetcher } from "@/lib/fetcher";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 type StrapiListResponse<T> = {
   data: Array<{ id: number; attributes: T }>;
@@ -44,14 +45,13 @@ export async function GET(req: Request) {
   sp.set("filters[$or][1][slug][$containsi]", q);
   sp.set("filters[$or][2][description][$containsi]", q);
 
-  // ✅ Solo publicados si tu colección usa draft/publish
-  // (si no existe publishedAt, Strapi simplemente lo ignora en muchos casos;
-  // si en tu caso lo rompe, lo sacamos)
-  sp.set("filters[publishedAt][$notNull]", "true");
+  // ✅ Strapi v5: status=published
+  sp.set("status", "published");
 
   try {
     const res = await fetcher<StrapiListResponse<ProductAttributes>>(
-      `/api/products?${sp.toString()}`
+      `/products?${sp.toString()}`,
+      { cache: "no-store" }
     );
 
     const data = Array.isArray(res?.data) ? res.data : [];

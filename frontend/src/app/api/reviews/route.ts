@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 export const dynamic = "force-dynamic";
+export const runtime = "nodejs";
 
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
@@ -156,7 +157,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Rating inválido (1 a 5)" }, { status: 400 });
   }
   if (!comment) return NextResponse.json({ error: "Falta comentario" }, { status: 400 });
-  if (!name) return NextResponse.json({ error: "Falta nombre" }, { status: 400 });
+  // if (!name) return NextResponse.json({ error: "Falta nombre" }, { status: 400 });
 
   const strapiBase = normalizeStrapiBase(
     process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"

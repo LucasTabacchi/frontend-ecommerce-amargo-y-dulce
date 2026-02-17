@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
-export default function GoogleRedirectPage() {
+function GoogleRedirectContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const [err, setErr] = useState<string | null>(null);
@@ -35,4 +35,12 @@ export default function GoogleRedirectPage() {
 
   if (err) return <div className="p-6">Error: {err}</div>;
   return <div className="p-6">Conectando con Google…</div>;
+}
+
+export default function GoogleRedirectPage() {
+  return (
+    <Suspense fallback={<div className="p-6">Cargando…</div>}>
+      <GoogleRedirectContent />
+    </Suspense>
+  );
 }

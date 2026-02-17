@@ -4,6 +4,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
 import { useCartStore } from "@/store/cart.store";
@@ -30,6 +31,8 @@ type Quote = {
   }>;
 };
 
+type MeResponse = { user: any | null };
+
 function normalizeQty(v: any) {
   const n = Number(v);
   if (!Number.isFinite(n)) return 0;
@@ -44,10 +47,16 @@ function normStock(v: any): number | null {
 }
 
 export default function CarritoPage() {
+  const router = useRouter();
+
   const items = useCartStore((s) => s.items);
   const inc = useCartStore((s) => s.inc);
   const dec = useCartStore((s) => s.dec);
   const removeItem = useCartStore((s) => s.removeItem);
+
+  // ✅ auth (para bloquear checkout)
+  const [meLoading, setMeLoading] = useState(true);
+  const [me, setMe] = useState<any | null>(null);
 
   // ✅ alerta simple (sin librerías)
   const [alertMsg, setAlertMsg] = useState<string | null>(null);
@@ -62,6 +71,30 @@ export default function CarritoPage() {
   useEffect(() => {
     return () => {
       if (alertTimerRef.current) window.clearTimeout(alertTimerRef.current);
+    };
+  }, []);
+
+  // ✅ obtener sesión
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      try {
+        const r = await fetch("/api/auth/me", { cache: "no-store" });
+        const j: MeResponse = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setMe(j.user ?? null);
+      } catch {
+        if (!alive) return;
+        setMe(null);
+      } finally {
+        if (!alive) return;
+        setMeLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
     };
   }, []);
 
@@ -150,6 +183,27 @@ export default function CarritoPage() {
     ? quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)
     : 0;
 
+  // ✅ handler: bloquear checkout si no hay sesión
+  function onCheckoutClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (items.length === 0) return;
+
+    // mientras carga, no hacemos nada (evita flashes raros)
+    if (meLoading) {
+      e.preventDefault();
+      return;
+    }
+
+    if (!me) {
+      e.preventDefault();
+
+      // (opcional) alerta explicativa. Si no la querés, borrá esta línea.
+      showAlert("Tenés que iniciar sesión para finalizar la compra.");
+
+      // ✅ NO ir a home: quedate en carrito y dispará el modal via ?login=1
+      router.push(`/carrito?login=1&next=${encodeURIComponent("/checkout")}`);
+    }
+  }
+
   return (
     <main>
       <Container>
@@ -165,7 +219,11 @@ export default function CarritoPage() {
 
           {/* ✅ Alert banner */}
           {alertMsg && (
-            <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800">
+            <div
+              className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2 text-sm text-amber-800"
+              role="status"
+              aria-live="polite"
+            >
               {alertMsg}
             </div>
           )}
@@ -224,10 +282,10 @@ export default function CarritoPage() {
                         )}
                       </div>
 
-                      <div className="flex-1">
+                      <div className="flex-1 min-w-0">
                         <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <div className="font-bold text-neutral-900">{it.title}</div>
+                          <div className="min-w-0">
+                            <div className="font-bold text-neutral-900 break-words">{it.title}</div>
                             <div className="mt-1 text-sm text-neutral-600">{it.description}</div>
 
                             {hasOff ? (
@@ -235,10 +293,10 @@ export default function CarritoPage() {
                                 <span className="rounded-full bg-red-600 px-2 py-1 font-bold text-white">
                                   {it.off}% OFF
                                 </span>
-                                <span className="text-neutral-500 line-through">
+                                <span className="text-neutral-500 line-through whitespace-nowrap">
                                   {formatARS(it.price)}
                                 </span>
-                                <span className="font-semibold text-neutral-900">
+                                <span className="font-semibold text-neutral-900 whitespace-nowrap">
                                   {formatARS(unit)}
                                 </span>
                               </div>
@@ -268,8 +326,8 @@ export default function CarritoPage() {
 
                           <button
                             onClick={() => removeItem(it.slug)}
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-md hover:bg-neutral-50"
-                            aria-label="Eliminar"
+                            className="inline-flex h-11 w-11 items-center justify-center rounded-md hover:bg-neutral-50"
+                            aria-label={`Eliminar ${it.title} del carrito`}
                             title="Eliminar"
                             type="button"
                           >
@@ -282,8 +340,8 @@ export default function CarritoPage() {
                           <div className="flex items-center gap-2">
                             <button
                               onClick={() => dec(it.slug)}
-                              className="inline-flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white hover:bg-neutral-50"
-                              aria-label="Restar"
+                              className="inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white hover:bg-neutral-50"
+                              aria-label={`Disminuir cantidad de ${it.title}`}
                               type="button"
                             >
                               <Minus className="h-4 w-4" />
@@ -295,7 +353,6 @@ export default function CarritoPage() {
 
                             <button
                               onClick={() => {
-                                // ✅ bloqueo UI + aviso claro
                                 if (outOfStock) {
                                   showAlert(`"${it.title}" no tiene stock disponible.`);
                                   return;
@@ -308,12 +365,12 @@ export default function CarritoPage() {
                               }}
                               disabled={outOfStock || reachedLimit}
                               className={[
-                                "inline-flex h-9 w-9 items-center justify-center rounded-md border bg-white",
+                                "inline-flex h-11 w-11 items-center justify-center rounded-md border bg-white",
                                 outOfStock || reachedLimit
                                   ? "cursor-not-allowed border-neutral-200 opacity-50"
                                   : "border-neutral-200 hover:bg-neutral-50",
                               ].join(" ")}
-                              aria-label="Sumar"
+                              aria-label={`Aumentar cantidad de ${it.title}`}
                               type="button"
                             >
                               <Plus className="h-4 w-4" />
@@ -326,7 +383,6 @@ export default function CarritoPage() {
                           </div>
                         </div>
 
-                        {/* ✅ warning si qty > stock (por items viejos / stock bajó) */}
                         {hasStock && stock > 0 && qty > stock && (
                           <p className="mt-3 text-xs text-red-700">
                             Tu cantidad supera el stock disponible. Ajustala a {stock} para continuar.
@@ -374,7 +430,9 @@ export default function CarritoPage() {
 
               <div className="flex justify-between text-base">
                 <span className="font-extrabold text-neutral-900">Total</span>
-                <span className="font-extrabold text-neutral-900">{formatARS(effectiveTotal)}</span>
+                <span className="font-extrabold text-neutral-900 whitespace-nowrap">
+                  {formatARS(effectiveTotal)}
+                </span>
               </div>
 
               {isQuoting ? (
@@ -384,10 +442,11 @@ export default function CarritoPage() {
 
             <Link
               href="/checkout"
-              aria-disabled={items.length === 0}
+              onClick={onCheckoutClick}
+              aria-disabled={items.length === 0 || meLoading}
               className={[
                 "mt-6 block w-full rounded-full bg-red-600 py-3 text-center text-sm font-semibold text-white hover:bg-red-700",
-                items.length === 0 ? "pointer-events-none opacity-50" : "",
+                items.length === 0 || meLoading ? "pointer-events-none opacity-50" : "",
               ].join(" ")}
             >
               Finalizar compra

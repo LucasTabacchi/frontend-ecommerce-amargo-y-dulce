@@ -2,9 +2,7 @@ import { CreditCard, Truck, BadgeDollarSign, UserRound } from "lucide-react";
 
 /**
  * Item de info/beneficio.
- * - icon: icono (lucide)
- * - title: título corto
- * - subtitle: texto chico
+ * - Utiliza tipografía fluida para mejor legibilidad en diferentes tamaños.
  */
 function InfoItem({
   icon: Icon,
@@ -16,16 +14,16 @@ function InfoItem({
   subtitle: string;
 }) {
   return (
-    <div className="flex items-center gap-3 px-4 py-3">
-      <div className="flex h-9 w-9 items-center justify-center rounded-md border border-neutral-200 bg-white">
+    <div className="flex items-center gap-fluid-xs px-fluid-sm py-fluid-xs">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white">
         <Icon className="h-5 w-5 text-neutral-700" />
       </div>
 
       <div className="leading-tight">
-        <div className="text-xs font-semibold uppercase tracking-wide text-neutral-800">
+        <div className="text-fluid-xs font-semibold uppercase tracking-wide text-neutral-800">
           {title}
         </div>
-        <div className="text-xs text-neutral-500">{subtitle}</div>
+        <div className="text-fluid-xs text-neutral-500">{subtitle}</div>
       </div>
     </div>
   );
@@ -33,21 +31,17 @@ function InfoItem({
 
 /**
  * Banda de información debajo del carrusel:
- * - Desktop: 4 columnas
- * - Mobile: 1 columna (o 2x2 si querés)
+ * - Utiliza un grid adaptable con auto-fit para mejor distribución.
  */
 export function InfoStrip() {
   return (
     <section aria-label="Información de compra" className="bg-white">
-      {/* Caja general con borde como en el mockup */}
-      <div className="rounded-xl border border-neutral-200 bg-white shadow-md">
-
-
-        <div className="grid grid-cols-1 divide-y divide-neutral-200 md:grid-cols-4 md:divide-x md:divide-y-0">
+      <div className="rounded-xl border border-neutral-200 bg-white shadow-md overflow-hidden">
+        <div className="grid grid-cols-1 divide-y divide-neutral-200 sm:grid-cols-2 md:grid-cols-4 md:divide-x md:divide-y-0">
           <InfoItem
             icon={UserRound}
             title="Cómo comprar"
-            subtitle="No es necesario iniciar sesión"
+            subtitle="Es necesario iniciar sesión"
           />
           <InfoItem
             icon={CreditCard}
@@ -62,7 +56,7 @@ export function InfoStrip() {
           <InfoItem
             icon={BadgeDollarSign}
             title="Envío gratis"
-            subtitle="En compras mayores a $50.000"
+            subtitle="En compras mayores a $65.000"
           />
         </div>
       </div>
