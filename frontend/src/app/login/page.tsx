@@ -28,7 +28,7 @@ export default function LoginPage() {
             {/* Botón Google */}
             <div className="mt-6">
               <a
-                href="/api/auth/google"
+                href="/api/auth/google?start=1&next=/"
                 className="flex h-11 w-full items-center justify-center gap-3 rounded-full border border-neutral-300 bg-white text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
                 aria-label="Continuar con Google"
               >

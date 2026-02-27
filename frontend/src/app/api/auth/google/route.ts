@@ -81,7 +81,15 @@ export async function GET(req: Request) {
   }
 
   // ===== START =====
-  if (u.searchParams.get("start") === "1") {
+  // Soporta ambos formatos:
+  // - /api/auth/google?start=1
+  // - /api/auth/google   (legacy links como /login)
+  const hasAccessToken = !!u.searchParams.get("access_token");
+  const shouldStart =
+    u.searchParams.get("start") === "1" ||
+    (!u.searchParams.has("start") && !hasAccessToken);
+
+  if (shouldStart) {
     const next = safeInternalPath(u.searchParams.get("next") || "/");
 
     const GOOGLE_CLIENT_ID =
