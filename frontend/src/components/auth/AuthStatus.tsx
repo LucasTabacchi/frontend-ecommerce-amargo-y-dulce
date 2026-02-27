@@ -4,6 +4,22 @@ import { useEffect, useState } from "react";
 
 type MeResponse = { user: any | null };
 
+function safeName(v: any) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.length ? s : null;
+}
+
+function displayName(user: any) {
+  if (safeName(user?.firstName)) {
+    return `${safeName(user.firstName)}${safeName(user?.lastName) ? " " + safeName(user.lastName) : ""}`;
+  }
+  return (
+    safeName(user?.username) ||
+    (typeof user?.email === "string" ? safeName(user.email.split("@")[0]) : null) ||
+    "Cuenta"
+  );
+}
+
 export function AuthStatus({ onOpenLogin }: { onOpenLogin: () => void }) {
   const [user, setUser] = useState<any | null>(null);
   const [loading, setLoading] = useState(true);
@@ -47,7 +63,7 @@ export function AuthStatus({ onOpenLogin }: { onOpenLogin: () => void }) {
   return (
     <div className="flex items-center gap-3 text-sm">
       <span className="hidden sm:inline">
-        Hola, <b>{user.username || user.email}</b>
+        Hola, <b>{displayName(user)}</b>
       </span>
       <button onClick={logout} className="text-sm underline">
         Cerrar sesión

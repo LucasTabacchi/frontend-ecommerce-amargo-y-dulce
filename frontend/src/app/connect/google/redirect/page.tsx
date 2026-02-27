@@ -16,6 +16,7 @@ function GoogleRedirectContent() {
     }
 
     (async () => {
+      // 1) Autenticar con Strapi (guarda la cookie strapi_jwt)
       const res = await fetch("/api/auth/google", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -29,7 +30,34 @@ function GoogleRedirectContent() {
         return;
       }
 
-      router.replace("/"); // o donde quieras
+      // 2) Obtener el nombre real desde Google usando el access_token
+      try {
+        const profileRes = await fetch(
+          "https://www.googleapis.com/oauth2/v3/userinfo",
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+
+        if (profileRes.ok) {
+          const profile = await profileRes.json();
+
+          const firstName = profile.given_name || "";
+          const lastName = profile.family_name || "";
+
+          // 3) Guardar firstName y lastName en Strapi (la cookie ya fue seteada)
+          if (firstName) {
+            await fetch("/api/auth/me", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ firstName, lastName }),
+              credentials: "include",
+            });
+          }
+        }
+      } catch {
+        // Si falla guardar el nombre no bloqueamos el login, seguimos igual
+      }
+
+      router.replace("/");
     })();
   }, [sp, router]);
 

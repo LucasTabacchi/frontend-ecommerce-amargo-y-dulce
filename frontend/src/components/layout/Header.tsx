@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "./Container";
-import { Search, ShoppingCart, User, Menu, X } from "lucide-react";
+import { Search, ShoppingCart, User, Menu, X, ChevronDown } from "lucide-react";
 import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
@@ -452,11 +452,13 @@ export function Header() {
     );
   }
 
+  // ✅ Muestra firstName + lastName si existen, si no cae a username o email
   const displayName =
-    safeName(me?.name) ||
-    safeName(me?.username) ||
-    (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
-    "Cuenta";
+    safeName(me?.firstName)
+      ? `${safeName(me.firstName)}${safeName(me?.lastName) ? " " + safeName(me.lastName) : ""}`
+      : safeName(me?.username) ||
+        (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
+        "Cuenta";
 
   return (
     <header
@@ -522,6 +524,13 @@ export function Header() {
                   >
                     <User className="h-5 w-5" />
                     {meLoading ? "Cargando…" : displayName}
+                    {/* ✅ Flechita que rota cuando el dropdown está abierto */}
+                    <ChevronDown
+                      className={[
+                        "h-4 w-4 transition-transform duration-200",
+                        profileOpen ? "rotate-180" : "rotate-0",
+                      ].join(" ")}
+                    />
                   </button>
 
                   {profileOpen && (
