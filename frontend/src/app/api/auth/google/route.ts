@@ -58,12 +58,12 @@ async function exchangeAccessTokenForJwt(strapiBase: string, access_token: strin
  *
  * START:
  *   GET /api/auth/google?start=1&next=/mi-perfil
- *   -> set cookie auth_return_to
- *   -> redirect to STRAPI /api/connect/google
+ *   -> redirige DIRECTO a Google OAuth con scope email+profile
+ *   -> Google -> Strapi callback -> Frontend /connect/google/redirect
  *
- * CALLBACK:
+ * CALLBACK (flujo alternativo GET con access_token):
  *   GET /api/auth/google?access_token=...
- *   -> exchange token in Strapi
+ *   -> exchange token en Strapi
  *   -> set strapi_jwt cookie
  *   -> redirect back to auth_return_to (or /)
  */
@@ -74,7 +74,6 @@ export async function GET(req: Request) {
     process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || ""
   );
 
-  // Si falta config, volvemos al home con error (para que el usuario no quede colgado)
   if (!STRAPI) {
     const back = new URL("/", u.origin);
     back.searchParams.set("auth_error", "missing_strapi_url");
@@ -85,10 +84,23 @@ export async function GET(req: Request) {
   if (u.searchParams.get("start") === "1") {
     const next = safeInternalPath(u.searchParams.get("next") || "/");
 
-    // Strapi v5: el redirect final al front se define en el provider del Admin.
-    const target = `${STRAPI}/api/connect/google`;
+    const GOOGLE_CLIENT_ID =
+      process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
 
-    const res = NextResponse.redirect(target, { status: 302 });
+    // Callback de Strapi en Render (donde Google debe redirigir)
+    const strapiCallback = `${STRAPI}/api/connect/google/callback`;
+
+    // ✅ Construimos la URL de Google OAuth directamente
+    // forzando scope email+profile para obtener given_name y family_name
+    const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
+    googleAuthUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
+    googleAuthUrl.searchParams.set("redirect_uri", strapiCallback);
+    googleAuthUrl.searchParams.set("response_type", "code");
+    googleAuthUrl.searchParams.set("scope", "openid email profile");
+    googleAuthUrl.searchParams.set("access_type", "online");
+    googleAuthUrl.searchParams.set("prompt", "select_account");
+
+    const res = NextResponse.redirect(googleAuthUrl.toString(), { status: 302 });
     res.headers.set("Cache-Control", "no-store");
 
     res.cookies.set("auth_return_to", next, {
@@ -123,7 +135,6 @@ export async function GET(req: Request) {
   const res = NextResponse.redirect(back, { status: 302 });
   res.headers.set("Cache-Control", "no-store");
 
-  // cookie principal de sesión
   res.cookies.set("strapi_jwt", ex.jwt, {
     httpOnly: true,
     secure: isHttps(req),
@@ -132,7 +143,6 @@ export async function GET(req: Request) {
     maxAge: 60 * 60 * 24 * 7,
   });
 
-  // limpiamos returnTo
   res.cookies.set("auth_return_to", "", {
     httpOnly: true,
     secure: isHttps(req),
@@ -145,7 +155,6 @@ export async function GET(req: Request) {
 }
 
 /**
- * Compatibilidad con tu flujo anterior (POST con access_token).
  * POST /api/auth/google  { access_token }
  * -> set cookie strapi_jwt
  * -> devuelve { user }
@@ -174,10 +183,12 @@ export async function POST(req: Request) {
     );
   }
 
+  const isHttpsReq = req.headers.get("x-forwarded-proto")?.includes("https") ?? false;
+
   const res = NextResponse.json({ user: ex.user });
   res.cookies.set("strapi_jwt", ex.jwt, {
     httpOnly: true,
-    secure: isHttps(req),
+    secure: isHttpsReq,
     sameSite: "lax",
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
