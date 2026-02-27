@@ -225,6 +225,14 @@ export function ProfilePanel({
       }
 
       const j = await r.json().catch(() => null);
+      if (!r.ok) {
+        setAddresses([]);
+        setAddrError(
+          String(j?.error ?? "No se pudieron cargar tus direcciones.")
+        );
+        return;
+      }
+
       const list: Address[] = Array.isArray(j?.data)
         ? j.data
         : Array.isArray(j)

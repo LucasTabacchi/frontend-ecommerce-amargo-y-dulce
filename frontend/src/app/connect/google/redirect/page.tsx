@@ -1,14 +1,18 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 function GoogleRedirectContent() {
   const router = useRouter();
   const sp = useSearchParams();
   const [err, setErr] = useState<string | null>(null);
+  const startedRef = useRef(false);
 
   useEffect(() => {
+    if (startedRef.current) return;
+    startedRef.current = true;
+
     const accessToken = sp.get("access_token");
     if (!accessToken) {
       setErr("No llegó access_token. Revisá el Redirect URL en Strapi Providers.");
