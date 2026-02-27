@@ -58,8 +58,8 @@ async function exchangeAccessTokenForJwt(strapiBase: string, access_token: strin
  *
  * START:
  *   GET /api/auth/google?start=1&next=/mi-perfil
- *   -> redirige DIRECTO a Google OAuth con scope email+profile
- *   -> Google -> Strapi callback -> Frontend /connect/google/redirect
+ *   -> redirige a Strapi /api/connect/google (Grant/session/state)
+ *   -> Strapi -> Google -> Strapi callback -> Frontend /connect/google/redirect
  *
  * CALLBACK (flujo alternativo GET con access_token):
  *   GET /api/auth/google?access_token=...
@@ -91,24 +91,15 @@ export async function GET(req: Request) {
 
   if (shouldStart) {
     const next = safeInternalPath(u.searchParams.get("next") || "/");
+    const frontendRedirect = new URL("/connect/google/redirect", u.origin);
+    frontendRedirect.searchParams.set("next", next);
 
-    const GOOGLE_CLIENT_ID =
-      process.env.GOOGLE_CLIENT_ID || process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID || "";
+    // ✅ Flujo recomendado por Strapi:
+    // arrancamos en /api/connect/google para que Grant/session/state se manejen del lado Strapi.
+    const strapiConnectUrl = new URL(`${STRAPI}/api/connect/google`);
+    strapiConnectUrl.searchParams.set("callback", frontendRedirect.toString());
 
-    // Callback de Strapi en Render (donde Google debe redirigir)
-    const strapiCallback = `${STRAPI}/api/connect/google/callback`;
-
-    // ✅ Construimos la URL de Google OAuth directamente
-    // forzando scope email+profile para obtener given_name y family_name
-    const googleAuthUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
-    googleAuthUrl.searchParams.set("client_id", GOOGLE_CLIENT_ID);
-    googleAuthUrl.searchParams.set("redirect_uri", strapiCallback);
-    googleAuthUrl.searchParams.set("response_type", "code");
-    googleAuthUrl.searchParams.set("scope", "openid email profile");
-    googleAuthUrl.searchParams.set("access_type", "online");
-    googleAuthUrl.searchParams.set("prompt", "select_account");
-
-    const res = NextResponse.redirect(googleAuthUrl.toString(), { status: 302 });
+    const res = NextResponse.redirect(strapiConnectUrl.toString(), { status: 302 });
     res.headers.set("Cache-Control", "no-store");
 
     res.cookies.set("auth_return_to", next, {

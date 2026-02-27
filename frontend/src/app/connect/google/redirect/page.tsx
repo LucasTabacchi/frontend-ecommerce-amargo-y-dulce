@@ -14,6 +14,10 @@ function GoogleRedirectContent() {
     startedRef.current = true;
 
     const accessToken = sp.get("access_token");
+    const next = (() => {
+      const raw = String(sp.get("next") || "/").trim();
+      return raw.startsWith("/") ? raw : "/";
+    })();
     if (!accessToken) {
       setErr("No llegó access_token. Revisá el Redirect URL en Strapi Providers.");
       return;
@@ -64,7 +68,7 @@ function GoogleRedirectContent() {
         // Si falla guardar el nombre no bloqueamos el login, seguimos igual
       }
 
-      router.replace("/");
+      router.replace(next);
     })();
   }, [sp, router]);
 
