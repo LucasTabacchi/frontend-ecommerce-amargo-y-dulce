@@ -19,6 +19,16 @@ function pickStrapiErr(j: any, fallback: string) {
   );
 }
 
+function hasOwn(obj: any, key: string) {
+  return Object.prototype.hasOwnProperty.call(obj ?? {}, key);
+}
+
+function toOptionalString(v: unknown) {
+  if (v === null || v === undefined) return null;
+  const s = String(v).trim();
+  return s.length ? s : null;
+}
+
 export async function GET() {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) return NextResponse.json({ user: null }, { status: 200 });
@@ -39,7 +49,7 @@ export async function GET() {
   return NextResponse.json({ user }, { status: 200 });
 }
 
-// ✅ Actualizar datos personales (ej: dni)
+// ✅ Actualizar datos personales (dni / firstName / lastName / name)
 export async function PUT(req: Request) {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) {
@@ -60,16 +70,37 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "Body inválido (JSON)" }, { status: 400 });
   }
 
-  const dniRaw = String(body?.dni ?? "").trim();
-  if (!dniRaw) {
-    return NextResponse.json({ error: "DNI requerido" }, { status: 400 });
+  if (!body || typeof body !== "object") {
+    return NextResponse.json({ error: "Body inválido (JSON)" }, { status: 400 });
   }
-  if (!/^\d{7,8}$/.test(dniRaw)) {
+
+  const hasDni = hasOwn(body, "dni");
+  const hasFirstName = hasOwn(body, "firstName");
+  const hasLastName = hasOwn(body, "lastName");
+  const hasName = hasOwn(body, "name");
+
+  if (!hasDni && !hasFirstName && !hasLastName && !hasName) {
     return NextResponse.json(
-      { error: "DNI inválido (7 u 8 dígitos)" },
+      { error: "No hay campos para actualizar" },
       { status: 400 }
     );
   }
+
+  let dniToSave: string | null | undefined = undefined;
+  if (hasDni) {
+    const parsedDni = toOptionalString(body.dni);
+    if (parsedDni && !/^\d{7,8}$/.test(parsedDni)) {
+      return NextResponse.json(
+        { error: "DNI inválido (7 u 8 dígitos)" },
+        { status: 400 }
+      );
+    }
+    dniToSave = parsedDni;
+  }
+
+  const firstNameToSave = hasFirstName ? toOptionalString(body.firstName) : undefined;
+  const lastNameToSave = hasLastName ? toOptionalString(body.lastName) : undefined;
+  const nameToSave = hasName ? toOptionalString(body.name) : undefined;
 
   // 1) Traer el usuario actual para obtener su id
   const meRes = await fetch(`${STRAPI}/api/users/me`, {
@@ -86,6 +117,22 @@ export async function PUT(req: Request) {
   }
 
   const userId = meJson.id;
+  const currentFirstName = toOptionalString(meJson?.firstName);
+  const currentLastName = toOptionalString(meJson?.lastName);
+
+  const payload: Record<string, string | null> = {};
+  if (hasDni) payload.dni = dniToSave ?? null;
+  if (hasFirstName) payload.firstName = firstNameToSave ?? null;
+  if (hasLastName) payload.lastName = lastNameToSave ?? null;
+
+  if (hasName) {
+    payload.name = nameToSave ?? null;
+  } else if (hasFirstName || hasLastName) {
+    const nextFirst = hasFirstName ? firstNameToSave : currentFirstName;
+    const nextLast = hasLastName ? lastNameToSave : currentLastName;
+    const fullName = [nextFirst, nextLast].filter(Boolean).join(" ").trim();
+    payload.name = fullName || null;
+  }
 
   // 2) Actualizar usuario en Strapi (Users & Permissions)
   const updRes = await fetch(`${STRAPI}/api/users/${userId}`, {
@@ -94,7 +141,7 @@ export async function PUT(req: Request) {
       Authorization: `Bearer ${jwt}`,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ dni: dniRaw }),
+    body: JSON.stringify(payload),
     cache: "no-store",
   });
 

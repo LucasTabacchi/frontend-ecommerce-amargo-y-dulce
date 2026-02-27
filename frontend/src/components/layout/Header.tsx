@@ -456,7 +456,8 @@ export function Header() {
   const displayName =
     safeName(me?.firstName)
       ? `${safeName(me.firstName)}${safeName(me?.lastName) ? " " + safeName(me.lastName) : ""}`
-      : safeName(me?.username) ||
+      : safeName(me?.name) ||
+        safeName(me?.username) ||
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
 

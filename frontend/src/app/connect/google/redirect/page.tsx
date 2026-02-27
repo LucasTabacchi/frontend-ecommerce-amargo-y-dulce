@@ -40,15 +40,18 @@ function GoogleRedirectContent() {
         if (profileRes.ok) {
           const profile = await profileRes.json();
 
-          const firstName = profile.given_name || "";
-          const lastName = profile.family_name || "";
+          const firstName = String(profile?.given_name ?? "").trim();
+          const lastName = String(profile?.family_name ?? "").trim();
+          const fullName = String(
+            profile?.name ?? [firstName, lastName].filter(Boolean).join(" ")
+          ).trim();
 
-          // 3) Guardar firstName y lastName en Strapi (la cookie ya fue seteada)
-          if (firstName) {
+          // 3) Guardar nombre en Strapi (la cookie ya fue seteada)
+          if (firstName || lastName || fullName) {
             await fetch("/api/auth/me", {
               method: "PUT",
               headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ firstName, lastName }),
+              body: JSON.stringify({ firstName, lastName, name: fullName || null }),
               credentials: "include",
             });
           }

@@ -12,6 +12,8 @@ type MeResponse =
         username?: string;
         email?: string;
         name?: string;
+        firstName?: string;
+        lastName?: string;
         dni?: string | null; // ✅
       };
     };
@@ -51,6 +53,24 @@ const EMPTY_FORM: AddressPayload = {
 
 function safeText(v: any) {
   return String(v ?? "").trim();
+}
+
+function safeName(v: any) {
+  const s = typeof v === "string" ? v.trim() : "";
+  return s.length ? s : null;
+}
+
+function displayName(user: any) {
+  if (safeName(user?.firstName)) {
+    return `${safeName(user.firstName)}${safeName(user?.lastName) ? " " + safeName(user.lastName) : ""}`;
+  }
+
+  return (
+    safeName(user?.name) ||
+    safeName(user?.username) ||
+    (typeof user?.email === "string" ? safeName(user.email.split("@")[0]) : null) ||
+    "—"
+  );
 }
 
 type ProfilePanelProps = {
@@ -434,7 +454,7 @@ export function ProfilePanel({
                 <div>
                   <div className="text-sm text-neutral-500">Nombre</div>
                   <div className="text-base font-bold text-neutral-900">
-                    {user.name || user.username || "—"}
+                    {displayName(user)}
                   </div>
                 </div>
 

@@ -14,6 +14,7 @@ function displayName(user: any) {
     return `${safeName(user.firstName)}${safeName(user?.lastName) ? " " + safeName(user.lastName) : ""}`;
   }
   return (
+    safeName(user?.name) ||
     safeName(user?.username) ||
     (typeof user?.email === "string" ? safeName(user.email.split("@")[0]) : null) ||
     "Cuenta"
