@@ -8,6 +8,7 @@ function GoogleRedirectContent() {
   const sp = useSearchParams();
   const [err, setErr] = useState<string | null>(null);
   const startedRef = useRef(false);
+  const storageKeyRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (startedRef.current) return;
@@ -23,6 +24,18 @@ function GoogleRedirectContent() {
       return;
     }
 
+    const storageKey = `google-oauth-done:${accessToken.slice(0, 32)}`;
+    storageKeyRef.current = storageKey;
+    try {
+      if (window.sessionStorage.getItem(storageKey) === "1") {
+        router.replace(next);
+        return;
+      }
+      window.sessionStorage.setItem(storageKey, "1");
+    } catch {
+      // Si sessionStorage no está disponible seguimos con el flujo normal.
+    }
+
     (async () => {
       // 1) Autenticar con Strapi (guarda la cookie strapi_jwt)
       const res = await fetch("/api/auth/google", {
@@ -34,6 +47,9 @@ function GoogleRedirectContent() {
       const json = await res.json().catch(() => null);
 
       if (!res.ok) {
+        try {
+          if (storageKeyRef.current) window.sessionStorage.removeItem(storageKeyRef.current);
+        } catch {}
         setErr(json?.error || "No se pudo iniciar sesión.");
         return;
       }

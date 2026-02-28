@@ -1,5 +1,6 @@
 // src/app/api/auth/google/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -171,6 +172,19 @@ export async function POST(req: Request) {
   );
   if (!STRAPI) {
     return NextResponse.json({ error: "Missing STRAPI_URL" }, { status: 500 });
+  }
+
+  // Evita doble intercambio de access_token si la sesión ya está activa.
+  const existingJwt = cookies().get("strapi_jwt")?.value || null;
+  if (existingJwt) {
+    const meRes = await fetch(`${STRAPI}/api/users/me`, {
+      headers: { Authorization: `Bearer ${existingJwt}` },
+      cache: "no-store",
+    });
+    const meJson = await meRes.json().catch(() => null);
+    if (meRes.ok && meJson) {
+      return NextResponse.json({ user: meJson, reusedSession: true }, { status: 200 });
+    }
   }
 
   const ex = await exchangeAccessTokenForJwt(STRAPI, access_token);
