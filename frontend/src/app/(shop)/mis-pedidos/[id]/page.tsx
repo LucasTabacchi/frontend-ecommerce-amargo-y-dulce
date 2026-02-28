@@ -62,6 +62,11 @@ function normalizeStatus(s?: string | null) {
   return "unknown";
 }
 
+function canRetryPaymentByStatus(status?: string | null) {
+  const s = normalizeStatus(status);
+  return s === "pending" || s === "failed" || s === "cancelled" || s === "unknown";
+}
+
 function StatusPill({ status }: { status: string }) {
   const s = normalizeStatus(status);
   const cls =
@@ -176,6 +181,8 @@ export default function PedidoDetallePage() {
 
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<"unauth" | "forbidden" | null>(null);
+  const [retryingPayment, setRetryingPayment] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -238,6 +245,46 @@ export default function PedidoDetallePage() {
     const d = new Date(order.createdAt);
     return d.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" });
   }, [order?.createdAt]);
+
+  async function handleRetryPayment() {
+    if (!order) return;
+
+    const retryOrderId = String(order.documentId || id || "").trim();
+    if (!retryOrderId) {
+      setRetryError("No se pudo resolver el identificador de la orden.");
+      return;
+    }
+
+    try {
+      setRetryError(null);
+      setRetryingPayment(true);
+
+      const res = await fetch("/api/mp/create-preference", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId: retryOrderId }),
+      });
+
+      const json = await res.json().catch(() => null);
+      if (!res.ok) {
+        throw new Error(json?.error || "No se pudo generar el link de pago.");
+      }
+
+      const checkoutUrl = String(
+        json?.sandbox_init_point || json?.init_point || ""
+      ).trim();
+
+      if (!checkoutUrl) {
+        throw new Error("MercadoPago no devolvió un link de pago.");
+      }
+
+      window.location.href = checkoutUrl;
+    } catch (e: any) {
+      setRetryError(e?.message || "Error reintentando el pago.");
+    } finally {
+      setRetryingPayment(false);
+    }
+  }
 
   return (
     <main>
@@ -323,6 +370,23 @@ export default function PedidoDetallePage() {
                         {[order.name, order.email].filter(Boolean).join(" · ")}
                       </div>
                     </div>
+                  )}
+
+                  {canRetryPaymentByStatus(order.orderStatus) && (
+                    <div className="pt-2">
+                      <button
+                        type="button"
+                        onClick={handleRetryPayment}
+                        disabled={retryingPayment}
+                        className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+                      >
+                        {retryingPayment ? "Generando link..." : "Reintentar pago"}
+                      </button>
+                    </div>
+                  )}
+
+                  {retryError && (
+                    <p className="text-xs text-red-600">{retryError}</p>
                   )}
                 </div>
               </div>
