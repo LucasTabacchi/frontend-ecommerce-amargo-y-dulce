@@ -26,6 +26,12 @@ type PaginationMeta = {
   total: number;
 };
 
+type OrderItemRow = {
+  title: string;
+  qty: number;
+  unitPrice: number;
+};
+
 function parseStatusFilter(raw: string | null): StatusFilter {
   return raw === "shipped" ? "shipped" : "paid";
 }
@@ -41,6 +47,37 @@ function parsePageSize(raw: string | null, fallback = 20) {
   const v = toPositiveInt(raw, fallback);
   if (v === 10 || v === 20 || v === 50) return v;
   return fallback;
+}
+
+function toFiniteNumber(value: unknown, fallback = 0) {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeOrderItems(items: any): OrderItemRow[] {
+  if (!Array.isArray(items)) return [];
+
+  return items
+    .map((it: any) => {
+      const rawTitle =
+        it?.title ??
+        it?.name ??
+        it?.productTitle ??
+        it?.product_name ??
+        it?.product?.title ??
+        "Producto";
+
+      const title = String(rawTitle || "Producto").trim() || "Producto";
+      const qtyRaw = toFiniteNumber(it?.qty ?? it?.quantity ?? it?.count ?? 1, 1);
+      const qty = qtyRaw > 0 ? qtyRaw : 1;
+      const unitPrice = toFiniteNumber(
+        it?.unit_price ?? it?.unitPrice ?? it?.price ?? it?.unit_amount ?? it?.amount ?? 0,
+        0
+      );
+
+      return { title, qty, unitPrice };
+    })
+    .filter((it) => it.qty > 0);
 }
 
 function formatARS(n: number) {
@@ -426,6 +463,8 @@ export default function AdminPedidosPage() {
                 const action = getActionByStatus(o.orderStatus);
                 const rowId = String(o.id);
                 const isUpdatingThis = updatingId === rowId;
+                const itemRows = normalizeOrderItems(o.items);
+                const itemsSubtotal = itemRows.reduce((acc, it) => acc + it.qty * it.unitPrice, 0);
 
                 return (
                   <div key={rowId} className="rounded-2xl border bg-white p-5 shadow-sm">
@@ -463,6 +502,45 @@ export default function AdminPedidosPage() {
                         {o.shippingAddress?.text || "—"}
                       </div>
                     </div>
+
+                    <details className="mt-4 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+                      <summary className="cursor-pointer list-none px-4 py-3 text-sm font-semibold text-neutral-900">
+                        <div className="flex items-center justify-between gap-3">
+                          <span>Ver items ({itemRows.length})</span>
+                          <span className="text-xs font-medium text-neutral-500">Desplegar</span>
+                        </div>
+                      </summary>
+                      <div className="border-t border-neutral-200 bg-white">
+                        {itemRows.length === 0 ? (
+                          <div className="px-4 py-3 text-sm text-neutral-600">
+                            Este pedido no tiene items visibles.
+                          </div>
+                        ) : (
+                          <div className="divide-y divide-neutral-200">
+                            {itemRows.map((it, idx) => {
+                              const lineTotal = it.qty * it.unitPrice;
+                              return (
+                                <div key={`${rowId}-it-${idx}`} className="flex items-start justify-between gap-3 px-4 py-3">
+                                  <div className="min-w-0">
+                                    <div className="truncate text-sm font-semibold text-neutral-900">{it.title}</div>
+                                    <div className="mt-1 text-xs text-neutral-600">
+                                      {it.qty} × {formatARS(it.unitPrice)}
+                                    </div>
+                                  </div>
+                                  <div className="shrink-0 text-sm font-extrabold text-neutral-900">
+                                    {formatARS(lineTotal)}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                            <div className="flex items-center justify-between gap-3 px-4 py-3">
+                              <span className="text-sm font-semibold text-neutral-700">Subtotal items</span>
+                              <span className="text-sm font-extrabold text-neutral-900">{formatARS(itemsSubtotal)}</span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </details>
 
                     {action ? (
                       <div className="mt-4">
