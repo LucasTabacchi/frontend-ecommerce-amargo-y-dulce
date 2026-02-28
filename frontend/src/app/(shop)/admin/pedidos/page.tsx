@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 
 type OrderRow = {
@@ -17,6 +17,31 @@ type OrderRow = {
   shippingAddress?: { text?: string | null } | null;
   items?: any[] | null;
 };
+
+type StatusFilter = "paid" | "shipped";
+type PaginationMeta = {
+  page: number;
+  pageSize: number;
+  pageCount: number;
+  total: number;
+};
+
+function parseStatusFilter(raw: string | null): StatusFilter {
+  return raw === "shipped" ? "shipped" : "paid";
+}
+
+function toPositiveInt(raw: string | null, fallback: number) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  const v = Math.trunc(n);
+  return v > 0 ? v : fallback;
+}
+
+function parsePageSize(raw: string | null, fallback = 20) {
+  const v = toPositiveInt(raw, fallback);
+  if (v === 10 || v === 20 || v === 50) return v;
+  return fallback;
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -79,12 +104,19 @@ function getActionByStatus(status?: string | null) {
 
 export default function AdminPedidosPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const sp = useSearchParams();
 
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
 
-  const [qInput, setQInput] = useState("");
-  const [q, setQ] = useState("");
+  const [qInput, setQInput] = useState(() => String(sp.get("q") ?? ""));
+  const [q, setQ] = useState(() => String(sp.get("q") ?? ""));
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => parseStatusFilter(sp.get("status")));
+  const [page, setPage] = useState(() => toPositiveInt(sp.get("page"), 1));
+  const [pageSize, setPageSize] = useState(() => parsePageSize(sp.get("pageSize"), 20));
+  const [pageCount, setPageCount] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
@@ -112,25 +144,71 @@ export default function AdminPedidosPage() {
     if (!meLoading && !me) router.replace("/");
   }, [meLoading, me, router]);
 
+  useEffect(() => {
+    const nextQ = String(sp.get("q") ?? "");
+    const nextStatus = parseStatusFilter(sp.get("status"));
+    const nextPage = toPositiveInt(sp.get("page"), 1);
+    const nextPageSize = parsePageSize(sp.get("pageSize"), 20);
+
+    setQ((prev) => (prev === nextQ ? prev : nextQ));
+    setQInput((prev) => (prev === nextQ ? prev : nextQ));
+    setStatusFilter((prev) => (prev === nextStatus ? prev : nextStatus));
+    setPage((prev) => (prev === nextPage ? prev : nextPage));
+    setPageSize((prev) => (prev === nextPageSize ? prev : nextPageSize));
+  }, [sp]);
+
+  useEffect(() => {
+    const qs = new URLSearchParams();
+    if (q.trim().length >= 2) qs.set("q", q.trim());
+    qs.set("status", statusFilter);
+    if (page > 1) qs.set("page", String(page));
+    if (pageSize !== 20) qs.set("pageSize", String(pageSize));
+
+    const next = qs.toString() ? `${pathname}?${qs.toString()}` : pathname;
+    const currentQs = sp.toString();
+    const current = currentQs ? `${pathname}?${currentQs}` : pathname;
+
+    if (next !== current) {
+      router.replace(next, { scroll: false });
+    }
+  }, [pathname, router, sp, q, statusFilter, page, pageSize]);
+
   const isStoreAdmin = Boolean(me?.isStoreAdmin);
 
-  async function loadOrders(search: string) {
+  async function loadOrders(search: string, status: StatusFilter, currentPage: number, currentPageSize: number) {
     setLoading(true);
     setError(null);
     try {
       const query = search.trim();
-      const url = query.length >= 2
-        ? `/api/admin/orders?q=${encodeURIComponent(query)}`
-        : "/api/admin/orders";
+      const qs = new URLSearchParams();
+      qs.set("status", status);
+      qs.set("page", String(currentPage));
+      qs.set("pageSize", String(currentPageSize));
+      if (query.length >= 2) qs.set("q", query);
+
+      const url = `/api/admin/orders?${qs.toString()}`;
       const r = await fetch(url, { cache: "no-store" });
       const j = await r.json().catch(() => null);
 
       if (!r.ok) throw new Error(j?.error || `HTTP ${r.status}`);
 
       const list = Array.isArray(j?.orders) ? j.orders : [];
+      const m: PaginationMeta = {
+        page: Number(j?.meta?.page ?? currentPage),
+        pageSize: Number(j?.meta?.pageSize ?? currentPageSize),
+        pageCount: Math.max(1, Number(j?.meta?.pageCount ?? 1)),
+        total: Number(j?.meta?.total ?? list.length),
+      };
+
       setOrders(list);
+      setPageCount(m.pageCount);
+      setTotal(m.total);
+      if (m.page !== currentPage) setPage(m.page);
+      if (m.pageSize !== currentPageSize) setPageSize(m.pageSize);
     } catch (e: any) {
       setOrders([]);
+      setTotal(0);
+      setPageCount(1);
       setError(e?.message || "No se pudieron cargar los pedidos.");
     } finally {
       setLoading(false);
@@ -139,8 +217,8 @@ export default function AdminPedidosPage() {
 
   useEffect(() => {
     if (!me || !isStoreAdmin) return;
-    loadOrders(q);
-  }, [me, isStoreAdmin, q]);
+    loadOrders(q, statusFilter, page, pageSize);
+  }, [me, isStoreAdmin, q, statusFilter, page, pageSize]);
 
   async function handleAdvanceStatus(order: OrderRow) {
     const action = getActionByStatus(order.orderStatus);
@@ -167,13 +245,7 @@ export default function AdminPedidosPage() {
         throw new Error(j?.error || "No se pudo actualizar el estado.");
       }
 
-      setOrders((prev) =>
-        prev.map((row) =>
-          String(row.id) === orderId
-            ? { ...row, orderStatus: j?.data?.orderStatus || action.nextStatus }
-            : row
-        )
-      );
+      await loadOrders(q, statusFilter, page, pageSize);
     } catch (e: any) {
       setStatusError(e?.message || "No se pudo actualizar el estado.");
     } finally {
@@ -182,9 +254,14 @@ export default function AdminPedidosPage() {
   }
 
   const filteredInfo = useMemo(() => {
-    if (!q.trim()) return "Mostrando todos los pedidos.";
-    return `Buscando: "${q.trim()}"`;
-  }, [q]);
+    const statusLabel = statusFilter === "paid" ? "pagados (para enviar)" : "enviados (para entregar)";
+
+    if (!q.trim()) return `Mostrando pedidos ${statusLabel}.`;
+    return `Mostrando ${statusLabel} · búsqueda: "${q.trim()}"`;
+  }, [q, statusFilter]);
+  const pagerInfo = useMemo(() => {
+    return `Página ${page} de ${Math.max(1, pageCount)} · ${total} pedido${total === 1 ? "" : "s"}`;
+  }, [page, pageCount, total]);
 
   if (meLoading) {
     return (
@@ -240,9 +317,33 @@ export default function AdminPedidosPage() {
             className="mt-6 flex flex-wrap gap-2"
             onSubmit={(e) => {
               e.preventDefault();
+              setPage(1);
               setQ(qInput);
             }}
           >
+            <select
+              value={statusFilter}
+              onChange={(e) => {
+                setPage(1);
+                setStatusFilter(e.target.value as StatusFilter);
+              }}
+              className="h-11 rounded-xl border border-neutral-300 px-3 text-sm text-neutral-900"
+            >
+              <option value="paid">Pagados (para enviar)</option>
+              <option value="shipped">Enviados (para entregar)</option>
+            </select>
+            <select
+              value={String(pageSize)}
+              onChange={(e) => {
+                setPage(1);
+                setPageSize(Number(e.target.value));
+              }}
+              className="h-11 rounded-xl border border-neutral-300 px-3 text-sm text-neutral-900"
+            >
+              <option value="10">10 / página</option>
+              <option value="20">20 / página</option>
+              <option value="50">50 / página</option>
+            </select>
             <input
               value={qInput}
               onChange={(e) => setQInput(e.target.value)}
@@ -260,12 +361,35 @@ export default function AdminPedidosPage() {
               onClick={() => {
                 setQInput("");
                 setQ("");
+                setPage(1);
               }}
               className="h-11 rounded-xl border border-neutral-300 px-4 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
             >
               Limpiar
             </button>
           </form>
+
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-neutral-600">{pagerInfo}</p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={loading || page <= 1}
+                className="rounded-xl border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                Anterior
+              </button>
+              <button
+                type="button"
+                onClick={() => setPage((p) => (p < pageCount ? p + 1 : p))}
+                disabled={loading || page >= pageCount}
+                className="rounded-xl border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                Siguiente
+              </button>
+            </div>
+          </div>
 
           {loading && (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">

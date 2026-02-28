@@ -50,6 +50,13 @@ function pickIdForOps(row: any) {
   );
 }
 
+function toPositiveInt(raw: string | null, fallback: number) {
+  const n = Number(raw);
+  if (!Number.isFinite(n)) return fallback;
+  const v = Math.trunc(n);
+  return v > 0 ? v : fallback;
+}
+
 export async function GET(req: Request) {
   const jwt = readUserJwtFromCookies();
   if (!jwt) {
@@ -79,11 +86,22 @@ export async function GET(req: Request) {
 
   const url = new URL(`${strapiBase}/api/orders`);
   const sp = url.searchParams;
-  sp.set("pagination[pageSize]", "100");
   sp.set("sort[0]", "createdAt:desc");
   sp.set("populate", "*");
 
-  const q = new URL(req.url).searchParams.get("q");
+  const reqUrl = new URL(req.url);
+  const q = reqUrl.searchParams.get("q");
+  const statusRaw = String(reqUrl.searchParams.get("status") ?? "").trim().toLowerCase();
+  const page = toPositiveInt(reqUrl.searchParams.get("page"), 1);
+  const pageSizeReq = toPositiveInt(reqUrl.searchParams.get("pageSize"), 20);
+  const pageSize = Math.min(pageSizeReq, 100);
+
+  // Panel tienda operativo: solo estados con transición manual.
+  const status = statusRaw === "shipped" ? "shipped" : "paid";
+  sp.set("filters[orderStatus][$eqi]", status);
+  sp.set("pagination[page]", String(page));
+  sp.set("pagination[pageSize]", String(pageSize));
+
   if (q && q.trim().length >= 2) {
     const qq = q.trim();
     sp.set("filters[$or][0][orderNumber][$containsi]", qq);
@@ -103,6 +121,14 @@ export async function GET(req: Request) {
   }
 
   const rows = Array.isArray(ordersRes.json?.data) ? ordersRes.json.data : [];
+  const metaPagination = ordersRes.json?.meta?.pagination ?? null;
+
+  const meta = {
+    page: Number(metaPagination?.page ?? page),
+    pageSize: Number(metaPagination?.pageSize ?? pageSize),
+    pageCount: Number(metaPagination?.pageCount ?? (rows.length ? 1 : 0)),
+    total: Number(metaPagination?.total ?? rows.length),
+  };
 
   const orders = rows.map((row: any) => ({
     id: pickIdForOps(row),
@@ -117,5 +143,5 @@ export async function GET(req: Request) {
     items: pickField(row, "items"),
   }));
 
-  return NextResponse.json({ orders }, { status: 200 });
+  return NextResponse.json({ orders, status, meta }, { status: 200 });
 }
