@@ -473,10 +473,10 @@ export function Header() {
           {/* IZQUIERDA */}
           <div className="flex items-center gap-6">
             <Link href="/" className="leading-none">
-              <div className="text-[22px] font-extrabold tracking-tight text-neutral-900">
+              <div className="text-[20px] font-extrabold tracking-tight text-neutral-900 sm:text-[22px]">
                 Amargo
               </div>
-              <div className="text-[22px] font-extrabold tracking-tight text-neutral-900">
+              <div className="text-[20px] font-extrabold tracking-tight text-neutral-900 sm:text-[22px]">
                 y Dulce
               </div>
             </Link>
@@ -573,16 +573,16 @@ export function Header() {
           </div>
 
           {/* MOBILE */}
-          <div className="flex items-center justify-end gap-2 md:hidden">
+          <div className="flex min-w-0 items-center justify-end gap-1.5 md:hidden sm:gap-2">
             <button
               type="button"
               onClick={onUserPressMobile}
-              className="inline-flex h-11 max-w-[170px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-3 text-[14px] font-medium text-neutral-800"
+              className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 sm:max-w-[170px] sm:px-3"
               aria-label={me ? "Mi perfil" : "Iniciar sesión"}
               disabled={meLoading}
             >
               <User className="h-5 w-5" />
-              <span className="truncate">
+              <span className="max-w-[78px] truncate sm:max-w-[120px]">
                 {meLoading ? "…" : me ? displayName : "Iniciar sesión"}
               </span>
             </button>
