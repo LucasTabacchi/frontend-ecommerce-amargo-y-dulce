@@ -46,7 +46,12 @@ export async function GET() {
   if (!r.ok) return NextResponse.json({ user: null }, { status: 200 });
 
   const user = await r.json().catch(() => null);
-  return NextResponse.json({ user }, { status: 200 });
+  const normalizedUser =
+    user && typeof user === "object"
+      ? { ...user, isStoreAdmin: Boolean((user as any)?.isStoreAdmin) }
+      : user;
+
+  return NextResponse.json({ user: normalizedUser }, { status: 200 });
 }
 
 // ✅ Actualizar datos personales (dni / firstName / lastName / name)
