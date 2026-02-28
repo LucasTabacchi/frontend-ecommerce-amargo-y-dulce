@@ -61,11 +61,10 @@ export async function GET() {
   // Strapi v5 suele tener documentId en user
   const userDocumentId = String(me?.documentId ?? "").trim();
   const userId = me?.id ?? null; // por compat
-  const userEmail = String(me?.email || "").trim().toLowerCase();
 
-  if (!userDocumentId && !userId && !userEmail) {
+  if (!userDocumentId && !userId) {
     return NextResponse.json(
-      { error: "No se pudo resolver usuario (sin documentId/id/email)" },
+      { error: "No se pudo resolver usuario (sin documentId/id)" },
       { status: 500 }
     );
   }
@@ -94,26 +93,6 @@ export async function GET() {
     sp.set("filters[user][id][$eq]", String(userId));
 
     ordersRes = await fetchJson(`${strapiBase}/api/orders?${sp.toString()}`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-  }
-
-  const dataByUser =
-    ordersRes?.r?.ok && Array.isArray(ordersRes.json?.data) ? ordersRes.json.data : [];
-
-  // 3) Fallback por email (para pedidos viejos sin user seteado)
-  const shouldFallback =
-    !!userEmail &&
-    (!ordersRes || !ordersRes.r.ok || (ordersRes.r.ok && dataByUser.length === 0));
-
-  if (shouldFallback) {
-    const sp2 = new URLSearchParams();
-    sp2.set("filters[email][$eq]", userEmail);
-    sp2.set("pagination[pageSize]", "50");
-    sp2.set("sort[0]", "createdAt:desc");
-    sp2.set("populate", "*");
-
-    ordersRes = await fetchJson(`${strapiBase}/api/orders?${sp2.toString()}`, {
       headers: { Authorization: `Bearer ${jwt}` },
     });
   }
