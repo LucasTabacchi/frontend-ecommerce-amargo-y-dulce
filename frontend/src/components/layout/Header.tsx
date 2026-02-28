@@ -469,9 +469,9 @@ export function Header() {
       ].join(" ")}
     >
       <Container>
-        <div className="grid h-[72px] grid-cols-[auto_1fr_auto] items-center gap-6">
+        <div className="flex h-[72px] items-center justify-between gap-2 md:grid md:grid-cols-[auto_1fr_auto] md:gap-6">
           {/* IZQUIERDA */}
-          <div className="flex items-center gap-6">
+          <div className="flex min-w-0 items-center gap-4 sm:gap-6">
             <Link href="/" className="leading-none">
               <div className="text-[20px] font-extrabold tracking-tight text-neutral-900 sm:text-[22px]">
                 Amargo
@@ -573,7 +573,7 @@ export function Header() {
           </div>
 
           {/* MOBILE */}
-          <div className="flex min-w-0 items-center justify-end gap-1.5 md:hidden sm:gap-2">
+          <div className="flex shrink-0 min-w-0 items-center justify-end gap-1.5 md:hidden sm:gap-2">
             <button
               type="button"
               onClick={onUserPressMobile}
