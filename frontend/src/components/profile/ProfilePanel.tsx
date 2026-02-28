@@ -144,6 +144,7 @@ export function ProfilePanel({
   }, []);
 
   const user = "user" in me ? me.user : null;
+  const isStoreAdmin = Boolean((user as any)?.isStoreAdmin);
 
   // ✅ precargar DNI cuando llega el user
   useEffect(() => {
@@ -425,7 +426,7 @@ export function ProfilePanel({
           ) : null}
         </div>
 
-        <div className="mt-6 grid gap-6 lg:grid-cols-2">
+        <div className={`mt-6 grid gap-6 ${isStoreAdmin ? "" : "lg:grid-cols-2"}`}>
           {/* PERFIL */}
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             {loading ? (
@@ -457,6 +458,46 @@ export function ProfilePanel({
                 {"error" in me && me.error ? (
                   <p className="text-xs text-red-600">{me.error}</p>
                 ) : null}
+              </div>
+            ) : isStoreAdmin ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm text-neutral-500">Nombre</div>
+                  <div className="text-base font-bold text-neutral-900">
+                    {displayName(user)}
+                  </div>
+                </div>
+
+                <div>
+                  <div className="text-sm text-neutral-500">Email</div>
+                  <div className="text-base font-semibold text-neutral-900">
+                    {user.email || "—"}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-800">
+                  Esta cuenta está configurada para operación de tienda.
+                </div>
+
+                <div className="h-px bg-neutral-200" />
+
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href="/admin/pedidos"
+                    onClick={() => onClose?.()}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
+                  >
+                    Panel tienda
+                  </Link>
+
+                  <button
+                    onClick={handleLogout}
+                    className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
+                    type="button"
+                  >
+                    Cerrar sesión
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="space-y-4">
@@ -531,16 +572,6 @@ export function ProfilePanel({
                     Ver mis pedidos
                   </Link>
 
-                  {Boolean((user as any)?.isStoreAdmin) && (
-                    <Link
-                      href="/admin/pedidos"
-                      onClick={() => onClose?.()}
-                      className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
-                    >
-                      Panel tienda
-                    </Link>
-                  )}
-
                   <Link
                     href="/productos"
                     onClick={() => onClose?.()}
@@ -562,6 +593,7 @@ export function ProfilePanel({
           </div>
 
           {/* DIRECCIONES */}
+          {!isStoreAdmin && (
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>
@@ -874,6 +906,7 @@ export function ProfilePanel({
               </div>
             )}
           </div>
+          )}
         </div>
       </div>
     </div>
