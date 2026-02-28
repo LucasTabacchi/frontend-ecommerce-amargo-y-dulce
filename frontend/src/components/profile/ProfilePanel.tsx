@@ -15,6 +15,7 @@ type MeResponse =
         firstName?: string;
         lastName?: string;
         dni?: string | null; // ✅
+        isStoreAdmin?: boolean;
       };
     };
 
@@ -529,6 +530,16 @@ export function ProfilePanel({
                   >
                     Ver mis pedidos
                   </Link>
+
+                  {Boolean((user as any)?.isStoreAdmin) && (
+                    <Link
+                      href="/admin/pedidos"
+                      onClick={() => onClose?.()}
+                      className="rounded-xl bg-neutral-900 px-4 py-2 text-sm font-bold text-white"
+                    >
+                      Panel tienda
+                    </Link>
+                  )}
 
                   <Link
                     href="/productos"
