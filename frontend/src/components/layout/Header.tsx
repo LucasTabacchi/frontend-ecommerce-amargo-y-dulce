@@ -460,6 +460,7 @@ export function Header() {
         safeName(me?.username) ||
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
+  const isStoreAdmin = Boolean(me?.isStoreAdmin);
 
   return (
     <header
@@ -550,26 +551,30 @@ export function Header() {
               )}
             </div>
 
-            <div className="h-6 w-px bg-neutral-200" />
+            {!isStoreAdmin && (
+              <>
+                <div className="h-6 w-px bg-neutral-200" />
 
-            <Link
-              href="/carrito"
-              className="relative flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
-              aria-label={
-                safeCartCount > 0
-                  ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
-                  : "Carrito"
-              }
-            >
-              <span className="relative inline-flex">
-                <ShoppingCart className="h-5 w-5" />
-                <CartBadge />
-              </span>
-              Carrito
-              <span className="sr-only">
-                {safeCartCount > 0 ? `, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}` : ""}
-              </span>
-            </Link>
+                <Link
+                  href="/carrito"
+                  className="relative flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
+                  aria-label={
+                    safeCartCount > 0
+                      ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
+                      : "Carrito"
+                  }
+                >
+                  <span className="relative inline-flex">
+                    <ShoppingCart className="h-5 w-5" />
+                    <CartBadge />
+                  </span>
+                  Carrito
+                  <span className="sr-only">
+                    {safeCartCount > 0 ? `, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}` : ""}
+                  </span>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* MOBILE */}
@@ -587,19 +592,21 @@ export function Header() {
               </span>
             </button>
 
-            <Link
-              href="/carrito"
-              className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
-              aria-label={
-                safeCartCount > 0
-                  ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
-                  : "Carrito"
-              }
-              onClick={() => setMobileOpen(false)}
-            >
-              <ShoppingCart className="h-5 w-5" />
-              <CartBadge />
-            </Link>
+            {!isStoreAdmin && (
+              <Link
+                href="/carrito"
+                className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
+                aria-label={
+                  safeCartCount > 0
+                    ? `Carrito, ${safeCartCount} item${safeCartCount === 1 ? "" : "s"}`
+                    : "Carrito"
+                }
+                onClick={() => setMobileOpen(false)}
+              >
+                <ShoppingCart className="h-5 w-5" />
+                <CartBadge />
+              </Link>
+            )}
 
             <button
               onClick={() => setMobileOpen((v) => !v)}

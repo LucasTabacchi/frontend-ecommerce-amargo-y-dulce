@@ -116,7 +116,12 @@ type Address = {
 
 // ✅ auth/me (ahora incluye dni)
 type MeResponse = {
-  user: { email?: string | null; name?: string | null; dni?: string | null } | null;
+  user: {
+    email?: string | null;
+    name?: string | null;
+    dni?: string | null;
+    isStoreAdmin?: boolean;
+  } | null;
 };
 
 function toNum(v: any, def = 0) {
@@ -179,6 +184,7 @@ export default function CheckoutPage() {
 
   // ✅ usuario (para autocompletar email/nombre/dni)
   const [me, setMe] = useState<MeResponse>({ user: null });
+  const [meReady, setMeReady] = useState(false);
 
   // cupón
   const [coupon, setCoupon] = useState("");
@@ -262,6 +268,9 @@ export default function CheckoutPage() {
       } catch {
         if (!alive) return;
         setMe({ user: null });
+      } finally {
+        if (!alive) return;
+        setMeReady(true);
       }
     })();
 
@@ -270,6 +279,8 @@ export default function CheckoutPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  const isStoreAdmin = Boolean(me?.user?.isStoreAdmin);
 
   useEffect(() => {
     if (!isEmptyish(email)) return;
@@ -586,6 +597,10 @@ export default function CheckoutPage() {
     setError(null);
     setStockProblems([]);
 
+    if (isStoreAdmin) {
+      return setError("La cuenta tienda no puede realizar compras.");
+    }
+
     try {
       localStorage.setItem("amg_dni", safeText(dni));
     } catch {}
@@ -792,7 +807,24 @@ export default function CheckoutPage() {
       <Container>
         <h1 className="text-3xl font-extrabold py-8">Checkout</h1>
 
-        {(error || stockProblems.length > 0) && (
+        {!meReady && (
+          <div className="max-w-md rounded border p-4 text-sm text-neutral-700">
+            Cargando sesión…
+          </div>
+        )}
+
+        {meReady && isStoreAdmin && (
+          <div className="max-w-md rounded border border-blue-200 bg-blue-50 p-4 text-sm text-blue-800">
+            Las cuentas tienda no pueden finalizar compras.
+            <div className="mt-3">
+              <Link href="/admin/pedidos" className="font-semibold underline">
+                Ir a Panel tienda
+              </Link>
+            </div>
+          </div>
+        )}
+
+        {meReady && !isStoreAdmin && (error || stockProblems.length > 0) && (
           <div className="mb-4 rounded bg-red-50 p-3 text-sm text-red-700" role="alert" aria-live="assertive">
             {error ? <div className="font-semibold">{error}</div> : null}
 
@@ -814,7 +846,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {ui.kind === "form" && (
+        {meReady && !isStoreAdmin && ui.kind === "form" && (
           <form onSubmit={handleSubmit} className="max-w-md space-y-4">
             {/* ✅ Método de entrega */}
             <div className="rounded border p-3">
@@ -1109,14 +1141,14 @@ export default function CheckoutPage() {
           </form>
         )}
 
-        {ui.kind === "checking" && (
+        {meReady && !isStoreAdmin && ui.kind === "checking" && (
           <div className="max-w-md rounded border p-4">
             <p className="font-semibold">Estamos verificando tu pago…</p>
             <p className="text-sm opacity-80">Orden: {ui.orderId}</p>
           </div>
         )}
 
-        {ui.kind === "paid" && (
+        {meReady && !isStoreAdmin && ui.kind === "paid" && (
           <div className="max-w-md rounded border p-4">
             <p className="font-semibold">¡Pago aprobado!</p>
             <p className="text-sm opacity-80">Orden: {ui.orderId}</p>
@@ -1126,7 +1158,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {ui.kind === "failed" && (
+        {meReady && !isStoreAdmin && ui.kind === "failed" && (
           <div className="max-w-md rounded border p-4">
             <p className="font-semibold">El pago no se pudo completar.</p>
             <p className="text-sm opacity-80">Motivo: {ui.reason}</p>
@@ -1136,7 +1168,7 @@ export default function CheckoutPage() {
           </div>
         )}
 
-        {ui.kind === "timeout" && (
+        {meReady && !isStoreAdmin && ui.kind === "timeout" && (
           <div className="max-w-md rounded border p-4">
             <p className="font-semibold">No pudimos confirmar el pago todavía.</p>
             <p className="text-sm opacity-80">

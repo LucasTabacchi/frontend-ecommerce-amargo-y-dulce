@@ -82,6 +82,14 @@ function readUserJwtFromCookies() {
   );
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 export async function POST(req: Request) {
   const strapiBase = normalizeStrapiBase(
     process.env.STRAPI_URL ||
@@ -95,6 +103,27 @@ export async function POST(req: Request) {
     return NextResponse.json(
       { error: "No autorizado: iniciá sesión para crear una orden." },
       { status: 401 }
+    );
+  }
+
+  // Cuentas de tienda no pueden comprar.
+  const meRes = await fetch(`${strapiBase}/api/users/me`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+    cache: "no-store",
+  });
+  const meJson = await strapiJSON(meRes);
+
+  if (!meRes.ok || !meJson) {
+    return NextResponse.json(
+      { error: "No autorizado: sesión inválida." },
+      { status: 401 }
+    );
+  }
+
+  if (isStoreAdmin(meJson)) {
+    return NextResponse.json(
+      { error: "Las cuentas tienda no pueden crear órdenes de compra." },
+      { status: 403 }
     );
   }
 

@@ -181,32 +181,8 @@ export default function PedidoDetallePage() {
 
   const [error, setError] = useState<string | null>(null);
   const [authError, setAuthError] = useState<"unauth" | "forbidden" | null>(null);
-  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
   const [retryingPayment, setRetryingPayment] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
-  const [updatingStatus, setUpdatingStatus] = useState(false);
-  const [statusUpdateError, setStatusUpdateError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let alive = true;
-
-    async function loadMe() {
-      try {
-        const r = await fetch("/api/auth/me", { cache: "no-store" });
-        const json = await r.json().catch(() => null);
-        if (!alive) return;
-        setIsStoreAdmin(Boolean(json?.user?.isStoreAdmin));
-      } catch {
-        if (!alive) return;
-        setIsStoreAdmin(false);
-      }
-    }
-
-    loadMe();
-    return () => {
-      alive = false;
-    };
-  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -270,14 +246,6 @@ export default function PedidoDetallePage() {
     return d.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" });
   }, [order?.createdAt]);
 
-  const nextAdminStatus = useMemo(() => {
-    if (!isStoreAdmin || !order) return null;
-    const s = normalizeStatus(order.orderStatus);
-    if (s === "paid") return "shipped";
-    if (s === "shipped") return "delivered";
-    return null;
-  }, [isStoreAdmin, order]);
-
   async function handleRetryPayment() {
     if (!order) return;
 
@@ -315,43 +283,6 @@ export default function PedidoDetallePage() {
       setRetryError(e?.message || "Error reintentando el pago.");
     } finally {
       setRetryingPayment(false);
-    }
-  }
-
-  async function handleAdminStatusAdvance() {
-    if (!order || !nextAdminStatus) return;
-
-    const targetOrderId = String(order.documentId || id || "").trim();
-    if (!targetOrderId) {
-      setStatusUpdateError("No se pudo resolver el identificador de la orden.");
-      return;
-    }
-
-    try {
-      setStatusUpdateError(null);
-      setUpdatingStatus(true);
-
-      const res = await fetch(`/api/orders/${encodeURIComponent(targetOrderId)}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nextStatus: nextAdminStatus }),
-      });
-
-      const json = await res.json().catch(() => null);
-      if (!res.ok) {
-        throw new Error(json?.error || "No se pudo actualizar el estado.");
-      }
-
-      const nextOrder = normalizeOrderPayload({ data: json?.data });
-      if (nextOrder) {
-        setOrder((prev) => ({ ...(prev || {}), ...nextOrder }));
-      } else {
-        setOrder((prev) => (prev ? { ...prev, orderStatus: nextAdminStatus } : prev));
-      }
-    } catch (e: any) {
-      setStatusUpdateError(e?.message || "Error actualizando el estado.");
-    } finally {
-      setUpdatingStatus(false);
     }
   }
 
@@ -454,28 +385,8 @@ export default function PedidoDetallePage() {
                     </div>
                   )}
 
-                  {isStoreAdmin && nextAdminStatus && (
-                    <div className="pt-2">
-                      <button
-                        type="button"
-                        onClick={handleAdminStatusAdvance}
-                        disabled={updatingStatus}
-                        className="rounded-full border border-neutral-300 px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50 disabled:opacity-60"
-                      >
-                        {updatingStatus
-                          ? "Actualizando..."
-                          : nextAdminStatus === "shipped"
-                          ? "Marcar como enviado"
-                          : "Marcar como entregado"}
-                      </button>
-                    </div>
-                  )}
-
                   {retryError && (
                     <p className="text-xs text-red-600">{retryError}</p>
-                  )}
-                  {statusUpdateError && (
-                    <p className="text-xs text-red-600">{statusUpdateError}</p>
                   )}
                 </div>
               </div>

@@ -182,6 +182,7 @@ export default function CarritoPage() {
   const effectiveTotal = payloadItems.length
     ? quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)
     : 0;
+  const isStoreAdmin = Boolean(me?.isStoreAdmin);
 
   // ✅ handler: bloquear checkout si no hay sesión
   function onCheckoutClick(e: React.MouseEvent<HTMLAnchorElement>) {
@@ -201,6 +202,12 @@ export default function CarritoPage() {
 
       // ✅ NO ir a home: quedate en carrito y dispará el modal via ?login=1
       router.push(`/carrito?login=1&next=${encodeURIComponent("/checkout")}`);
+      return;
+    }
+
+    if (isStoreAdmin) {
+      e.preventDefault();
+      showAlert("La cuenta tienda no puede realizar compras.");
     }
   }
 
@@ -225,6 +232,16 @@ export default function CarritoPage() {
               aria-live="polite"
             >
               {alertMsg}
+            </div>
+          )}
+
+          {!meLoading && isStoreAdmin && (
+            <div className="mt-4 rounded-lg border border-blue-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">
+              Tu cuenta está en modo tienda. Podés gestionar pedidos desde{" "}
+              <Link href="/admin/pedidos" className="font-semibold underline">
+                Panel tienda
+              </Link>
+              .
             </div>
           )}
         </div>
@@ -443,13 +460,13 @@ export default function CarritoPage() {
             <Link
               href="/checkout"
               onClick={onCheckoutClick}
-              aria-disabled={items.length === 0 || meLoading}
+              aria-disabled={items.length === 0 || meLoading || isStoreAdmin}
               className={[
                 "mt-6 block w-full rounded-full bg-red-600 py-3 text-center text-sm font-semibold text-white hover:bg-red-700",
-                items.length === 0 || meLoading ? "pointer-events-none opacity-50" : "",
+                items.length === 0 || meLoading || isStoreAdmin ? "pointer-events-none opacity-50" : "",
               ].join(" ")}
             >
-              Finalizar compra
+              {isStoreAdmin ? "No disponible para cuenta tienda" : "Finalizar compra"}
             </Link>
 
             <p className="mt-3 text-center text-xs text-neutral-500">

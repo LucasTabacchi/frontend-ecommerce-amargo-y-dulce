@@ -56,6 +56,14 @@ function readUserJwtFromCookies() {
   );
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 /* ===================== STRAPI HELPERS ===================== */
 
 function pickAttr(row: any) {
@@ -205,6 +213,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "No autorizado: iniciá sesión para pagar." }, { status: 401 });
   }
 
+  const strapiBase = normalizeStrapiBase(
+    process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
+  );
+
+  // Cuentas de tienda no pueden pagar.
+  const meRes = await fetchStrapiJson(`${strapiBase}/api/users/me`, jwt);
+  if (!meRes.r.ok || !meRes.json) {
+    return NextResponse.json({ error: "No autorizado: sesión inválida." }, { status: 401 });
+  }
+  if (isStoreAdmin(meRes.json)) {
+    return NextResponse.json(
+      { error: "Las cuentas tienda no pueden iniciar pagos." },
+      { status: 403 }
+    );
+  }
+
   const accessToken = process.env.MP_ACCESS_TOKEN;
   if (!accessToken) {
     return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN en el servidor" }, { status: 500 });
@@ -218,10 +242,6 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
-
-  const strapiBase = normalizeStrapiBase(
-    process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
-  );
 
   const orderId = String(body?.orderId ?? "").trim();
   if (!orderId) {
