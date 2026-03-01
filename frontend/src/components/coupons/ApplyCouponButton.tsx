@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 
 const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
 
@@ -35,6 +36,7 @@ type Props = {
 };
 
 export function ApplyCouponButton({ code }: Props) {
+  const router = useRouter();
   const normalized = normalizeCode(code);
   const [applied, setApplied] = useState(false);
 
@@ -52,15 +54,21 @@ export function ApplyCouponButton({ code }: Props) {
     setApplied(true);
   }
 
+  function onSearchProducts() {
+    router.push("/productos#listado");
+  }
+
   return (
     <button
       type="button"
-      onClick={onApply}
-      disabled={applied || !normalized}
-      className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700 disabled:cursor-default disabled:bg-emerald-600"
+      onClick={applied ? onSearchProducts : onApply}
+      disabled={!normalized}
+      className={[
+        "rounded-full px-5 py-2 text-sm font-semibold text-white",
+        applied ? "bg-neutral-900 hover:bg-neutral-800" : "bg-red-600 hover:bg-red-700",
+      ].join(" ")}
     >
-      {applied ? "Aplicado en Mis cupones" : "Aplicar"}
+      {applied ? "Buscar productos" : "Aplicar"}
     </button>
   );
 }
-

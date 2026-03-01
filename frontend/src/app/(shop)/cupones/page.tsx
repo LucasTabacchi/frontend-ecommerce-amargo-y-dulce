@@ -109,12 +109,6 @@ export default async function CuponesPage() {
 
                 <div className="mt-5 flex gap-3">
                   <ApplyCouponButton code={String(c.code || "")} />
-                  <Link
-                    href="/productos#listado"
-                    className="rounded-full border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-900"
-                  >
-                    Ver productos
-                  </Link>
                 </div>
               </article>
             );
