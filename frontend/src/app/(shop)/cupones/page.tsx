@@ -15,9 +15,14 @@ type CouponRow = {
   discountValue?: number | null;
   minSubtotal?: number | null;
   maxDiscount?: number | null;
+  startAt?: string | null;
   endAt?: string | null;
   scopeLabel?: string | null;
   combinable?: boolean;
+  exhausted?: boolean;
+  isNotStarted?: boolean;
+  isExpired?: boolean;
+  isAvailable?: boolean;
 };
 
 function formatARS(n: number) {
@@ -33,13 +38,34 @@ function discountLabel(c: CouponRow) {
   return "Beneficio especial";
 }
 
+function isCouponActiveNow(c: CouponRow) {
+  const nowMs = Date.now();
+  const startMs = c.startAt ? Date.parse(String(c.startAt)) : NaN;
+  const endMs = c.endAt ? Date.parse(String(c.endAt)) : NaN;
+  const isNotStarted =
+    typeof c.isNotStarted === "boolean"
+      ? c.isNotStarted
+      : Number.isFinite(startMs)
+      ? startMs > nowMs
+      : false;
+  const isExpired =
+    typeof c.isExpired === "boolean"
+      ? c.isExpired
+      : Number.isFinite(endMs)
+      ? endMs < nowMs
+      : false;
+  const exhausted = Boolean(c.exhausted);
+
+  return typeof c.isAvailable === "boolean" ? c.isAvailable : !isNotStarted && !isExpired && !exhausted;
+}
+
 export default async function CuponesPage() {
   const res = await fetcher<{ data?: CouponRow[] }>("/promotions/available", {
     method: "GET",
     cache: "no-store",
   });
   const allRows = Array.isArray(res?.data) ? res.data : [];
-  const rows = allRows.filter((x) => Boolean(x.requiresCoupon && x.code));
+  const rows = allRows.filter((x) => Boolean(x.requiresCoupon && x.code) && isCouponActiveNow(x));
 
   return (
     <main>

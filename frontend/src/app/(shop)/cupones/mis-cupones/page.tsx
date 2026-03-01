@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 
@@ -16,9 +16,14 @@ type CouponRow = {
   discountValue?: number | null;
   minSubtotal?: number | null;
   maxDiscount?: number | null;
+  startAt?: string | null;
   endAt?: string | null;
   scopeLabel?: string | null;
   combinable?: boolean;
+  exhausted?: boolean;
+  isNotStarted?: boolean;
+  isExpired?: boolean;
+  isAvailable?: boolean;
 };
 
 function normalizeCode(code: string) {
@@ -63,6 +68,35 @@ function discountLabel(c: CouponRow) {
   if (t === "fixed") return `${formatARS(Math.round(v))} OFF`;
   if (t === "free_shipping") return "Envío gratis";
   return "Beneficio especial";
+}
+
+function getCouponUiState(c: CouponRow) {
+  const nowMs = Date.now();
+  const startMs = c.startAt ? Date.parse(String(c.startAt)) : NaN;
+  const endMs = c.endAt ? Date.parse(String(c.endAt)) : NaN;
+
+  const isNotStarted =
+    typeof c.isNotStarted === "boolean"
+      ? c.isNotStarted
+      : Number.isFinite(startMs)
+      ? startMs > nowMs
+      : false;
+  const isExpired =
+    typeof c.isExpired === "boolean"
+      ? c.isExpired
+      : Number.isFinite(endMs)
+      ? endMs < nowMs
+      : false;
+  const isExhausted = Boolean(c.exhausted);
+  const isAvailable =
+    typeof c.isAvailable === "boolean" ? c.isAvailable : !isNotStarted && !isExpired && !isExhausted;
+
+  let statusLabel: string | null = null;
+  if (isExpired) statusLabel = "Vencido";
+  else if (isNotStarted) statusLabel = "Próximamente";
+  else if (isExhausted) statusLabel = "Agotado";
+
+  return { isAvailable, isExpired, isNotStarted, isExhausted, statusLabel };
 }
 
 export default function MisCuponesPage() {
@@ -136,6 +170,17 @@ export default function MisCuponesPage() {
     })();
   }, [me, meLoading, claimVersion]);
 
+  const rowsWithState = useMemo(
+    () =>
+      rows.map((c) => ({
+        ...c,
+        ...getCouponUiState(c),
+      })),
+    [rows]
+  );
+  const availableRows = rowsWithState.filter((c) => c.isAvailable);
+  const unavailableRows = rowsWithState.filter((c) => !c.isAvailable);
+
   if (meLoading) {
     return (
       <main>
@@ -156,7 +201,7 @@ export default function MisCuponesPage() {
             <div>
               <h1 className="text-3xl font-extrabold text-neutral-900">Mis cupones</h1>
               <p className="mt-2 text-sm text-neutral-600">
-                Cupones disponibles para aplicar en tu checkout.
+                Cupones aplicados por vos, incluyendo disponibles y no disponibles.
               </p>
             </div>
             <Link
@@ -182,7 +227,13 @@ export default function MisCuponesPage() {
 
         {!loading && !error && (
           <div className="grid grid-cols-1 gap-6 pb-14 md:grid-cols-2">
-            {rows.map((c) => {
+            {availableRows.length > 0 ? (
+              <div className="md:col-span-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                Disponibles
+              </div>
+            ) : null}
+
+            {availableRows.map((c) => {
               const minSubtotal = Number(c.minSubtotal ?? 0);
               const maxDiscount = Number(c.maxDiscount ?? 0);
               const expires = c.endAt ? new Date(c.endAt) : null;
@@ -224,7 +275,62 @@ export default function MisCuponesPage() {
               );
             })}
 
-            {rows.length === 0 ? (
+            {unavailableRows.length > 0 ? (
+              <div className="md:col-span-2 text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                No disponibles
+              </div>
+            ) : null}
+
+            {unavailableRows.map((c) => {
+              const minSubtotal = Number(c.minSubtotal ?? 0);
+              const maxDiscount = Number(c.maxDiscount ?? 0);
+              const expires = c.endAt ? new Date(c.endAt) : null;
+              return (
+                <article
+                  key={`unavailable-${c.id}`}
+                  className="rounded-xl border border-neutral-200 bg-neutral-50 p-6 shadow-sm opacity-80"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-lg font-extrabold text-neutral-900">{c.name || "Cupón"}</div>
+                    {c.statusLabel ? (
+                      <span className="rounded-full bg-neutral-200 px-2 py-1 text-[11px] font-semibold text-neutral-700">
+                        {c.statusLabel}
+                      </span>
+                    ) : null}
+                  </div>
+
+                  <div className="mt-3 space-y-1 text-sm text-neutral-700">
+                    <div>
+                      Beneficio: <span className="font-semibold">{discountLabel(c)}</span>
+                    </div>
+                    {minSubtotal > 0 ? (
+                      <div>
+                        Compra mínima:{" "}
+                        <span className="font-semibold">{formatARS(minSubtotal)}</span>
+                      </div>
+                    ) : null}
+                    {maxDiscount > 0 ? (
+                      <div>
+                        Tope de descuento:{" "}
+                        <span className="font-semibold">{formatARS(maxDiscount)}</span>
+                      </div>
+                    ) : null}
+                    {c.scopeLabel ? <div>{c.scopeLabel}</div> : null}
+                    {expires ? (
+                      <div className="text-xs text-neutral-500">
+                        Vence: {expires.toLocaleDateString("es-AR")}
+                      </div>
+                    ) : null}
+                    <div>
+                      Combinable:{" "}
+                      <span className="font-semibold">{c.combinable ? "Sí" : "No"}</span>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+
+            {rowsWithState.length === 0 ? (
               <div className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600 shadow-sm">
                 Todavía no aplicaste cupones. Desde{" "}
                 <Link href="/cupones" className="font-semibold underline">

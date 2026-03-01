@@ -148,6 +148,13 @@ type MyCouponOption = {
   id: number;
   code: string;
   name: string;
+  startAt: string | null;
+  endAt: string | null;
+  exhausted: boolean;
+  isNotStarted: boolean;
+  isExpired: boolean;
+  isAvailable: boolean;
+  unavailableLabel: string | null;
 };
 
 function toNum(v: any, def = 0) {
@@ -265,6 +272,7 @@ export default function CheckoutPage() {
   // cupón
   const [coupon, setCoupon] = useState("");
   const [couponTouched, setCouponTouched] = useState(false);
+  const [couponStatusNotice, setCouponStatusNotice] = useState<string | null>(null);
   const [myCouponsLoading, setMyCouponsLoading] = useState(false);
   const [myCouponsError, setMyCouponsError] = useState<string | null>(null);
   const [myCoupons, setMyCoupons] = useState<MyCouponOption[]>([]);
@@ -402,15 +410,55 @@ export default function CheckoutPage() {
 
         const list = Array.isArray(j?.data) ? j.data : [];
         const map = new Map<string, MyCouponOption>();
+        const nowMs = Date.now();
 
         for (const row of list) {
           const code = normalizeCouponCode(row?.code);
           if (!code || !claimed.has(code) || map.has(code)) continue;
           const name = String(row?.name ?? "").trim() || code;
+          const startAt = String(row?.startAt ?? "").trim() || null;
+          const endAt = String(row?.endAt ?? "").trim() || null;
+          const exhausted = Boolean(row?.exhausted);
+
+          const startMs = startAt ? Date.parse(startAt) : NaN;
+          const endMs = endAt ? Date.parse(endAt) : NaN;
+
+          const isNotStarted =
+            typeof row?.isNotStarted === "boolean"
+              ? row.isNotStarted
+              : Number.isFinite(startMs)
+              ? startMs > nowMs
+              : false;
+          const isExpired =
+            typeof row?.isExpired === "boolean"
+              ? row.isExpired
+              : Number.isFinite(endMs)
+              ? endMs < nowMs
+              : false;
+          const isAvailable =
+            typeof row?.isAvailable === "boolean"
+              ? row.isAvailable
+              : !isNotStarted && !isExpired && !exhausted;
+
+          const unavailableLabel = isExpired
+            ? "Vencido"
+            : isNotStarted
+            ? "Próximamente"
+            : exhausted
+            ? "Agotado"
+            : null;
+
           map.set(code, {
             id: Number.isFinite(Number(row?.id)) ? Number(row.id) : map.size + 1,
             code,
             name,
+            startAt,
+            endAt,
+            exhausted,
+            isNotStarted,
+            isExpired,
+            isAvailable,
+            unavailableLabel,
           });
         }
 
@@ -430,6 +478,33 @@ export default function CheckoutPage() {
       alive = false;
     };
   }, [meReady, isStoreAdmin, claimedCouponsVersion]);
+
+  useEffect(() => {
+    const selected = normalizeCouponCode(coupon);
+    if (!selected) return;
+
+    const row = myCoupons.find((c) => c.code === selected);
+    if (!row) {
+      setCoupon("");
+      setCouponTouched(true);
+      setCouponStatusNotice("El cupón seleccionado ya no está disponible.");
+      return;
+    }
+
+    if (!row.isAvailable) {
+      setCoupon("");
+      setCouponTouched(true);
+      if (row.isExpired) {
+        setCouponStatusNotice("El cupón seleccionado venció y se quitó del checkout.");
+      } else if (row.isNotStarted) {
+        setCouponStatusNotice("Ese cupón todavía no está vigente.");
+      } else if (row.exhausted) {
+        setCouponStatusNotice("Ese cupón ya no está disponible.");
+      } else {
+        setCouponStatusNotice("El cupón seleccionado ya no está disponible.");
+      }
+    }
+  }, [coupon, myCoupons]);
 
   useEffect(() => {
     if (!isEmptyish(email)) return;
@@ -992,7 +1067,7 @@ export default function CheckoutPage() {
   const hasCouponInput = requestedCoupon.length > 0;
   const selectedCouponCode = useMemo(() => {
     const normalized = normalizeCouponCode(coupon);
-    return myCoupons.some((x) => x.code === normalized) ? normalized : "";
+    return myCoupons.some((x) => x.code === normalized && x.isAvailable) ? normalized : "";
   }, [coupon, myCoupons]);
   const couponApplied = Boolean(quote?.coupon?.applied);
   const couponErrorMessage =
@@ -1274,6 +1349,7 @@ export default function CheckoutPage() {
                 disabled={cartHasDiscount}
                 onChange={(e) => {
                   setCouponTouched(true);
+                  setCouponStatusNotice(null);
                   setCoupon(e.target.value);
                 }}
               >
@@ -1282,9 +1358,12 @@ export default function CheckoutPage() {
                   const cleanName = String(item.name ?? "").trim();
                   const showName =
                     cleanName.length > 0 && normalizeCouponCode(cleanName) !== normalizeCouponCode(item.code);
-                  const label = showName ? `${item.code} - ${cleanName}` : item.code;
+                  const baseLabel = showName ? `${item.code} - ${cleanName}` : item.code;
+                  const label = item.isAvailable
+                    ? baseLabel
+                    : `${baseLabel} (${item.unavailableLabel || "No disponible"})`;
                   return (
-                    <option key={item.code} value={item.code}>
+                    <option key={item.code} value={item.code} disabled={!item.isAvailable}>
                       {label}
                     </option>
                   );
@@ -1300,6 +1379,9 @@ export default function CheckoutPage() {
               ) : null}
               {myCouponsError ? (
                 <p className="mt-1 text-xs text-red-600">{myCouponsError}</p>
+              ) : null}
+              {couponStatusNotice ? (
+                <p className="mt-1 text-xs text-amber-700">{couponStatusNotice}</p>
               ) : null}
 
               <p className="mt-1 text-xs text-neutral-500">
