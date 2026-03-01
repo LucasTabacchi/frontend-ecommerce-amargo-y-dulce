@@ -218,14 +218,6 @@ export default function MisCuponesPage() {
                     </div>
                   </div>
 
-                  <div className="mt-5">
-                    <Link
-                      href={`/checkout?coupon=${encodeURIComponent(String(c.code || ""))}`}
-                      className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                    >
-                      Aplicar en checkout
-                    </Link>
-                  </div>
                 </article>
               );
             })}
