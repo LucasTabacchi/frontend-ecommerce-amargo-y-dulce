@@ -1300,72 +1300,37 @@ export default function CheckoutPage() {
 
             {/* Cupón */}
             <div>
-              {!cartHasDiscount && (
-                <div className="mb-2">
-                  <label className="mb-1 block text-xs font-semibold text-neutral-700">
-                    Mis cupones
-                  </label>
-                  <select
-                    className="w-full border p-2 text-sm"
-                    value={selectedCouponCode}
-                    onChange={(e) => {
-                      setCouponAutoFillBlocked(true);
-                      setCouponTouched(true);
-                      setCoupon(e.target.value);
-                    }}
-                  >
-                    <option value="">Seleccioná un cupón de Mis cupones (opcional)</option>
-                    {myCoupons.map((item) => (
-                      <option key={item.code} value={item.code}>
-                        {item.code} - {item.name}
-                      </option>
-                    ))}
-                  </select>
-                  {myCouponsLoading ? (
-                    <p className="mt-1 text-xs text-neutral-500">Cargando tus cupones…</p>
-                  ) : null}
-                  {!myCouponsLoading && !myCouponsError && myCoupons.length === 0 ? (
-                    <p className="mt-1 text-xs text-neutral-500">
-                      No tenés cupones aplicados en Mis cupones.
-                    </p>
-                  ) : null}
-                  {myCouponsError ? (
-                    <p className="mt-1 text-xs text-red-600">{myCouponsError}</p>
-                  ) : null}
-                </div>
-              )}
-
-              <div className="flex items-center gap-2">
-                <input
-                  value={coupon}
-                  onChange={(e) => {
-                    setCouponTouched(true);
-                    setCoupon(e.target.value);
-                  }}
-                  placeholder="Cupón (opcional)"
-                  className="w-full border p-2"
-                  disabled={cartHasDiscount}
-                />
-                {hasCouponInput && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setCouponAutoFillBlocked(true);
-                      setCouponTouched(true);
-                      setCoupon("");
-                      const params = new URLSearchParams(sp.toString());
-                      if (params.has("coupon")) {
-                        params.delete("coupon");
-                        const next = params.toString();
-                        router.replace(next ? `/checkout?${next}` : "/checkout", { scroll: false });
-                      }
-                    }}
-                    className="shrink-0 rounded border px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
-                  >
-                    Quitar
-                  </button>
-                )}
-              </div>
+              <label className="mb-1 block text-xs font-semibold text-neutral-700">
+                Mis cupones
+              </label>
+              <select
+                className="w-full border p-2 text-sm"
+                value={selectedCouponCode}
+                disabled={cartHasDiscount}
+                onChange={(e) => {
+                  setCouponAutoFillBlocked(true);
+                  setCouponTouched(true);
+                  setCoupon(e.target.value);
+                }}
+              >
+                <option value="">Sin cupón</option>
+                {myCoupons.map((item) => (
+                  <option key={item.code} value={item.code}>
+                    {item.code} - {item.name}
+                  </option>
+                ))}
+              </select>
+              {myCouponsLoading ? (
+                <p className="mt-1 text-xs text-neutral-500">Cargando tus cupones…</p>
+              ) : null}
+              {!myCouponsLoading && !myCouponsError && myCoupons.length === 0 ? (
+                <p className="mt-1 text-xs text-neutral-500">
+                  No tenés cupones aplicados en Mis cupones.
+                </p>
+              ) : null}
+              {myCouponsError ? (
+                <p className="mt-1 text-xs text-red-600">{myCouponsError}</p>
+              ) : null}
 
               <p className="mt-1 text-xs text-neutral-500">
                 El cupón aplica solo a productos sin descuento.
