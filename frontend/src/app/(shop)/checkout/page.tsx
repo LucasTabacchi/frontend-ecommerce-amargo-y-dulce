@@ -1333,7 +1333,7 @@ export default function CheckoutPage() {
               ) : null}
 
               <p className="mt-1 text-xs text-neutral-500">
-                El cupón aplica solo a productos sin descuento.
+                Seleccioná un cupón válido. El cupón aplica solo a productos sin descuento.
               </p>
               <div className="mt-1">
                 <Link href="/cupones/mis-cupones" className="text-xs font-semibold text-red-700 hover:underline">
