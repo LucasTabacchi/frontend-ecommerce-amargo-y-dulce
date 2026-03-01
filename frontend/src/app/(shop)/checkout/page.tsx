@@ -1314,11 +1314,17 @@ export default function CheckoutPage() {
                 }}
               >
                 <option value="">Sin cupón</option>
-                {myCoupons.map((item) => (
-                  <option key={item.code} value={item.code}>
-                    {item.code} - {item.name}
-                  </option>
-                ))}
+                {myCoupons.map((item) => {
+                  const cleanName = String(item.name ?? "").trim();
+                  const showName =
+                    cleanName.length > 0 && normalizeCouponCode(cleanName) !== normalizeCouponCode(item.code);
+                  const label = showName ? `${item.code} - ${cleanName}` : item.code;
+                  return (
+                    <option key={item.code} value={item.code}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
               {myCouponsLoading ? (
                 <p className="mt-1 text-xs text-neutral-500">Cargando tus cupones…</p>

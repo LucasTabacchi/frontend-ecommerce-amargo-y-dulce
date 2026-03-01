@@ -159,6 +159,12 @@ export default function MisCuponesPage() {
                 Cupones disponibles para aplicar en tu checkout.
               </p>
             </div>
+            <Link
+              href="/cupones"
+              className="rounded-full border px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
+            >
+              Volver a cupones
+            </Link>
           </div>
         </div>
 
@@ -186,10 +192,6 @@ export default function MisCuponesPage() {
                   className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
                 >
                   <div className="text-lg font-extrabold text-neutral-900">{c.name || "Cupón"}</div>
-                  <div className="mt-1 text-xs font-semibold text-neutral-700">
-                    Código: {c.code || "—"}
-                  </div>
-
                   <div className="mt-3 space-y-1 text-sm text-neutral-700">
                     <div>
                       Beneficio: <span className="font-semibold">{discountLabel(c)}</span>

@@ -51,7 +51,7 @@ export default async function CuponesPage() {
               <p className="mt-2 text-sm text-neutral-600">
                 Explora cupones activos, aplicalos y guardalos en Mis cupones.
               </p>
-              <p className="mt-1 text-xs text-neutral-500">
+              <p className="mt-1 text-sm text-neutral-500">
                 Aplica al cupón para luego poder usarlo.
               </p>
             </div>
@@ -77,10 +77,6 @@ export default async function CuponesPage() {
                 className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
               >
                 <div className="text-lg font-extrabold text-neutral-900">{c.name || "Cupón"}</div>
-                <div className="mt-1 text-xs font-semibold text-neutral-700">
-                  Código: {c.code || "—"}
-                </div>
-
                 <div className="mt-3 space-y-1 text-sm text-neutral-700">
                   <div>
                     Beneficio:{" "}
