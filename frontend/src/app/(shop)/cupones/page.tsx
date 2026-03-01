@@ -51,6 +51,9 @@ export default async function CuponesPage() {
               <p className="mt-2 text-sm text-neutral-600">
                 Explora cupones activos, aplicalos y guardalos en Mis cupones.
               </p>
+              <p className="mt-1 text-xs text-neutral-500">
+                Aplica al cupón para luego poder usarlo.
+              </p>
             </div>
             <div className="flex gap-2">
               <Link
