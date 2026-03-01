@@ -221,20 +221,6 @@ function readClaimedCouponCodes() {
   }
 }
 
-function readLastClaimedCouponCode() {
-  if (typeof window === "undefined") return "";
-  try {
-    const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    if (!Array.isArray(parsed) || parsed.length === 0) return "";
-    const normalized = parsed.map((v) => normalizeCouponCode(v)).filter(Boolean);
-    if (!normalized.length) return "";
-    return normalized[normalized.length - 1];
-  } catch {
-    return "";
-  }
-}
-
 /* ================= page ================= */
 
 export default function CheckoutPage() {
@@ -279,7 +265,6 @@ export default function CheckoutPage() {
   // cupón
   const [coupon, setCoupon] = useState("");
   const [couponTouched, setCouponTouched] = useState(false);
-  const [couponAutoFillBlocked, setCouponAutoFillBlocked] = useState(false);
   const [myCouponsLoading, setMyCouponsLoading] = useState(false);
   const [myCouponsError, setMyCouponsError] = useState<string | null>(null);
   const [myCoupons, setMyCoupons] = useState<MyCouponOption[]>([]);
@@ -307,7 +292,6 @@ export default function CheckoutPage() {
 
   const redirectedStatus = sp.get("status") || "";
   const redirectedOrderId = sp.get("orderId") || "";
-  const couponFromQuery = (sp.get("coupon") || "").trim();
 
   // ✅ Si el carrito tiene items con descuento, no permitimos cupón
   const cartHasDiscount = useMemo(() => hasCartDiscount(cartItems as any[]), [cartItems]);
@@ -322,25 +306,6 @@ export default function CheckoutPage() {
       );
     }
   }, [sp, router]);
-
-  useEffect(() => {
-    if (couponAutoFillBlocked) return;
-    if (!couponFromQuery) return;
-    if (coupon.trim()) return;
-    setCoupon(couponFromQuery);
-    setCouponTouched(true);
-  }, [couponFromQuery, coupon, couponAutoFillBlocked]);
-
-  useEffect(() => {
-    if (couponAutoFillBlocked) return;
-    if (couponFromQuery) return;
-    if (coupon.trim()) return;
-    if (cartHasDiscount) return;
-    const claimed = readLastClaimedCouponCode();
-    if (!claimed) return;
-    setCoupon(claimed);
-    setCouponTouched(true);
-  }, [couponFromQuery, coupon, cartHasDiscount, couponAutoFillBlocked]);
 
   const [ui, setUi] = useState<UiState>(() =>
     redirectedOrderId
@@ -1308,7 +1273,6 @@ export default function CheckoutPage() {
                 value={selectedCouponCode}
                 disabled={cartHasDiscount}
                 onChange={(e) => {
-                  setCouponAutoFillBlocked(true);
                   setCouponTouched(true);
                   setCoupon(e.target.value);
                 }}
@@ -1396,15 +1360,20 @@ export default function CheckoutPage() {
                 <div className="mt-3">
                   <div className="text-xs font-semibold">Promociones aplicadas</div>
                   <ul className="mt-1 space-y-1 text-xs">
-                    {quote.appliedPromotions.map((p) => (
-                      <li key={p.id} className="flex justify-between gap-3">
-                        <span className="truncate">
-                          {p.name}
-                          {p.code ? ` (${p.code})` : ""}
-                        </span>
-                        <span>-{formatARS(p.amount)}</span>
-                      </li>
-                    ))}
+                    {quote.appliedPromotions.map((p) => {
+                      const showCode =
+                        Boolean(p.code) &&
+                        normalizeCouponCode(p.code) !== normalizeCouponCode(p.name || "");
+                      return (
+                        <li key={p.id} className="flex justify-between gap-3">
+                          <span className="truncate">
+                            {p.name}
+                            {showCode ? ` (${p.code})` : ""}
+                          </span>
+                          <span>-{formatARS(p.amount)}</span>
+                        </li>
+                      );
+                    })}
                   </ul>
                 </div>
               ) : null}
