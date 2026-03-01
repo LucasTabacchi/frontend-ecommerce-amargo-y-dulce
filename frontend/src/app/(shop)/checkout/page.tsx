@@ -7,6 +7,8 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { useCartStore } from "@/store/cart.store";
 
+const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+
 /* ================= helpers ================= */
 
 function formatARS(n: number) {
@@ -197,6 +199,22 @@ function isEmptyish(v: string) {
   return String(v ?? "").trim().length === 0;
 }
 
+function readLastClaimedCouponCode() {
+  if (typeof window === "undefined") return "";
+  try {
+    const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed) || parsed.length === 0) return "";
+    const normalized = parsed
+      .map((v) => String(v || "").trim())
+      .filter(Boolean);
+    if (!normalized.length) return "";
+    return normalized[normalized.length - 1];
+  } catch {
+    return "";
+  }
+}
+
 /* ================= page ================= */
 
 export default function CheckoutPage() {
@@ -286,6 +304,16 @@ export default function CheckoutPage() {
     setCoupon(couponFromQuery);
     setCouponTouched(true);
   }, [couponFromQuery, coupon]);
+
+  useEffect(() => {
+    if (couponFromQuery) return;
+    if (coupon.trim()) return;
+    if (cartHasDiscount) return;
+    const claimed = readLastClaimedCouponCode();
+    if (!claimed) return;
+    setCoupon(claimed);
+    setCouponTouched(true);
+  }, [couponFromQuery, coupon, cartHasDiscount]);
 
   const [ui, setUi] = useState<UiState>(() =>
     redirectedOrderId
@@ -487,9 +515,15 @@ export default function CheckoutPage() {
     return (cartItems as any[])
       .map((it) => ({
         id: Number(it.id),
+        documentId: String(it?.documentId ?? it?.productDocumentId ?? "").trim() || null,
         qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
       }))
-      .filter((x) => Number.isFinite(x.id) && x.id > 0);
+      .filter(
+        (x) =>
+          ((Number.isFinite(x.id) && x.id > 0) || Boolean(x.documentId)) &&
+          Number.isFinite(x.qty) &&
+          x.qty > 0
+      );
   }, [cartItems]);
 
   /* ================= quote PRO ================= */
