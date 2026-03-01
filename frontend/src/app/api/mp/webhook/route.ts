@@ -354,6 +354,74 @@ async function findInvoiceByOrderNumber(params: {
   };
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function resolveInvoiceForEmail(params: {
+  siteUrl: string;
+  strapiBase: string;
+  token: string;
+  orderDocumentId: string;
+  orderNumber?: string | null;
+  seed?: { invoiceNumber?: string | null; pdfUrl?: string | null } | null;
+}) {
+  const { siteUrl, strapiBase, token, orderDocumentId, orderNumber, seed } = params;
+
+  let invoiceNumber: string | null = seed?.invoiceNumber
+    ? String(seed.invoiceNumber).trim()
+    : null;
+  let invoicePdfUrl: string | null = seed?.pdfUrl
+    ? ensureAbsoluteUrl(String(seed.pdfUrl).trim(), strapiBase)
+    : null;
+
+  // Reintentos cortos para cubrir propagación/consistencia eventual entre update paid y generación de invoice.
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if ((!invoiceNumber || !invoicePdfUrl) && orderNumber) {
+      try {
+        const invRes = await findInvoiceByOrderNumber({
+          strapiBase,
+          token,
+          orderNumber: String(orderNumber),
+        });
+
+        if (invRes.ok && invRes.data) {
+          if (!invoiceNumber && invRes.data.invoiceNumber) {
+            invoiceNumber = String(invRes.data.invoiceNumber).trim();
+          }
+          if (!invoicePdfUrl && invRes.data.pdfUrl) {
+            invoicePdfUrl = ensureAbsoluteUrl(String(invRes.data.pdfUrl).trim(), strapiBase);
+          }
+        }
+      } catch (e: any) {
+        console.error("[Webhook] Error buscando invoice fallback:", e?.message || e);
+      }
+    }
+
+    if (invoiceNumber && invoicePdfUrl) break;
+
+    if (attempt < maxAttempts) {
+      const gen = await tryGenerateInvoice({ siteUrl, orderId: orderDocumentId });
+      if (gen.ok) {
+        const genNumber = gen?.data?.invoiceNumber ? String(gen.data.invoiceNumber).trim() : null;
+        const genPdfUrl = gen?.data?.pdfUrl
+          ? ensureAbsoluteUrl(String(gen.data.pdfUrl).trim(), strapiBase)
+          : null;
+
+        if (!invoiceNumber && genNumber) invoiceNumber = genNumber;
+        if (!invoicePdfUrl && genPdfUrl) invoicePdfUrl = genPdfUrl;
+      }
+
+      if (!invoiceNumber || !invoicePdfUrl) {
+        await sleep(600 * attempt);
+      }
+    }
+  }
+
+  return { invoiceNumber, invoicePdfUrl };
+}
+
 export async function POST(req: Request) {
   try {
     const url = new URL(req.url);
@@ -522,31 +590,29 @@ export async function POST(req: Request) {
       const to = testTo && testTo.includes("@") ? testTo : customerEmail;
 
       if (to) {
-        let invoiceNumber: string | null = invGenerated?.invoiceNumber
-          ? String(invGenerated.invoiceNumber).trim()
-          : null;
-
-        let invoicePdfUrl: string | null = invGenerated?.pdfUrl
-          ? ensureAbsoluteUrl(String(invGenerated.pdfUrl).trim(), strapiBase)
-          : null;
-
-        if ((!invoicePdfUrl || !invoiceNumber) && order.orderNumber) {
-          try {
-            const invRes = await findInvoiceByOrderNumber({
-              strapiBase,
-              token,
-              orderNumber: order.orderNumber,
-            });
-
-            if (invRes.ok && invRes.data) {
-              if (!invoiceNumber && invRes.data.invoiceNumber)
-                invoiceNumber = invRes.data.invoiceNumber;
-              if (!invoicePdfUrl && invRes.data.pdfUrl)
-                invoicePdfUrl = ensureAbsoluteUrl(invRes.data.pdfUrl, strapiBase);
-            }
-          } catch (e: any) {
-            console.error("[Webhook] Error buscando invoice fallback:", e?.message || e);
-          }
+        const invoiceResolved = await resolveInvoiceForEmail({
+          siteUrl,
+          strapiBase,
+          token,
+          orderDocumentId: order.documentId,
+          orderNumber: order.orderNumber,
+          seed: {
+            invoiceNumber: invGenerated?.invoiceNumber
+              ? String(invGenerated.invoiceNumber).trim()
+              : null,
+            pdfUrl: invGenerated?.pdfUrl
+              ? String(invGenerated.pdfUrl).trim()
+              : null,
+          },
+        });
+        const invoiceNumber = invoiceResolved.invoiceNumber;
+        const invoicePdfUrl = invoiceResolved.invoicePdfUrl;
+        if (!invoiceNumber && !invoicePdfUrl) {
+          console.warn("[Webhook] sending email without invoice after retries", {
+            orderDocumentId: order.documentId,
+            orderNumber: order.orderNumber,
+            paymentId,
+          });
         }
 
         const invoiceFilename = invoiceNumber
