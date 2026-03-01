@@ -25,6 +25,17 @@ function normalizeCode(code: string) {
   return String(code || "").trim().toUpperCase();
 }
 
+function pickApiErrorMessage(payload: any, fallback: string) {
+  const msg =
+    (typeof payload?.error === "string" && payload.error) ||
+    (typeof payload?.error?.message === "string" && payload.error.message) ||
+    (typeof payload?.message === "string" && payload.message) ||
+    (typeof payload?.details?.error === "string" && payload.details.error) ||
+    (typeof payload?.details?.message === "string" && payload.details.message) ||
+    null;
+  return msg && msg.trim() ? msg.trim() : fallback;
+}
+
 function readClaimedCodesFromStorage() {
   if (typeof window === "undefined") return new Set<string>();
   try {
@@ -107,7 +118,7 @@ export default function MisCuponesPage() {
 
         const r = await fetch("/api/promotions/my-coupons", { cache: "no-store" });
         const j = await r.json().catch(() => null);
-        if (!r.ok) throw new Error(j?.error || "No se pudieron cargar tus cupones.");
+        if (!r.ok) throw new Error(pickApiErrorMessage(j, "No se pudieron cargar tus cupones."));
         const list = Array.isArray(j?.data) ? j.data : [];
         const filtered = list.filter((coupon: CouponRow) =>
           claimedCodes.has(normalizeCode(String(coupon?.code || "")))
@@ -115,7 +126,10 @@ export default function MisCuponesPage() {
         setRows(filtered);
       } catch (e: any) {
         setRows([]);
-        setError(e?.message || "No se pudieron cargar tus cupones.");
+        const raw = typeof e?.message === "string" ? e.message.trim() : "";
+        const msg =
+          raw && raw !== "[object Object]" ? raw : "No se pudieron cargar tus cupones.";
+        setError(msg);
       } finally {
         setLoading(false);
       }

@@ -11,6 +11,17 @@ function normalizeStrapiBase(url: string) {
   return u;
 }
 
+function pickApiErrorMessage(payload: any, fallback: string) {
+  const msg =
+    (typeof payload?.error === "string" && payload.error) ||
+    (typeof payload?.error?.message === "string" && payload.error.message) ||
+    (typeof payload?.message === "string" && payload.message) ||
+    (typeof payload?.details?.error === "string" && payload.details.error) ||
+    (typeof payload?.details?.message === "string" && payload.details.message) ||
+    null;
+  return msg && msg.trim() ? msg.trim() : fallback;
+}
+
 function readUserJwtFromCookies() {
   const jar = cookies();
   return (
@@ -40,7 +51,10 @@ export async function GET() {
 
   if (!r.ok) {
     return NextResponse.json(
-      { error: json?.error || "No se pudieron cargar tus cupones.", details: json },
+      {
+        error: pickApiErrorMessage(json, "No se pudieron cargar tus cupones."),
+        details: json,
+      },
       { status: r.status || 500 }
     );
   }
