@@ -159,20 +159,6 @@ export default function MisCuponesPage() {
                 Cupones disponibles para aplicar en tu checkout.
               </p>
             </div>
-            <div className="flex gap-2">
-              <Link
-                href="/cupones"
-                className="rounded-full border px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-              >
-                Ver todos
-              </Link>
-              <Link
-                href="/checkout"
-                className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-              >
-                Ir a checkout
-              </Link>
-            </div>
           </div>
         </div>
 
