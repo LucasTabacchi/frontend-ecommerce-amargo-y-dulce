@@ -137,6 +137,7 @@ export function Header() {
       setLoginOpen(false);
       setProfileOpen(false);
       setMobileOpen(false);
+      window.dispatchEvent(new Event("amg-auth-changed"));
       router.refresh();
     }
   }
@@ -647,6 +648,7 @@ export function Header() {
         onSuccess={() => {
           refreshMe();
           setLoginOpen(false);
+          window.dispatchEvent(new Event("amg-auth-changed"));
 
           const next = sp.get("next");
           if (next) {
@@ -660,3 +662,4 @@ export function Header() {
     </header>
   );
 }
+

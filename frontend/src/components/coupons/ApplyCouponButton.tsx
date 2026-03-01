@@ -40,8 +40,20 @@ export function ApplyCouponButton({ code }: Props) {
 
   useEffect(() => {
     if (!normalized) return;
-    const claimed = readClaimedCoupons();
-    setApplied(claimed.has(normalized));
+
+    const syncState = () => {
+      const claimed = readClaimedCoupons();
+      setApplied(claimed.has(normalized));
+    };
+
+    syncState();
+    window.addEventListener("amg-coupons-changed", syncState);
+    window.addEventListener("storage", syncState);
+
+    return () => {
+      window.removeEventListener("amg-coupons-changed", syncState);
+      window.removeEventListener("storage", syncState);
+    };
   }, [normalized]);
 
   function onApply() {

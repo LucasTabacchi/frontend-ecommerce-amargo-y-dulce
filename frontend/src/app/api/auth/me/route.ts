@@ -29,6 +29,89 @@ function toOptionalString(v: unknown) {
   return s.length ? s : null;
 }
 
+function normInt(v: unknown, fallback: number) {
+  const n = typeof v === "number" ? v : Number(v);
+  if (!Number.isFinite(n)) return fallback;
+  return Math.trunc(n);
+}
+
+function normNumber(v: unknown, fallback: number) {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function normalizeCouponCode(v: unknown) {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+function sanitizeClaimedCoupons(input: unknown, max = 200) {
+  const arr = Array.isArray(input) ? input : [];
+  const out = new Set<string>();
+  for (const raw of arr) {
+    const code = normalizeCouponCode(raw);
+    if (!code) continue;
+    out.add(code);
+    if (out.size >= max) break;
+  }
+  return Array.from(out);
+}
+
+function sanitizeCartItems(input: unknown, max = 150) {
+  const arr = Array.isArray(input) ? input : [];
+  const out: any[] = [];
+
+  for (const raw of arr) {
+    if (!raw || typeof raw !== "object") continue;
+
+    const id = Math.max(0, normInt((raw as any).id, 0));
+    const documentId = toOptionalString((raw as any).documentId);
+    const slug =
+      toOptionalString((raw as any).slug) ||
+      documentId ||
+      (id > 0 ? String(id) : null);
+
+    if (!slug) continue;
+
+    const title = toOptionalString((raw as any).title) || "Producto";
+    const description = toOptionalString((raw as any).description);
+    const imageUrl = toOptionalString((raw as any).imageUrl);
+    const category = toOptionalString((raw as any).category);
+
+    const price = Math.max(0, normNumber((raw as any).price, 0));
+
+    const offRaw = normNumber((raw as any).off, 0);
+    const off = Number.isFinite(offRaw) && offRaw > 0 ? Math.min(100, offRaw) : undefined;
+
+    const qty = Math.max(1, Math.min(99, normInt((raw as any).qty, 1)));
+
+    const stockRaw = (raw as any).stock;
+    const stock =
+      stockRaw === null || stockRaw === undefined || stockRaw === ""
+        ? null
+        : Math.max(0, normInt(stockRaw, 0));
+
+    const item: Record<string, any> = {
+      id,
+      documentId,
+      slug,
+      title,
+      description,
+      price,
+      imageUrl,
+      category,
+      qty,
+      stock,
+    };
+
+    if (typeof off === "number") item.off = off;
+
+    out.push(item);
+    if (out.length >= max) break;
+  }
+
+  return out;
+}
+
 export async function GET() {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) return NextResponse.json({ user: null }, { status: 200 });
@@ -48,13 +131,19 @@ export async function GET() {
   const user = await r.json().catch(() => null);
   const normalizedUser =
     user && typeof user === "object"
-      ? { ...user, isStoreAdmin: Boolean((user as any)?.isStoreAdmin) }
+      ? {
+          ...user,
+          isStoreAdmin: Boolean((user as any)?.isStoreAdmin),
+          claimedCoupons: sanitizeClaimedCoupons((user as any)?.claimedCoupons),
+          cartItems: sanitizeCartItems((user as any)?.cartItems),
+        }
       : user;
 
   return NextResponse.json({ user: normalizedUser }, { status: 200 });
 }
 
 // ✅ Actualizar datos personales (dni / firstName / lastName / name)
+// ✅ También persistimos preferencias de cuenta: claimedCoupons + cartItems
 export async function PUT(req: Request) {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) {
@@ -83,8 +172,10 @@ export async function PUT(req: Request) {
   const hasFirstName = hasOwn(body, "firstName");
   const hasLastName = hasOwn(body, "lastName");
   const hasName = hasOwn(body, "name");
+  const hasClaimedCoupons = hasOwn(body, "claimedCoupons");
+  const hasCartItems = hasOwn(body, "cartItems");
 
-  if (!hasDni && !hasFirstName && !hasLastName && !hasName) {
+  if (!hasDni && !hasFirstName && !hasLastName && !hasName && !hasClaimedCoupons && !hasCartItems) {
     return NextResponse.json(
       { error: "No hay campos para actualizar" },
       { status: 400 }
@@ -106,6 +197,10 @@ export async function PUT(req: Request) {
   const firstNameToSave = hasFirstName ? toOptionalString(body.firstName) : undefined;
   const lastNameToSave = hasLastName ? toOptionalString(body.lastName) : undefined;
   const nameToSave = hasName ? toOptionalString(body.name) : undefined;
+  const claimedCouponsToSave = hasClaimedCoupons
+    ? sanitizeClaimedCoupons(body.claimedCoupons)
+    : undefined;
+  const cartItemsToSave = hasCartItems ? sanitizeCartItems(body.cartItems) : undefined;
 
   // 1) Traer el usuario actual para obtener su id
   const meRes = await fetch(`${STRAPI}/api/users/me`, {
@@ -125,10 +220,12 @@ export async function PUT(req: Request) {
   const currentFirstName = toOptionalString(meJson?.firstName);
   const currentLastName = toOptionalString(meJson?.lastName);
 
-  const payload: Record<string, string | null> = {};
+  const payload: Record<string, any> = {};
   if (hasDni) payload.dni = dniToSave ?? null;
   if (hasFirstName) payload.firstName = firstNameToSave ?? null;
   if (hasLastName) payload.lastName = lastNameToSave ?? null;
+  if (hasClaimedCoupons) payload.claimedCoupons = claimedCouponsToSave ?? [];
+  if (hasCartItems) payload.cartItems = cartItemsToSave ?? [];
 
   if (hasName) {
     payload.name = nameToSave ?? null;
@@ -160,5 +257,15 @@ export async function PUT(req: Request) {
   }
 
   // devolvemos user actualizado (Strapi devuelve el user)
-  return NextResponse.json({ user: updJson }, { status: 200 });
+  const normalizedUser =
+    updJson && typeof updJson === "object"
+      ? {
+          ...updJson,
+          isStoreAdmin: Boolean((updJson as any)?.isStoreAdmin),
+          claimedCoupons: sanitizeClaimedCoupons((updJson as any)?.claimedCoupons),
+          cartItems: sanitizeCartItems((updJson as any)?.cartItems),
+        }
+      : updJson;
+
+  return NextResponse.json({ user: normalizedUser }, { status: 200 });
 }

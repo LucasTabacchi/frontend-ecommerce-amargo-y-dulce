@@ -16,6 +16,7 @@ type CartState = {
   hasHydrated: boolean;
   setHasHydrated: (v: boolean) => void;
 
+  setItems: (items: CartItem[]) => void;
   addItem: (product: ProductCardItem, qty?: number) => void;
   removeItem: (slug: string) => void;
   inc: (slug: string) => void;
@@ -104,6 +105,44 @@ function normalizeCartItem(product: any, qty: number): CartItem {
   } as CartItem;
 }
 
+function normalizeCartItems(items: any[]): CartItem[] {
+  const input = Array.isArray(items) ? items : [];
+  const map = new Map<string, CartItem>();
+
+  for (const raw of input) {
+    const qty = Math.max(1, normalizeQty(raw?.qty ?? 1));
+    const normalized = normalizeCartItem(raw, qty);
+    const key = normalized.documentId ?? normalized.slug;
+    if (!key) continue;
+
+    const existing = map.get(key);
+    if (!existing) {
+      if (typeof normalized.stock === "number" && normalized.stock <= 0) continue;
+      const firstQty = Math.max(1, clampQty(normalized.qty, normalized.stock ?? null));
+      map.set(key, { ...normalized, qty: firstQty });
+      continue;
+    }
+
+    const stock =
+      typeof existing.stock === "number"
+        ? existing.stock
+        : typeof normalized.stock === "number"
+        ? normalized.stock
+        : null;
+
+    const mergedQty = Math.max(1, clampQty(normalizeQty(existing.qty) + normalizeQty(normalized.qty), stock));
+
+    map.set(key, {
+      ...existing,
+      ...normalized,
+      stock,
+      qty: mergedQty,
+    });
+  }
+
+  return Array.from(map.values());
+}
+
 export const useCartStore = create<CartState>()(
   persist(
     (set, get) => ({
@@ -111,6 +150,8 @@ export const useCartStore = create<CartState>()(
 
       hasHydrated: false,
       setHasHydrated: (v) => set({ hasHydrated: v }),
+
+      setItems: (items) => set({ items: normalizeCartItems(items as any[]) }),
 
       addItem: (product, qty = 1) => {
         // ✅ al agregar, mínimo 1
@@ -207,33 +248,12 @@ export const useCartStore = create<CartState>()(
     }),
     {
       name: "amargo-dulce-cart",
-      version: 4, // ✅ subimos versión porque agregamos stock
+      version: 5, // ✅ subimos versión porque agregamos setItems + merge más robusto
       migrate: (persisted: any) => {
         // zustand persist guarda { state, version }
         const state = persisted?.state ?? persisted ?? {};
         const items = Array.isArray(state?.items) ? state.items : [];
-
-        const fixed = items
-          .map((it: any) => {
-            const normalized = normalizeCartItem(it, Math.max(1, normalizeQty(it?.qty ?? 1)));
-
-            // ✅ clamp por stock si ya lo tenía persistido
-            const stock =
-              typeof it?.stock === "number"
-                ? Math.max(0, Math.trunc(it.stock))
-                : normalized.stock ?? null;
-
-            const qty = Math.max(1, clampQty(normalized.qty, stock));
-
-            return {
-              ...(it as any),
-              ...normalized,
-              stock,
-              qty,
-            } as CartItem;
-          })
-          // ✅ si stock=0, opcionalmente limpiamos el item
-          .filter((it: any) => !(typeof it.stock === "number" && it.stock <= 0));
+        const fixed = normalizeCartItems(items);
 
         return { ...persisted, state: { ...state, items: fixed } };
       },

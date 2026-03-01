@@ -1,5 +1,6 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
+import { UserStateSync } from "@/components/session/UserStateSync";
 import { Suspense } from "react";
 
 export default function ShopLayout({
@@ -9,6 +10,7 @@ export default function ShopLayout({
 }) {
   return (
     <div className="min-h-screen min-h-[100dvh] bg-[#FAF6F6] flex flex-col">
+      <UserStateSync />
       <Suspense fallback={<div className="h-16 bg-white" />}>
         <Header />
       </Suspense>
