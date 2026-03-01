@@ -144,6 +144,12 @@ type MeResponse = {
   } | null;
 };
 
+type MyCouponOption = {
+  id: number;
+  code: string;
+  name: string;
+};
+
 function toNum(v: any, def = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -199,15 +205,29 @@ function isEmptyish(v: string) {
   return String(v ?? "").trim().length === 0;
 }
 
+function normalizeCouponCode(code: any) {
+  return String(code ?? "").trim().toUpperCase();
+}
+
+function readClaimedCouponCodes() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(parsed.map((v) => normalizeCouponCode(v)).filter(Boolean));
+  } catch {
+    return new Set<string>();
+  }
+}
+
 function readLastClaimedCouponCode() {
   if (typeof window === "undefined") return "";
   try {
     const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed) || parsed.length === 0) return "";
-    const normalized = parsed
-      .map((v) => String(v || "").trim())
-      .filter(Boolean);
+    const normalized = parsed.map((v) => normalizeCouponCode(v)).filter(Boolean);
     if (!normalized.length) return "";
     return normalized[normalized.length - 1];
   } catch {
@@ -259,6 +279,11 @@ export default function CheckoutPage() {
   // cupón
   const [coupon, setCoupon] = useState("");
   const [couponTouched, setCouponTouched] = useState(false);
+  const [couponAutoFillBlocked, setCouponAutoFillBlocked] = useState(false);
+  const [myCouponsLoading, setMyCouponsLoading] = useState(false);
+  const [myCouponsError, setMyCouponsError] = useState<string | null>(null);
+  const [myCoupons, setMyCoupons] = useState<MyCouponOption[]>([]);
+  const [claimedCouponsVersion, setClaimedCouponsVersion] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [quoting, setQuoting] = useState(false);
@@ -299,13 +324,15 @@ export default function CheckoutPage() {
   }, [sp, router]);
 
   useEffect(() => {
+    if (couponAutoFillBlocked) return;
     if (!couponFromQuery) return;
     if (coupon.trim()) return;
     setCoupon(couponFromQuery);
     setCouponTouched(true);
-  }, [couponFromQuery, coupon]);
+  }, [couponFromQuery, coupon, couponAutoFillBlocked]);
 
   useEffect(() => {
+    if (couponAutoFillBlocked) return;
     if (couponFromQuery) return;
     if (coupon.trim()) return;
     if (cartHasDiscount) return;
@@ -313,7 +340,7 @@ export default function CheckoutPage() {
     if (!claimed) return;
     setCoupon(claimed);
     setCouponTouched(true);
-  }, [couponFromQuery, coupon, cartHasDiscount]);
+  }, [couponFromQuery, coupon, cartHasDiscount, couponAutoFillBlocked]);
 
   const [ui, setUi] = useState<UiState>(() =>
     redirectedOrderId
@@ -369,6 +396,75 @@ export default function CheckoutPage() {
   }, []);
 
   const isStoreAdmin = Boolean(me?.user?.isStoreAdmin);
+
+  useEffect(() => {
+    const onCouponsChanged = () => setClaimedCouponsVersion((prev) => prev + 1);
+    window.addEventListener("storage", onCouponsChanged);
+    window.addEventListener("amg-coupons-changed", onCouponsChanged);
+    return () => {
+      window.removeEventListener("storage", onCouponsChanged);
+      window.removeEventListener("amg-coupons-changed", onCouponsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!meReady || isStoreAdmin) return;
+    let alive = true;
+
+    (async () => {
+      const claimed = readClaimedCouponCodes();
+      if (!claimed.size) {
+        if (!alive) return;
+        setMyCoupons([]);
+        setMyCouponsError(null);
+        setMyCouponsLoading(false);
+        return;
+      }
+
+      setMyCouponsLoading(true);
+      setMyCouponsError(null);
+      try {
+        const r = await fetch("/api/promotions/my-coupons", { cache: "no-store" });
+        const j = await r.json().catch(() => null);
+
+        if (!r.ok) {
+          const msg =
+            (typeof j?.error === "string" && j.error) ||
+            (typeof j?.message === "string" && j.message) ||
+            "No se pudieron cargar tus cupones.";
+          throw new Error(msg);
+        }
+
+        const list = Array.isArray(j?.data) ? j.data : [];
+        const map = new Map<string, MyCouponOption>();
+
+        for (const row of list) {
+          const code = normalizeCouponCode(row?.code);
+          if (!code || !claimed.has(code) || map.has(code)) continue;
+          const name = String(row?.name ?? "").trim() || code;
+          map.set(code, {
+            id: Number.isFinite(Number(row?.id)) ? Number(row.id) : map.size + 1,
+            code,
+            name,
+          });
+        }
+
+        if (!alive) return;
+        setMyCoupons(Array.from(map.values()));
+      } catch (e: any) {
+        if (!alive) return;
+        setMyCoupons([]);
+        setMyCouponsError(e?.message || "No se pudieron cargar tus cupones.");
+      } finally {
+        if (!alive) return;
+        setMyCouponsLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, [meReady, isStoreAdmin, claimedCouponsVersion]);
 
   useEffect(() => {
     if (!isEmptyish(email)) return;
@@ -516,11 +612,12 @@ export default function CheckoutPage() {
       .map((it) => ({
         id: Number(it.id),
         documentId: String(it?.documentId ?? it?.productDocumentId ?? "").trim() || null,
+        slug: String(it?.slug ?? "").trim() || null,
         qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
       }))
       .filter(
         (x) =>
-          ((Number.isFinite(x.id) && x.id > 0) || Boolean(x.documentId)) &&
+          ((Number.isFinite(x.id) && x.id > 0) || Boolean(x.documentId) || Boolean(x.slug)) &&
           Number.isFinite(x.qty) &&
           x.qty > 0
       );
@@ -928,6 +1025,10 @@ export default function CheckoutPage() {
 
   const requestedCoupon = coupon.trim();
   const hasCouponInput = requestedCoupon.length > 0;
+  const selectedCouponCode = useMemo(() => {
+    const normalized = normalizeCouponCode(coupon);
+    return myCoupons.some((x) => x.code === normalized) ? normalized : "";
+  }, [coupon, myCoupons]);
   const couponApplied = Boolean(quote?.coupon?.applied);
   const couponErrorMessage =
     quote?.coupon?.message ||
@@ -1199,6 +1300,41 @@ export default function CheckoutPage() {
 
             {/* Cupón */}
             <div>
+              {!cartHasDiscount && (
+                <div className="mb-2">
+                  <label className="mb-1 block text-xs font-semibold text-neutral-700">
+                    Mis cupones
+                  </label>
+                  <select
+                    className="w-full border p-2 text-sm"
+                    value={selectedCouponCode}
+                    onChange={(e) => {
+                      setCouponAutoFillBlocked(true);
+                      setCouponTouched(true);
+                      setCoupon(e.target.value);
+                    }}
+                  >
+                    <option value="">Seleccioná un cupón de Mis cupones (opcional)</option>
+                    {myCoupons.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.code} - {item.name}
+                      </option>
+                    ))}
+                  </select>
+                  {myCouponsLoading ? (
+                    <p className="mt-1 text-xs text-neutral-500">Cargando tus cupones…</p>
+                  ) : null}
+                  {!myCouponsLoading && !myCouponsError && myCoupons.length === 0 ? (
+                    <p className="mt-1 text-xs text-neutral-500">
+                      No tenés cupones aplicados en Mis cupones.
+                    </p>
+                  ) : null}
+                  {myCouponsError ? (
+                    <p className="mt-1 text-xs text-red-600">{myCouponsError}</p>
+                  ) : null}
+                </div>
+              )}
+
               <div className="flex items-center gap-2">
                 <input
                   value={coupon}
@@ -1214,8 +1350,15 @@ export default function CheckoutPage() {
                   <button
                     type="button"
                     onClick={() => {
+                      setCouponAutoFillBlocked(true);
                       setCouponTouched(true);
                       setCoupon("");
+                      const params = new URLSearchParams(sp.toString());
+                      if (params.has("coupon")) {
+                        params.delete("coupon");
+                        const next = params.toString();
+                        router.replace(next ? `/checkout?${next}` : "/checkout", { scroll: false });
+                      }
                     }}
                     className="shrink-0 rounded border px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
                   >

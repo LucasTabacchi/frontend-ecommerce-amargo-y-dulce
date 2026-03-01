@@ -57,14 +57,16 @@ function buildQuoteItems(items: any[]) {
     .map((it) => {
       const id = Number(it?.productId ?? it?.id);
       const documentId = String(it?.productDocumentId ?? it?.documentId ?? "").trim();
+      const slug = String(it?.slug ?? "").trim();
       const qty = Math.max(1, Math.floor(Number(it?.qty ?? it?.quantity ?? 1)));
       return {
         id: Number.isFinite(id) && id > 0 ? id : null,
         documentId: documentId || null,
+        slug: slug || null,
         qty,
       };
     })
-    .filter((it) => (it.id != null || !!it.documentId) && Number.isFinite(it.qty) && it.qty > 0);
+    .filter((it) => (it.id != null || !!it.documentId || !!it.slug) && Number.isFinite(it.qty) && it.qty > 0);
 }
 
 /* ===================== AUTH (JWT USER) ===================== */
@@ -321,7 +323,7 @@ export async function POST(req: Request) {
   const quoteItems = buildQuoteItems(items);
   if (!quoteItems.length) {
     return NextResponse.json(
-      { error: "La orden no tiene items con productId/documentId válido." },
+      { error: "La orden no tiene items con productId/documentId/slug válido." },
       { status: 400 }
     );
   }

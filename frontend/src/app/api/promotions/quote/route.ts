@@ -6,7 +6,7 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type QuoteBody = {
-  items?: Array<{ id?: number | null; documentId?: string | null; qty: number }>;
+  items?: Array<{ id?: number | null; documentId?: string | null; slug?: string | null; qty: number }>;
   coupon?: string | null;
   shipping?: number;
   [k: string]: any;
@@ -29,14 +29,18 @@ export async function POST(req: Request) {
       .map((it) => {
         const id = Number(it?.id);
         const documentId = String(it?.documentId ?? "").trim();
+        const slug = String(it?.slug ?? "").trim();
         const qty = Math.max(1, Math.floor(Number(it?.qty ?? 1)));
         return {
           id: Number.isFinite(id) && id > 0 ? id : null,
           documentId: documentId || null,
+          slug: slug || null,
           qty,
         };
       })
-      .filter((it) => (it.id != null || !!it.documentId) && Number.isFinite(it.qty) && it.qty > 0);
+      .filter(
+        (it) => (it.id != null || !!it.documentId || !!it.slug) && Number.isFinite(it.qty) && it.qty > 0
+      );
 
     const payload = {
       ...body,
