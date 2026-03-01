@@ -5,6 +5,8 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 
+const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+
 type CouponRow = {
   id: number;
   name?: string | null;
@@ -18,6 +20,26 @@ type CouponRow = {
   scopeLabel?: string | null;
   combinable?: boolean;
 };
+
+function normalizeCode(code: string) {
+  return String(code || "").trim().toUpperCase();
+}
+
+function readClaimedCodesFromStorage() {
+  if (typeof window === "undefined") return new Set<string>();
+  try {
+    const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
+    const parsed = JSON.parse(raw || "[]");
+    if (!Array.isArray(parsed)) return new Set<string>();
+    return new Set(
+      parsed
+        .map((v) => normalizeCode(String(v)))
+        .filter(Boolean)
+    );
+  } catch {
+    return new Set<string>();
+  }
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -40,6 +62,7 @@ export default function MisCuponesPage() {
   const [loading, setLoading] = useState(false);
   const [rows, setRows] = useState<CouponRow[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [claimVersion, setClaimVersion] = useState(0);
 
   useEffect(() => {
     (async () => {
@@ -61,15 +84,35 @@ export default function MisCuponesPage() {
   }, [meLoading, me, router]);
 
   useEffect(() => {
+    const onCouponsChanged = () => setClaimVersion((prev) => prev + 1);
+    window.addEventListener("storage", onCouponsChanged);
+    window.addEventListener("amg-coupons-changed", onCouponsChanged);
+    return () => {
+      window.removeEventListener("storage", onCouponsChanged);
+      window.removeEventListener("amg-coupons-changed", onCouponsChanged);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!me || meLoading) return;
     (async () => {
+      const claimedCodes = readClaimedCodesFromStorage();
       setLoading(true);
       setError(null);
       try {
+        if (claimedCodes.size === 0) {
+          setRows([]);
+          return;
+        }
+
         const r = await fetch("/api/promotions/my-coupons", { cache: "no-store" });
         const j = await r.json().catch(() => null);
         if (!r.ok) throw new Error(j?.error || "No se pudieron cargar tus cupones.");
-        setRows(Array.isArray(j?.data) ? j.data : []);
+        const list = Array.isArray(j?.data) ? j.data : [];
+        const filtered = list.filter((coupon: CouponRow) =>
+          claimedCodes.has(normalizeCode(String(coupon?.code || "")))
+        );
+        setRows(filtered);
       } catch (e: any) {
         setRows([]);
         setError(e?.message || "No se pudieron cargar tus cupones.");
@@ -77,7 +120,7 @@ export default function MisCuponesPage() {
         setLoading(false);
       }
     })();
-  }, [me, meLoading]);
+  }, [me, meLoading, claimVersion]);
 
   if (meLoading) {
     return (
@@ -189,7 +232,11 @@ export default function MisCuponesPage() {
 
             {rows.length === 0 ? (
               <div className="rounded-xl border border-neutral-200 bg-white p-6 text-sm text-neutral-600 shadow-sm">
-                No tenés cupones activos por ahora.
+                Todavía no aplicaste cupones. Desde{" "}
+                <Link href="/cupones" className="font-semibold underline">
+                  Cupones
+                </Link>{" "}
+                presioná “Aplicar” y te van a aparecer acá.
               </div>
             ) : null}
           </div>

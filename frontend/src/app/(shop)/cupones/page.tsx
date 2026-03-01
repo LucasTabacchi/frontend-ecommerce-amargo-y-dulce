@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
+import { ApplyCouponButton } from "@/components/coupons/ApplyCouponButton";
 
 export const dynamic = "force-dynamic";
 
@@ -48,7 +49,7 @@ export default async function CuponesPage() {
             <div>
               <h1 className="text-3xl font-extrabold text-neutral-900">Cupones</h1>
               <p className="mt-2 text-sm text-neutral-600">
-                Explora cupones activos y aplicalos en checkout.
+                Explora cupones activos, aplicalos y guardalos en Mis cupones.
               </p>
             </div>
             <div className="flex gap-2">
@@ -57,12 +58,6 @@ export default async function CuponesPage() {
                 className="rounded-full border px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
               >
                 Mis cupones
-              </Link>
-              <Link
-                href="/checkout"
-                className="rounded-full bg-red-600 px-4 py-2 text-sm font-semibold text-white hover:bg-red-700"
-              >
-                Ir a checkout
               </Link>
             </div>
           </div>
@@ -113,12 +108,7 @@ export default async function CuponesPage() {
                 </div>
 
                 <div className="mt-5 flex gap-3">
-                  <Link
-                    href={`/checkout?coupon=${encodeURIComponent(String(c.code || ""))}`}
-                    className="rounded-full bg-red-600 px-5 py-2 text-sm font-semibold text-white hover:bg-red-700"
-                  >
-                    Aplicar en checkout
-                  </Link>
+                  <ApplyCouponButton code={String(c.code || "")} />
                   <Link
                     href="/productos#listado"
                     className="rounded-full border border-neutral-300 bg-white px-5 py-2 text-sm font-semibold text-neutral-900"
