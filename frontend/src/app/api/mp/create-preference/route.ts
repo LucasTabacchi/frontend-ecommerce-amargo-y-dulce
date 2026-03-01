@@ -12,6 +12,8 @@ type MPItem = {
   currency_id: "ARS";
 };
 
+type ShippingMethod = "delivery" | "pickup";
+
 function normalizeBaseUrl(url: string) {
   const u = String(url ?? "").trim();
   return u.endsWith("/") ? u.slice(0, -1) : u;
@@ -41,6 +43,28 @@ function cleanObject<T extends Record<string, any>>(obj: T): Partial<T> {
   return Object.fromEntries(
     Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "")
   ) as Partial<T>;
+}
+
+function calcShippingARS(baseTotal: number, method: ShippingMethod) {
+  if (method === "pickup") return 0;
+  if (baseTotal > 65000) return 0;
+  if (baseTotal > 40000) return 4500;
+  return 9000;
+}
+
+function buildQuoteItems(items: any[]) {
+  return (Array.isArray(items) ? items : [])
+    .map((it) => {
+      const id = Number(it?.productId ?? it?.id);
+      const documentId = String(it?.productDocumentId ?? it?.documentId ?? "").trim();
+      const qty = Math.max(1, Math.floor(Number(it?.qty ?? it?.quantity ?? 1)));
+      return {
+        id: Number.isFinite(id) && id > 0 ? id : null,
+        documentId: documentId || null,
+        qty,
+      };
+    })
+    .filter((it) => (it.id != null || !!it.documentId) && Number.isFinite(it.qty) && it.qty > 0);
 }
 
 /* ===================== AUTH (JWT USER) ===================== */
@@ -283,19 +307,60 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "La orden no tiene items válidos en Strapi" }, { status: 400 });
   }
 
-  const totalNumber = Number(order?.total);
-  if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
-    return NextResponse.json({ error: "La orden tiene total inválido en Strapi", total: order?.total }, { status: 400 });
-  }
-
   // ✅ Validar stock
   try {
     await validateStockOrThrow(strapiBase, jwt, items);
   } catch (e: any) {
-    if (e?.code === "OUT_OF_STOCK") {
+      if (e?.code === "OUT_OF_STOCK") {
       return NextResponse.json({ error: "Sin stock suficiente", code: "OUT_OF_STOCK", problems: e.problems ?? [] }, { status: 409 });
     }
     return NextResponse.json({ error: e?.message || "Error validando stock", code: e?.code, details: e?.details }, { status: 500 });
+  }
+
+  // ✅ Recalcular promociones y total del lado servidor (no confiar en cliente)
+  const quoteItems = buildQuoteItems(items);
+  if (!quoteItems.length) {
+    return NextResponse.json(
+      { error: "La orden no tiene items con productId/documentId válido." },
+      { status: 400 }
+    );
+  }
+
+  const coupon = String(order?.coupon ?? "").trim() || null;
+  const quoteRes = await fetch(`${strapiBase}/api/promotions/quote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ items: quoteItems, coupon, shipping: 0 }),
+    cache: "no-store",
+  });
+  const quoteJson = await quoteRes.json().catch(() => null);
+
+  if (!quoteRes.ok) {
+    return NextResponse.json(
+      { error: "No se pudo recalcular promociones para el pago.", details: quoteJson },
+      { status: 500 }
+    );
+  }
+
+  const promoTotal = Math.round(Number(quoteJson?.total ?? 0));
+  if (!Number.isFinite(promoTotal) || promoTotal < 0) {
+    return NextResponse.json(
+      { error: "Promociones devolvieron total inválido.", details: quoteJson },
+      { status: 500 }
+    );
+  }
+
+  const shippingMethod: ShippingMethod =
+    String(order?.shippingMethod ?? "").trim().toLowerCase() === "pickup"
+      ? "pickup"
+      : "delivery";
+  const shippingCost = calcShippingARS(promoTotal, shippingMethod);
+  const totalNumber = Math.max(0, promoTotal + shippingCost);
+  if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
+    return NextResponse.json(
+      { error: "Total final inválido para generar preferencia.", total: totalNumber },
+      { status: 400 }
+    );
   }
 
   // Cobro por 1 ítem = total final
@@ -322,15 +387,18 @@ export async function POST(req: Request) {
     back_urls,
     auto_return: "approved",
     notification_url,
-    metadata: cleanObject({
-      orderId,
-      orderNumber: orderNumber ?? undefined,
-      mpExternalReference: external_reference,
-      shippingMethod: order?.shippingMethod ?? undefined,
-      pickupPoint: order?.pickupPoint ?? undefined,
-      total: String(Math.round(totalNumber)),
-    }),
-  };
+      metadata: cleanObject({
+        orderId,
+        orderNumber: orderNumber ?? undefined,
+        mpExternalReference: external_reference,
+        shippingMethod,
+        pickupPoint: order?.pickupPoint ?? undefined,
+        total: String(Math.round(totalNumber)),
+        subtotal: String(Math.round(Number(quoteJson?.subtotal ?? 0))),
+        discountTotal: String(Math.round(Number(quoteJson?.discountTotal ?? 0))),
+        coupon: coupon ?? undefined,
+      }),
+    };
 
   try {
     const res = await fetch("https://api.mercadopago.com/checkout/preferences", {

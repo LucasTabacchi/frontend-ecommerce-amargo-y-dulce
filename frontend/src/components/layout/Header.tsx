@@ -486,7 +486,7 @@ export function Header() {
               <span className="text-neutral-300">|</span>
               <NavLink href="/productos">Productos</NavLink>
               <span className="text-neutral-300">|</span>
-              <NavLink href="/promociones">Promociones</NavLink>
+              <NavLink href="/cupones">Cupones</NavLink>
               <span className="text-neutral-300">|</span>
               <NavLink href="/sobre-nosotros">Sobre nosotros</NavLink>
             </nav>
@@ -629,8 +629,8 @@ export function Header() {
                 <NavLink href="/productos" onClick={() => setMobileOpen(false)}>
                   Productos
                 </NavLink>
-                <NavLink href="/promociones" onClick={() => setMobileOpen(false)}>
-                  Promociones
+                <NavLink href="/cupones" onClick={() => setMobileOpen(false)}>
+                  Cupones
                 </NavLink>
                 <NavLink href="/sobre-nosotros" onClick={() => setMobileOpen(false)}>
                   Sobre nosotros

@@ -51,8 +51,8 @@ export function Footer() {
                   </Link>
                 </li>
                 <li>
-                  <Link className="hover:text-white" href="/promociones">
-                    Promociones
+                  <Link className="hover:text-white" href="/cupones">
+                    Cupones
                   </Link>
                 </li>
               </ul>

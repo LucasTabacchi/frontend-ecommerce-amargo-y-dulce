@@ -89,6 +89,24 @@ type Quote = {
     amount: number;
     meta?: any;
   }>;
+  lineDiscounts: Array<{
+    productId?: number | null;
+    productDocumentId?: string | null;
+    title?: string | null;
+    qty?: number | null;
+    amount: number;
+  }>;
+  reasonCode?: string | null;
+  message?: string | null;
+  appliesToMessage?: string | null;
+  coupon?: {
+    requested?: string | null;
+    applied?: boolean;
+    code?: string | null;
+    reasonCode?: string | null;
+    message?: string | null;
+    appliesToMessage?: string | null;
+  } | null;
 };
 
 type StockProblem = {
@@ -133,11 +151,45 @@ function normalizeQuote(data: any, fallbackSubtotal: number): Quote {
   const s = Math.round(toNum(data?.subtotal, fallbackSubtotal));
   const d = Math.round(toNum(data?.discountTotal, 0));
   const tot = Math.round(toNum(data?.total, Math.max(0, s - d)));
+  const lineDiscounts = Array.isArray(data?.lineDiscounts)
+    ? data.lineDiscounts
+        .map((it: any) => ({
+          productId: Number.isFinite(Number(it?.productId)) ? Number(it.productId) : null,
+          productDocumentId:
+            typeof it?.productDocumentId === "string" ? it.productDocumentId : null,
+          title: typeof it?.title === "string" ? it.title : null,
+          qty: Number.isFinite(Number(it?.qty)) ? Number(it.qty) : null,
+          amount: Math.max(0, Math.round(toNum(it?.amount, 0))),
+        }))
+        .filter((it: any) => it.amount > 0)
+    : [];
+
   return {
     subtotal: s,
     discountTotal: d,
     total: tot,
     appliedPromotions: Array.isArray(data?.appliedPromotions) ? data.appliedPromotions : [],
+    lineDiscounts,
+    reasonCode: typeof data?.reasonCode === "string" ? data.reasonCode : null,
+    message: typeof data?.message === "string" ? data.message : null,
+    appliesToMessage:
+      typeof data?.appliesToMessage === "string" ? data.appliesToMessage : null,
+    coupon:
+      data?.coupon && typeof data.coupon === "object"
+        ? {
+            requested:
+              typeof data.coupon?.requested === "string" ? data.coupon.requested : null,
+            applied: Boolean(data.coupon?.applied),
+            code: typeof data.coupon?.code === "string" ? data.coupon.code : null,
+            reasonCode:
+              typeof data.coupon?.reasonCode === "string" ? data.coupon.reasonCode : null,
+            message: typeof data.coupon?.message === "string" ? data.coupon.message : null,
+            appliesToMessage:
+              typeof data.coupon?.appliesToMessage === "string"
+                ? data.coupon.appliesToMessage
+                : null,
+          }
+        : null,
   };
 }
 
@@ -212,6 +264,7 @@ export default function CheckoutPage() {
 
   const redirectedStatus = sp.get("status") || "";
   const redirectedOrderId = sp.get("orderId") || "";
+  const couponFromQuery = (sp.get("coupon") || "").trim();
 
   // ✅ Si el carrito tiene items con descuento, no permitimos cupón
   const cartHasDiscount = useMemo(() => hasCartDiscount(cartItems as any[]), [cartItems]);
@@ -226,6 +279,13 @@ export default function CheckoutPage() {
       );
     }
   }, [sp, router]);
+
+  useEffect(() => {
+    if (!couponFromQuery) return;
+    if (coupon.trim()) return;
+    setCoupon(couponFromQuery);
+    setCouponTouched(true);
+  }, [couponFromQuery, coupon]);
 
   const [ui, setUi] = useState<UiState>(() =>
     redirectedOrderId
@@ -439,6 +499,11 @@ export default function CheckoutPage() {
     discountTotal: 0,
     total: 0,
     appliedPromotions: [],
+    lineDiscounts: [],
+    reasonCode: null,
+    message: null,
+    appliesToMessage: null,
+    coupon: null,
   });
 
   useEffect(() => {
@@ -451,6 +516,11 @@ export default function CheckoutPage() {
         discountTotal: 0,
         total: 0,
         appliedPromotions: [],
+        lineDiscounts: [],
+        reasonCode: null,
+        message: null,
+        appliesToMessage: null,
+        coupon: null,
       });
       setQuoting(false);
       return;
@@ -481,6 +551,11 @@ export default function CheckoutPage() {
             discountTotal: 0,
             total: fallbackS,
             appliedPromotions: [],
+            lineDiscounts: [],
+            reasonCode: null,
+            message: null,
+            appliesToMessage: null,
+            coupon: null,
           });
           return;
         }
@@ -493,6 +568,11 @@ export default function CheckoutPage() {
           discountTotal: 0,
           total: fallbackS,
           appliedPromotions: [],
+          lineDiscounts: [],
+          reasonCode: null,
+          message: null,
+          appliesToMessage: null,
+          coupon: null,
         });
       } finally {
         if (alive) setQuoting(false);
@@ -583,12 +663,32 @@ export default function CheckoutPage() {
 
       const data = await res.json().catch(() => null);
       if (!res.ok) {
-        return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
+        return {
+          subtotal: fallbackS,
+          discountTotal: 0,
+          total: fallbackS,
+          appliedPromotions: [],
+          lineDiscounts: [],
+          reasonCode: null,
+          message: null,
+          appliesToMessage: null,
+          coupon: null,
+        };
       }
 
       return normalizeQuote(data, fallbackS);
     } catch {
-      return { subtotal: fallbackS, discountTotal: 0, total: fallbackS, appliedPromotions: [] };
+      return {
+        subtotal: fallbackS,
+        discountTotal: 0,
+        total: fallbackS,
+        appliedPromotions: [],
+        lineDiscounts: [],
+        reasonCode: null,
+        message: null,
+        appliesToMessage: null,
+        coupon: null,
+      };
     }
   }
 
@@ -792,13 +892,19 @@ export default function CheckoutPage() {
 
   /* ================= UI ================= */
 
-  const showInvalidCoupon =
+  const requestedCoupon = coupon.trim();
+  const hasCouponInput = requestedCoupon.length > 0;
+  const couponApplied = Boolean(quote?.coupon?.applied);
+  const couponErrorMessage =
+    quote?.coupon?.message ||
+    (!couponApplied && hasCouponInput ? quote?.message || null : null);
+  const couponScopeMessage = quote?.coupon?.appliesToMessage || quote?.appliesToMessage || null;
+  const showCouponFeedback =
     payloadItems.length > 0 &&
     (quote.subtotal || Math.round(uiSubtotal)) > 0 &&
     couponTouched &&
-    coupon.trim().length > 0 &&
-    !quoting &&
-    (quote.appliedPromotions?.length ?? 0) === 0;
+    hasCouponInput &&
+    !quoting;
 
   const showAddressFields = shippingMethod === "delivery";
 
@@ -1059,20 +1165,39 @@ export default function CheckoutPage() {
 
             {/* Cupón */}
             <div>
-              <input
-                value={coupon}
-                onChange={(e) => {
-                  setCouponTouched(true);
-                  setCoupon(e.target.value);
-                }}
-                placeholder="Cupón (opcional)"
-                className="w-full border p-2"
-                disabled={cartHasDiscount}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  value={coupon}
+                  onChange={(e) => {
+                    setCouponTouched(true);
+                    setCoupon(e.target.value);
+                  }}
+                  placeholder="Cupón (opcional)"
+                  className="w-full border p-2"
+                  disabled={cartHasDiscount}
+                />
+                {hasCouponInput && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCouponTouched(true);
+                      setCoupon("");
+                    }}
+                    className="shrink-0 rounded border px-3 py-2 text-xs font-semibold text-neutral-700 hover:bg-neutral-50"
+                  >
+                    Quitar
+                  </button>
+                )}
+              </div>
 
               <p className="mt-1 text-xs text-neutral-500">
                 El cupón aplica solo a productos sin descuento.
               </p>
+              <div className="mt-1">
+                <Link href="/cupones/mis-cupones" className="text-xs font-semibold text-red-700 hover:underline">
+                  Ver mis cupones →
+                </Link>
+              </div>
 
               {cartHasDiscount && (
                 <p className="mt-1 text-xs text-amber-700">
@@ -1081,8 +1206,18 @@ export default function CheckoutPage() {
               )}
             </div>
 
-            {showInvalidCoupon ? (
-              <div className="text-xs text-red-600">Cupón inválido o no aplicable.</div>
+            {showCouponFeedback && couponApplied ? (
+              <div className="space-y-1 text-xs text-emerald-700">
+                <div>✅ Cupón aplicado correctamente.</div>
+                {couponScopeMessage ? <div>{couponScopeMessage}</div> : null}
+              </div>
+            ) : null}
+
+            {showCouponFeedback && !couponApplied && couponErrorMessage ? (
+              <div className="space-y-1 text-xs text-red-600">
+                <div>{couponErrorMessage}</div>
+                {couponScopeMessage ? <div>{couponScopeMessage}</div> : null}
+              </div>
             ) : null}
 
             {/* Resumen */}
@@ -1120,6 +1255,26 @@ export default function CheckoutPage() {
                           {p.code ? ` (${p.code})` : ""}
                         </span>
                         <span>-{formatARS(p.amount)}</span>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              ) : null}
+
+              {quote.lineDiscounts?.length ? (
+                <div className="mt-3">
+                  <div className="text-xs font-semibold">Descuento por producto</div>
+                  <ul className="mt-1 space-y-1 text-xs">
+                    {quote.lineDiscounts.map((line, idx) => (
+                      <li
+                        key={`${line.productDocumentId || line.productId || idx}`}
+                        className="flex justify-between gap-3"
+                      >
+                        <span className="truncate">
+                          {line.title || "Producto"}
+                          {line.qty ? ` x${line.qty}` : ""}
+                        </span>
+                        <span>-{formatARS(line.amount)}</span>
                       </li>
                     ))}
                   </ul>

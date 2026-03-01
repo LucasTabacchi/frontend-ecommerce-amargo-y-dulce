@@ -6,53 +6,11 @@ export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
 type QuoteBody = {
-  items?: Array<{ id: number; qty: number }>;
+  items?: Array<{ id?: number | null; documentId?: string | null; qty: number }>;
   coupon?: string | null;
   shipping?: number;
   [k: string]: any;
 };
-
-function toNum(v: any, def = 0) {
-  const n = typeof v === "number" ? v : Number(v);
-  return Number.isFinite(n) ? n : def;
-}
-
-function getOffFromProduct(p: any): number {
-  // Strapi v4: { id, attributes: { off } }
-  // Strapi v5 (a veces): { id, off } o { id, attributes: { off } }
-  const off =
-    p?.off ??
-    p?.attributes?.off ??
-    p?.data?.off ??
-    p?.data?.attributes?.off ??
-    0;
-
-  return Math.max(0, toNum(off, 0));
-}
-
-async function hasDiscountedItems(productIds: number[]) {
-  if (!productIds.length) return false;
-
-  // Armamos query: /products?filters[id][$in]=1&filters[id][$in]=2&fields[0]=off
-  const qs = new URLSearchParams();
-  for (const id of productIds) qs.append("filters[id][$in]", String(id));
-
-  // pedimos solo el campo off (y opcionalmente title para debug)
-  qs.append("fields[0]", "off");
-  qs.append("pagination[pageSize]", String(Math.min(100, productIds.length)));
-
-  // Tu fetcher ya sabe pegarle a Strapi con base url
-  // OJO: endpoint "products" (ajustá si tu colección se llama distinto)
-  const res = await fetcher<any>(`/products?${qs.toString()}`, {
-    method: "GET",
-    cache: "no-store",
-  });
-
-  const list = Array.isArray(res?.data) ? res.data : Array.isArray(res) ? res : [];
-
-  // si cualquiera tiene off > 0 => hay descuento
-  return list.some((p: any) => getOffFromProduct(p) > 0);
-}
 
 export async function POST(req: Request) {
   let body: QuoteBody | null = null;
@@ -66,34 +24,32 @@ export async function POST(req: Request) {
   }
 
   try {
-    const items = Array.isArray(body?.items) ? body!.items : [];
-    const coupon = String(body?.coupon ?? "").trim();
+    const itemsRaw = Array.isArray(body?.items) ? body!.items : [];
+    const items = itemsRaw
+      .map((it) => {
+        const id = Number(it?.id);
+        const documentId = String(it?.documentId ?? "").trim();
+        const qty = Math.max(1, Math.floor(Number(it?.qty ?? 1)));
+        return {
+          id: Number.isFinite(id) && id > 0 ? id : null,
+          documentId: documentId || null,
+          qty,
+        };
+      })
+      .filter((it) => (it.id != null || !!it.documentId) && Number.isFinite(it.qty) && it.qty > 0);
 
-    // Si hay cupón, verificamos si hay productos con descuento (off > 0)
-    if (coupon && items.length) {
-      const ids = items
-        .map((it) => Number(it?.id))
-        .filter((n) => Number.isFinite(n) && n > 0);
-
-      if (ids.length) {
-        const discounted = await hasDiscountedItems(ids);
-
-        if (discounted) {
-          // ✅ Regla: cupón NO combinable con productos con descuento
-          body = { ...body, coupon: null };
-
-          // opcional: marca para debug/UI si querés
-          // (no rompe nada si el front ignora este campo)
-          (body as any).__couponBlocked = "DISCOUNTED_ITEMS";
-        }
-      }
-    }
+    const payload = {
+      ...body,
+      items,
+      coupon: String(body?.coupon ?? "").trim() || null,
+      shipping: Number.isFinite(Number(body?.shipping)) ? Number(body?.shipping) : 0,
+    };
 
     // Proxy al endpoint real de Strapi
     const data = await fetcher<any>("/promotions/quote", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(payload),
       cache: "no-store",
     });
 

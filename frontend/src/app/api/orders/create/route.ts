@@ -67,6 +67,28 @@ function readMoney(v: any, def = 0) {
   return Number.isFinite(n) ? Math.round(n) : def;
 }
 
+function calcShippingARS(baseTotal: number, method: ShippingMethod) {
+  if (method === "pickup") return 0;
+  if (baseTotal > 65000) return 0;
+  if (baseTotal > 40000) return 4500;
+  return 9000;
+}
+
+function buildQuoteItems(items: any[]) {
+  return (Array.isArray(items) ? items : [])
+    .map((it) => {
+      const id = Number(it?.productId ?? it?.id);
+      const documentId = String(it?.productDocumentId ?? it?.documentId ?? "").trim();
+      const qty = Math.max(1, Math.floor(Number(it?.qty ?? it?.quantity ?? 1)));
+      return {
+        id: Number.isFinite(id) && id > 0 ? id : null,
+        documentId: documentId || null,
+        qty,
+      };
+    })
+    .filter((it) => (it.id != null || !!it.documentId) && Number.isFinite(it.qty) && it.qty > 0);
+}
+
 /**
  * Lee JWT del usuario desde cookies (probamos varios nombres comunes).
  * Ajustá/limpiá si ya sabés el nombre exacto.
@@ -166,12 +188,9 @@ export async function POST(req: Request) {
   }
 
   const shippingMethod: ShippingMethod = readShippingMethod(incomingData.shippingMethod);
-  const shippingCost = readMoney(incomingData.shippingCost, 0);
   const pickupPoint = isNonEmptyString(incomingData.pickupPoint)
     ? incomingData.pickupPoint.trim()
     : null;
-
-  if (shippingCost < 0) return badRequest("shippingCost inválido", { shippingCost });
 
   const shipping = readShipping(incomingData);
 
@@ -190,13 +209,50 @@ export async function POST(req: Request) {
   const items = Array.isArray(incomingData.items) ? incomingData.items : [];
   if (items.length === 0) return badRequest("Tu carrito está vacío (items).");
 
-  const subtotal = readMoney(incomingData.subtotal, 0);
-  const discountTotal = readMoney(incomingData.discountTotal, 0);
-
-  const total = Number(incomingData.total);
-  if (!Number.isFinite(total) || total <= 0) {
-    return badRequest("Total inválido", { total: incomingData.total });
+  const quoteItems = buildQuoteItems(items);
+  if (!quoteItems.length) {
+    return badRequest("Los items no tienen productId/documentId válido.");
   }
+
+  const couponRequested = isNonEmptyString(incomingData.coupon)
+    ? incomingData.coupon.trim()
+    : "";
+
+  const quoteRes = await fetch(`${strapiBase}/api/promotions/quote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      items: quoteItems,
+      coupon: couponRequested || null,
+      shipping: 0,
+    }),
+    cache: "no-store",
+  });
+  const quoteJson = await strapiJSON(quoteRes);
+
+  if (!quoteRes.ok) {
+    return NextResponse.json(
+      { error: "No se pudo recalcular promociones en servidor.", details: quoteJson },
+      { status: 500 }
+    );
+  }
+
+  const subtotal = readMoney(quoteJson?.subtotal, 0);
+  const discountTotal = readMoney(quoteJson?.discountTotal, 0);
+  const promoTotal = readMoney(quoteJson?.total, 0);
+  if (promoTotal <= 0) {
+    return badRequest("Total inválido luego de recalcular promociones.");
+  }
+
+  const shippingCost = calcShippingARS(promoTotal, shippingMethod);
+  const finalTotal = Math.max(0, promoTotal + shippingCost);
+  const appliedPromotions = Array.isArray(quoteJson?.appliedPromotions)
+    ? quoteJson.appliedPromotions
+    : [];
+  const acceptedCoupon =
+    quoteJson?.coupon?.applied === true
+      ? String(quoteJson?.coupon?.code || couponRequested || "").trim() || null
+      : null;
 
   // ===================== NORMALIZACIONES =====================
 
@@ -211,10 +267,10 @@ export async function POST(req: Request) {
   // 🔒 data “limpio” (whitelist)
   // OJO: NO mandamos user. Lo setea Strapi desde el JWT.
   const data: any = {
-    subtotal: subtotal || undefined,
-    discountTotal: discountTotal || undefined,
-    coupon: incomingData.coupon ?? undefined,
-    appliedPromotions: incomingData.appliedPromotions ?? undefined,
+    subtotal: subtotal || 0,
+    discountTotal: discountTotal || 0,
+    coupon: acceptedCoupon,
+    appliedPromotions,
 
     name,
     email,
@@ -225,7 +281,7 @@ export async function POST(req: Request) {
     shippingCost,
     pickupPoint,
 
-    total: Math.round(Number(total)),
+    total: finalTotal,
     items,
 
     shippingAddress:
