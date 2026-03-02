@@ -162,6 +162,7 @@ export function UserStateSync() {
   const lastCartSigRef = useRef("");
   const lastCouponSigRef = useRef("");
   const cartTimerRef = useRef<any>(null);
+  const bootstrappedUserIdRef = useRef<number | null>(null);
 
   const cartPayload = useMemo(() => sanitizeCartItems(items), [items]);
 
@@ -195,42 +196,58 @@ export function UserStateSync() {
         const user = j?.user ?? null;
         if (!user?.id) {
           setUserId(null);
+          bootstrappedUserIdRef.current = null;
+          lastCartSigRef.current = "";
+          lastCouponSigRef.current = "";
           setInitialSyncDone(true);
           return;
         }
 
-        setUserId(Number(user.id));
+        const nextUserId = Number(user.id);
+        setUserId(nextUserId);
+        const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
 
         const remoteCoupons = sanitizeClaimedCoupons(user?.claimedCoupons);
         const localCoupons = readLocalClaimedCoupons();
-        const mergedCoupons = sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons]);
 
         const remoteCart = sanitizeCartItems(user?.cartItems);
         const localCart = sanitizeCartItems(useCartStore.getState().items);
-        const mergedCart = mergeCart(remoteCart, localCart);
+
+        // Solo en el primer sync del usuario actual hacemos merge local+remoto.
+        // En sincronizaciones siguientes, backend es la fuente de verdad para reflejar
+        // cambios hechos en otros dispositivos (ej: borrar items desde PC y verlo en móvil).
+        const mergedCoupons = isFirstSyncForUser
+          ? sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons])
+          : remoteCoupons;
+        const mergedCart = isFirstSyncForUser ? mergeCart(remoteCart, localCart) : remoteCart;
 
         const remoteCouponSig = signatureOf(remoteCoupons);
         const mergedCouponSig = signatureOf(mergedCoupons);
         const remoteCartSig = signatureOf(remoteCart);
         const mergedCartSig = signatureOf(mergedCart);
+        const localCouponSig = signatureOf(localCoupons);
+        const localCartSig = signatureOf(localCart);
 
-        if (signatureOf(localCoupons) !== mergedCouponSig) {
+        // Seteamos primero los signatures esperados para evitar rebotes de eventos locales.
+        lastCouponSigRef.current = mergedCouponSig;
+        lastCartSigRef.current = mergedCartSig;
+
+        if (localCouponSig !== mergedCouponSig) {
           writeLocalClaimedCoupons(mergedCoupons);
         }
 
-        if (signatureOf(localCart) !== mergedCartSig) {
+        if (localCartSig !== mergedCartSig) {
           setItems(mergedCart as any);
         }
 
-        if (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig) {
+        if (isFirstSyncForUser && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
           await saveUserPrefs({
             claimedCoupons: mergedCoupons,
             cartItems: mergedCart,
           });
         }
 
-        lastCouponSigRef.current = mergedCouponSig;
-        lastCartSigRef.current = mergedCartSig;
+        bootstrappedUserIdRef.current = nextUserId;
       } finally {
         if (alive) setInitialSyncDone(true);
       }
