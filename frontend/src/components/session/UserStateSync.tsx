@@ -128,11 +128,15 @@ function mergeCart(remoteRaw: unknown, localRaw: unknown) {
         ? it.stock
         : null;
 
+    // Importante: no sumar qty entre remoto/local porque bootstrapSync se ejecuta
+    // en refresh/focus y eso inflaba unidades. Tomamos la mayor cantidad observada.
+    const nextQty = clampQty(Math.max(existing.qty || 1, it.qty || 1), stock);
+
     map.set(key, {
       ...existing,
       ...it,
       stock,
-      qty: clampQty((existing.qty || 0) + (it.qty || 0), stock),
+      qty: nextQty,
     });
   }
 
