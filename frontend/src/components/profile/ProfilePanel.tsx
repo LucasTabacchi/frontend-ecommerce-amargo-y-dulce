@@ -103,6 +103,8 @@ export function ProfilePanel({
 
   // ✅ DNI state (debajo del email)
   const [dni, setDni] = useState("");
+  const [savedDni, setSavedDni] = useState("");
+  const [dniEditing, setDniEditing] = useState(false);
   const [dniSaving, setDniSaving] = useState(false);
   const [dniError, setDniError] = useState<string | null>(null);
   const [dniSavedMsg, setDniSavedMsg] = useState<string | null>(null);
@@ -149,8 +151,11 @@ export function ProfilePanel({
   // ✅ precargar DNI cuando llega el user
   useEffect(() => {
     if (!user) return;
-    setDni(String((user as any)?.dni ?? ""));
-  }, [user?.id]);
+    const initial = safeText((user as any)?.dni ?? "");
+    setDni(initial);
+    setSavedDni(initial);
+    setDniEditing(!initial);
+  }, [user?.id, (user as any)?.dni]);
 
   async function handleLogout() {
     try {
@@ -202,7 +207,10 @@ export function ProfilePanel({
       const j = await r.json().catch(() => null);
       if (!r.ok) throw new Error(j?.error || "No se pudo guardar el DNI.");
 
-      setDniSavedMsg("DNI guardado.");
+      setSavedDni(clean);
+      setDni(clean);
+      setDniEditing(!clean);
+      setDniSavedMsg(clean ? "DNI guardado." : "DNI eliminado.");
       await refreshMe();
       setTimeout(() => setDniSavedMsg(null), 2000);
     } catch (e: any) {
@@ -518,32 +526,73 @@ export function ProfilePanel({
                 {/* ✅ DNI debajo del mail */}
                 <div>
                   <div className="text-sm text-neutral-500">DNI</div>
-                  <input
-                    value={dni}
-                    onChange={(e) => {
-                      setDni(e.target.value);
-                      setDniError(null);
-                      setDniSavedMsg(null);
-                    }}
-                    placeholder="DNI (7 u 8 dígitos)"
-                    inputMode="numeric"
-                    className="mt-1 w-full rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
-                  />
+                  {!dniEditing && savedDni ? (
+                    <div className="mt-1 flex items-center justify-between gap-2 rounded border border-neutral-300 px-3 py-2">
+                      <span className="text-sm font-semibold text-neutral-900">{savedDni}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setDni(savedDni);
+                          setDniEditing(true);
+                          setDniError(null);
+                          setDniSavedMsg(null);
+                        }}
+                        className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-50"
+                        disabled={dniSaving}
+                      >
+                        Editar
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      <input
+                        value={dni}
+                        onChange={(e) => {
+                          setDni(e.target.value);
+                          setDniError(null);
+                          setDniSavedMsg(null);
+                        }}
+                        placeholder="DNI (7 u 8 dígitos)"
+                        inputMode="numeric"
+                        className="mt-1 w-full rounded border border-neutral-300 px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-400"
+                      />
 
-                  <div className="mt-2 flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={saveDni}
-                      disabled={dniSaving}
-                      className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
-                    >
-                      {dniSaving ? "Guardando…" : "Guardar DNI"}
-                    </button>
+                      <div className="mt-2 flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={saveDni}
+                          disabled={dniSaving}
+                          className="rounded-lg bg-neutral-900 px-3 py-1.5 text-xs font-bold text-white disabled:opacity-60"
+                        >
+                          {dniSaving
+                            ? "Guardando…"
+                            : savedDni
+                            ? "Guardar cambios"
+                            : "Guardar DNI"}
+                        </button>
 
-                    <span className="text-xs text-neutral-500">
-                      Se guarda en tus datos personales.
-                    </span>
-                  </div>
+                        {savedDni ? (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDni(savedDni);
+                              setDniEditing(false);
+                              setDniError(null);
+                              setDniSavedMsg(null);
+                            }}
+                            className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-50"
+                            disabled={dniSaving}
+                          >
+                            Cancelar
+                          </button>
+                        ) : null}
+
+                        <span className="text-xs text-neutral-500">
+                          Se guarda en tus datos personales.
+                        </span>
+                      </div>
+                    </>
+                  )}
 
                   {dniError ? (
                     <p className="mt-1 text-xs text-red-600">{dniError}</p>

@@ -213,13 +213,21 @@ export function UserStateSync() {
         const remoteCart = sanitizeCartItems(user?.cartItems);
         const localCart = sanitizeCartItems(useCartStore.getState().items);
 
-        // Solo en el primer sync del usuario actual hacemos merge local+remoto.
-        // En sincronizaciones siguientes, backend es la fuente de verdad para reflejar
-        // cambios hechos en otros dispositivos (ej: borrar items desde PC y verlo en móvil).
+        // Solo en el primer sync del usuario actual hacemos merge local+remoto
+        // si el backend está vacío (migración de carrito invitado -> cuenta).
+        // Si backend ya tiene datos, backend manda para no revivir items borrados
+        // desde otro dispositivo.
+        const shouldMergeCart =
+          isFirstSyncForUser && remoteCart.length === 0 && localCart.length > 0;
+        const shouldMergeCoupons =
+          isFirstSyncForUser && remoteCoupons.length === 0 && localCoupons.length > 0;
+
         const mergedCoupons = isFirstSyncForUser
-          ? sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons])
+          ? shouldMergeCoupons
+            ? sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons])
+            : remoteCoupons
           : remoteCoupons;
-        const mergedCart = isFirstSyncForUser ? mergeCart(remoteCart, localCart) : remoteCart;
+        const mergedCart = shouldMergeCart ? mergeCart(remoteCart, localCart) : remoteCart;
 
         const remoteCouponSig = signatureOf(remoteCoupons);
         const mergedCouponSig = signatureOf(mergedCoupons);
@@ -240,7 +248,7 @@ export function UserStateSync() {
           setItems(mergedCart as any);
         }
 
-        if (isFirstSyncForUser && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
+        if ((shouldMergeCoupons || shouldMergeCart) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
           await saveUserPrefs({
             claimedCoupons: mergedCoupons,
             cartItems: mergedCart,
