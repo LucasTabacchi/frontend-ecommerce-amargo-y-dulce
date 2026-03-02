@@ -4,6 +4,27 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 
 const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+const USER_SYNC_KEY_PREFIX = "amg_user_state_synced_v1:";
+
+function userSyncKey(userId: number) {
+  return `${USER_SYNC_KEY_PREFIX}${userId}`;
+}
+
+function hasUserSyncedBefore(userId: number) {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(userSyncKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function markUserSynced(userId: number) {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(userSyncKey(userId), "1");
+  } catch {}
+}
 
 function normalizeCouponCode(v: unknown) {
   return String(v ?? "").trim().toUpperCase();
@@ -183,6 +204,16 @@ export function UserStateSync() {
     }
   }
 
+  async function saveCartNow(forceItems?: any[]) {
+    if (!userId) return;
+    const payload = sanitizeCartItems(forceItems ?? useCartStore.getState().items);
+    const nextSig = signatureOf(payload);
+    if (nextSig === lastCartSigRef.current) return;
+
+    lastCartSigRef.current = nextSig;
+    await saveUserPrefs({ cartItems: payload });
+  }
+
   useEffect(() => {
     if (!hasHydrated) return;
     let alive = true;
@@ -206,6 +237,7 @@ export function UserStateSync() {
         const nextUserId = Number(user.id);
         setUserId(nextUserId);
         const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
+        const syncedBeforeOnThisDevice = hasUserSyncedBefore(nextUserId);
 
         const remoteCoupons = sanitizeClaimedCoupons(user?.claimedCoupons);
         const localCoupons = readLocalClaimedCoupons();
@@ -218,9 +250,15 @@ export function UserStateSync() {
         // Si backend ya tiene datos, backend manda para no revivir items borrados
         // desde otro dispositivo.
         const shouldMergeCart =
-          isFirstSyncForUser && remoteCart.length === 0 && localCart.length > 0;
+          isFirstSyncForUser &&
+          !syncedBeforeOnThisDevice &&
+          remoteCart.length === 0 &&
+          localCart.length > 0;
         const shouldMergeCoupons =
-          isFirstSyncForUser && remoteCoupons.length === 0 && localCoupons.length > 0;
+          isFirstSyncForUser &&
+          !syncedBeforeOnThisDevice &&
+          remoteCoupons.length === 0 &&
+          localCoupons.length > 0;
 
         const mergedCoupons = isFirstSyncForUser
           ? shouldMergeCoupons
@@ -255,6 +293,7 @@ export function UserStateSync() {
           });
         }
 
+        markUserSynced(nextUserId);
         bootstrappedUserIdRef.current = nextUserId;
       } finally {
         if (alive) setInitialSyncDone(true);
@@ -289,14 +328,44 @@ export function UserStateSync() {
 
     if (cartTimerRef.current) clearTimeout(cartTimerRef.current);
     cartTimerRef.current = setTimeout(async () => {
-      await saveUserPrefs({ cartItems: cartPayload });
-      lastCartSigRef.current = nextSig;
-    }, 400);
+      await saveCartNow(cartPayload);
+    }, 250);
 
     return () => {
       if (cartTimerRef.current) clearTimeout(cartTimerRef.current);
     };
   }, [userId, initialSyncDone, hasHydrated, cartPayload]);
+
+  useEffect(() => {
+    if (!userId || !initialSyncDone || !hasHydrated) return;
+
+    const flush = () => {
+      const payload = sanitizeCartItems(useCartStore.getState().items);
+      const nextSig = signatureOf(payload);
+      if (nextSig === lastCartSigRef.current) return;
+      lastCartSigRef.current = nextSig;
+
+      // keepalive evita perder cambios al recargar/cerrar pestaña.
+      fetch("/api/auth/me", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cartItems: payload }),
+        keepalive: true,
+      }).catch(() => null);
+    };
+
+    const onPageHide = () => flush();
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") flush();
+    };
+
+    window.addEventListener("pagehide", onPageHide);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      window.removeEventListener("pagehide", onPageHide);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [userId, initialSyncDone, hasHydrated]);
 
   useEffect(() => {
     if (!userId || !initialSyncDone) return;
