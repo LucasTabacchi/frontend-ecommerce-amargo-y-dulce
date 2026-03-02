@@ -30,7 +30,7 @@ export default function Error({
           </Button>
           <Button
             onClick={() => (window.location.href = "/")}
-            className="border border-neutral-300 bg-white text-neutral-900 hover:bg-neutral-50"
+            className="bg-orange-600 text-white hover:bg-orange-700"
           >
             Volver al inicio
           </Button>
