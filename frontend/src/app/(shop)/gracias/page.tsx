@@ -143,6 +143,18 @@ export default function GraciasPage() {
 
     clearedRef.current = true;
     clear();
+
+    // Notifica al sincronizador global que debe forzar carrito vacío
+    // y persistirlo en backend para todos los dispositivos.
+    window.dispatchEvent(new Event("amg-cart-force-empty"));
+
+    // Persistencia directa como refuerzo (por si el sync tarda en reaccionar).
+    fetch("/api/auth/me", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ cartItems: [] }),
+      keepalive: true,
+    }).catch(() => null);
   }, [status, clear, hasHydrated]);
 
   // Poll a Strapi para resolver estado real + orderNumber
@@ -192,6 +204,13 @@ export default function GraciasPage() {
         if (nextUi === "success" && hasHydrated && !clearedRef.current) {
           clearedRef.current = true;
           clear();
+          window.dispatchEvent(new Event("amg-cart-force-empty"));
+          fetch("/api/auth/me", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cartItems: [] }),
+            keepalive: true,
+          }).catch(() => null);
         }
 
         if (Date.now() - startedAt > 30_000 && nextUi === "pending") {

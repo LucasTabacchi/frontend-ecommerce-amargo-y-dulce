@@ -184,6 +184,7 @@ export function UserStateSync() {
   const lastCouponSigRef = useRef("");
   const cartTimerRef = useRef<any>(null);
   const bootstrappedUserIdRef = useRef<number | null>(null);
+  const forceEmptyCartRef = useRef(false);
 
   const cartPayload = useMemo(() => sanitizeCartItems(items), [items]);
 
@@ -259,13 +260,18 @@ export function UserStateSync() {
           !syncedBeforeOnThisDevice &&
           remoteCoupons.length === 0 &&
           localCoupons.length > 0;
+        const forceEmptyCart = forceEmptyCartRef.current;
 
         const mergedCoupons = isFirstSyncForUser
           ? shouldMergeCoupons
             ? sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons])
             : remoteCoupons
           : remoteCoupons;
-        const mergedCart = shouldMergeCart ? mergeCart(remoteCart, localCart) : remoteCart;
+        const mergedCart = forceEmptyCart
+          ? []
+          : shouldMergeCart
+          ? mergeCart(remoteCart, localCart)
+          : remoteCart;
 
         const remoteCouponSig = signatureOf(remoteCoupons);
         const mergedCouponSig = signatureOf(mergedCoupons);
@@ -286,13 +292,16 @@ export function UserStateSync() {
           setItems(mergedCart as any);
         }
 
-        if ((shouldMergeCoupons || shouldMergeCart) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
+        if ((shouldMergeCoupons || shouldMergeCart || forceEmptyCart) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
           await saveUserPrefs({
             claimedCoupons: mergedCoupons,
             cartItems: mergedCart,
           });
         }
 
+        if (forceEmptyCart) {
+          forceEmptyCartRef.current = false;
+        }
         markUserSynced(nextUserId);
         bootstrappedUserIdRef.current = nextUserId;
       } finally {
@@ -366,6 +375,20 @@ export function UserStateSync() {
       document.removeEventListener("visibilitychange", onVisibility);
     };
   }, [userId, initialSyncDone, hasHydrated]);
+
+  useEffect(() => {
+    const onForceEmpty = () => {
+      forceEmptyCartRef.current = true;
+      setItems([]);
+      lastCartSigRef.current = signatureOf([]);
+      saveUserPrefs({ cartItems: [] });
+    };
+
+    window.addEventListener("amg-cart-force-empty", onForceEmpty);
+    return () => {
+      window.removeEventListener("amg-cart-force-empty", onForceEmpty);
+    };
+  }, [setItems]);
 
   useEffect(() => {
     if (!userId || !initialSyncDone) return;
