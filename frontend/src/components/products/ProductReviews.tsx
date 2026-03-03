@@ -210,7 +210,7 @@ export function ProductReviews({
     setFormMsg(null);
 
     if (isStoreAdmin) {
-      setFormMsg("Las cuentas tienda no pueden dejar reseñas.");
+      setFormMsg("No disponible.");
       return;
     }
 
@@ -308,7 +308,7 @@ export function ProductReviews({
         </div>
       ) : isStoreAdmin ? (
         <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Esta cuenta de tienda no puede publicar reseñas.
+          Esta cuenta no puede publicar reseñas.
         </div>
       ) : (
         <form onSubmit={submitReview} className="mt-6 rounded-2xl bg-neutral-50 p-4">

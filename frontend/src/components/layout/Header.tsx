@@ -183,6 +183,14 @@ export function Header() {
     };
   }, []);
 
+  // ✅ Si ya hay sesión activa, cerramos cualquier modal de login abierto
+  // (ej. retorno desde OAuth con ?login=1 en la URL).
+  useEffect(() => {
+    if (me && loginOpen) {
+      setLoginOpen(false);
+    }
+  }, [me, loginOpen]);
+
   useEffect(() => {
     const onScroll = () => setScrolled(window.scrollY > 8);
     onScroll();

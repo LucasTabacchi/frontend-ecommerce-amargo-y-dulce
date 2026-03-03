@@ -12,15 +12,6 @@ function userSyncKey(userId: number) {
   return `${USER_SYNC_KEY_PREFIX}${userId}`;
 }
 
-function hasUserSyncedBefore(userId: number) {
-  if (typeof window === "undefined") return false;
-  try {
-    return localStorage.getItem(userSyncKey(userId)) === "1";
-  } catch {
-    return false;
-  }
-}
-
 function markUserSynced(userId: number) {
   if (typeof window === "undefined") return;
   try {
@@ -279,7 +270,6 @@ export function UserStateSync() {
         setUserId(nextUserId);
         writeStoreAdminFlag(nextIsStoreAdmin);
         const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
-        const syncedBeforeOnThisDevice = hasUserSyncedBefore(nextUserId);
         const lastAuthUserId = readLastAuthUserId();
         const switchedAccount =
           typeof lastAuthUserId === "number" && lastAuthUserId !== nextUserId;
@@ -296,13 +286,10 @@ export function UserStateSync() {
         // desde otro dispositivo.
         const shouldMergeCart =
           isFirstSyncForUser &&
-          !syncedBeforeOnThisDevice &&
-          !switchedAccount &&
           remoteCart.length === 0 &&
           localCart.length > 0;
         const shouldMergeCoupons =
           isFirstSyncForUser &&
-          !syncedBeforeOnThisDevice &&
           !switchedAccount &&
           remoteCoupons.length === 0 &&
           localCoupons.length > 0;
