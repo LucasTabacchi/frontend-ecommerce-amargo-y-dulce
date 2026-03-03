@@ -4,20 +4,37 @@ import Link from "next/link";
 import { Facebook, Instagram, Phone, Mail } from "lucide-react";
 import { useEffect, useState } from "react";
 
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+
+function readStoreAdminFlag() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Footer del ecommerce:
  * - Centro: navegación extra (ayuda / legal)
  * - Derecha: contacto + redes
  */
 export function Footer() {
-  const [meLoading, setMeLoading] = useState(true);
   const [isStoreAdmin, setIsStoreAdmin] = useState(false);
 
   useEffect(() => {
     let alive = true;
 
+    const storedRole = readStoreAdminFlag();
+    if (typeof storedRole === "boolean") {
+      setIsStoreAdmin(storedRole);
+    }
+
     const refreshMe = async () => {
-      setMeLoading(true);
       try {
         const r = await fetch("/api/auth/me", {
           cache: "no-store",
@@ -25,12 +42,15 @@ export function Footer() {
         });
         const j = await r.json().catch(() => ({ user: null }));
         if (!alive) return;
-        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
+        const nextIsStoreAdmin = Boolean(j?.user?.isStoreAdmin);
+        setIsStoreAdmin(nextIsStoreAdmin);
+        try {
+          localStorage.setItem(STORE_ADMIN_FLAG_KEY, nextIsStoreAdmin ? "1" : "0");
+        } catch {}
       } catch {
         if (!alive) return;
-        setIsStoreAdmin(false);
-      } finally {
-        if (alive) setMeLoading(false);
+        const fallback = readStoreAdminFlag();
+        setIsStoreAdmin(fallback === true);
       }
     };
 
@@ -45,7 +65,7 @@ export function Footer() {
     };
   }, []);
 
-  const canUseShopFeatures = !meLoading && !isStoreAdmin;
+  const canUseShopFeatures = !isStoreAdmin;
 
   return (
     <footer className="bg-red-600 text-white">

@@ -18,6 +18,8 @@ type Suggestion = {
 };
 
 type MeResponse = { user: any | null };
+const AUTH_USER_SNAPSHOT_KEY = "amg_auth_user_snapshot_v1";
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
 
 function normalizeQty(v: any) {
   const n = Number(v);
@@ -61,6 +63,41 @@ function safeName(v: any) {
   return s.length ? s : null;
 }
 
+function readAuthUserSnapshot() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(AUTH_USER_SNAPSHOT_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeAuthUserSnapshot(user: any | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (user && typeof user === "object") {
+      localStorage.setItem(AUTH_USER_SNAPSHOT_KEY, JSON.stringify(user));
+      return;
+    }
+    localStorage.removeItem(AUTH_USER_SNAPSHOT_KEY);
+  } catch {}
+}
+
+function readStoreAdminFlag() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function Header() {
   const router = useRouter();
 
@@ -85,6 +122,7 @@ export function Header() {
   // ✅ auth
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
+  const [storeAdminHint, setStoreAdminHint] = useState<boolean | null>(null);
 
   // ✅ Profile dropdown (desktop)
   const [profileOpen, setProfileOpen] = useState(false);
@@ -116,17 +154,22 @@ export function Header() {
     };
   }, [stableId]);
 
-  async function refreshMe() {
-    setMeLoading(true);
+  async function refreshMe(opts?: { quiet?: boolean }) {
+    if (!opts?.quiet) setMeLoading(true);
     try {
       const r = await fetch("/api/auth/me", {
         cache: "no-store",
         credentials: "include",
       });
       const j: MeResponse = await r.json().catch(() => ({ user: null }));
-      setMe(j.user ?? null);
+      const nextUser = j.user ?? null;
+      setMe(nextUser);
+      writeAuthUserSnapshot(nextUser);
+      setStoreAdminHint(Boolean(nextUser?.isStoreAdmin));
     } catch {
       setMe(null);
+      writeAuthUserSnapshot(null);
+      setStoreAdminHint(readStoreAdminFlag());
     } finally {
       setMeLoading(false);
     }
@@ -141,6 +184,8 @@ export function Header() {
       });
     } finally {
       setMe(null);
+      writeAuthUserSnapshot(null);
+      setStoreAdminHint(null);
       setLoginOpen(false);
       setProfileOpen(false);
       setMobileOpen(false);
@@ -160,7 +205,7 @@ export function Header() {
 
   // ✅ click en user desde MOBILE: si no hay sesión -> login; si hay sesión -> /mi-perfil
   function onUserPressMobile() {
-    if (meLoading) return;
+    if (meLoading && !me) return;
     if (!me) {
       openLogin();
       return;
@@ -171,10 +216,15 @@ export function Header() {
 
   // ✅ mount
   useEffect(() => {
-    refreshMe();
+    const cachedMe = readAuthUserSnapshot();
+    setStoreAdminHint(readStoreAdminFlag());
+    if (cachedMe) {
+      setMe(cachedMe);
+    }
+    refreshMe({ quiet: Boolean(cachedMe) });
 
-    const onFocus = () => refreshMe();
-    const onAuthChanged = () => refreshMe();
+    const onFocus = () => refreshMe({ quiet: true });
+    const onAuthChanged = () => refreshMe({ quiet: true });
     window.addEventListener("focus", onFocus);
     window.addEventListener("amg-auth-changed", onAuthChanged);
     return () => {
@@ -496,8 +546,8 @@ export function Header() {
         safeName(me?.username) ||
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
-  const isStoreAdmin = Boolean(me?.isStoreAdmin);
-  const canUseShopFeatures = !meLoading && !isStoreAdmin;
+  const isStoreAdmin = typeof me?.isStoreAdmin === "boolean" ? me.isStoreAdmin : storeAdminHint === true;
+  const canUseShopFeatures = !isStoreAdmin;
 
   return (
     <header
@@ -543,20 +593,16 @@ export function Header() {
             <div className="h-6 w-px bg-neutral-200" />
 
             <div className="relative" ref={profileBoxRef}>
-              {meLoading ? (
-                <div
-                  className="h-10 w-[150px] rounded-md border border-neutral-200 bg-neutral-100"
-                  aria-hidden
-                />
-              ) : !me ? (
+              {!me ? (
                 <button
                   onClick={openLogin}
-                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
+                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors disabled:cursor-default disabled:opacity-70"
                   type="button"
+                  disabled={meLoading}
                   aria-expanded={loginOpen}
                 >
                   <User className="h-5 w-5" />
-                  Iniciar sesión
+                  {meLoading ? "Cuenta" : "Iniciar sesión"}
                 </button>
               ) : (
                 <>
@@ -624,24 +670,18 @@ export function Header() {
 
           {/* MOBILE */}
           <div className="flex shrink-0 min-w-0 items-center justify-end gap-1.5 md:hidden sm:gap-2">
-            {meLoading ? (
-              <div
-                className="h-11 w-[132px] rounded-md border border-neutral-200 bg-neutral-100 sm:w-[170px]"
-                aria-hidden
-              />
-            ) : (
-              <button
-                type="button"
-                onClick={onUserPressMobile}
-                className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 sm:max-w-[170px] sm:px-3"
-                aria-label={me ? "Mi perfil" : "Iniciar sesión"}
-              >
-                <User className="h-5 w-5" />
-                <span className="max-w-[78px] truncate sm:max-w-[120px]">
-                  {me ? displayName : "Iniciar sesión"}
-                </span>
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={onUserPressMobile}
+              className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 disabled:cursor-default disabled:opacity-70 sm:max-w-[170px] sm:px-3"
+              aria-label={me ? "Mi perfil" : "Iniciar sesión"}
+              disabled={meLoading && !me}
+            >
+              <User className="h-5 w-5" />
+              <span className="max-w-[78px] truncate sm:max-w-[120px]">
+                {me ? displayName : meLoading ? "Cuenta" : "Iniciar sesión"}
+              </span>
+            </button>
 
             {canUseShopFeatures && (
               <Link
