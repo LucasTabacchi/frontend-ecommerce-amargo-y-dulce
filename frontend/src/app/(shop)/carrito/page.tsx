@@ -476,7 +476,7 @@ export default function CarritoPage() {
                 items.length === 0 || meLoading || isStoreAdmin ? "pointer-events-none opacity-50" : "",
               ].join(" ")}
             >
-              {isStoreAdmin ? "No disponible para cuenta tienda" : "Finalizar compra"}
+              {isStoreAdmin ? "No disponible" : "Finalizar compra"}
             </Link>
 
             <p className="mt-3 text-center text-xs text-neutral-500">

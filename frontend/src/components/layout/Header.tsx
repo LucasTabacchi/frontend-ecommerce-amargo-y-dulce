@@ -248,6 +248,7 @@ export function Header() {
   // ✅ si cambio de ruta, cierro dropdowns
   useEffect(() => {
     setProfileOpen(false);
+    setLoginOpen(false);
     setOpenSuggest(false);
     setActiveIndex(-1);
     setMobileOpen(false);
@@ -263,30 +264,44 @@ export function Header() {
   }, [pathname, sp]);
 
   // ✅ Trigger de login por URL: ?login=1&next=/checkout
-  // Abre el modal UNA vez y luego limpia el parámetro login=1 para que no se re-dispare solo.
+  // Espera a resolver auth para evitar "flash" del modal al volver logueado de OAuth.
   useEffect(() => {
     if (!isMounted) return;
 
     const wantsLogin = sp.get("login") === "1";
     if (!wantsLogin) return;
+    if (meLoading) return;
 
-    // cerramos otras cosas por prolijidad
+    const nextRaw = String(sp.get("next") || "").trim();
+    const nextSafe = nextRaw.startsWith("/") ? nextRaw : "";
+
+    // Cerramos otras cosas por prolijidad
     setProfileOpen(false);
     setMobileOpen(false);
     setOpenSuggest(false);
     setActiveIndex(-1);
 
+    // Si ya hay sesión, no mostramos modal: continuamos al destino.
+    if (me) {
+      setLoginOpen(false);
+      if (nextSafe) {
+        router.replace(nextSafe);
+      } else {
+        router.replace(pathname);
+      }
+      return;
+    }
+
     setLoginOpen(true);
 
     // ✅ limpiar "login=1" pero mantener "next"
-    const next = sp.get("next");
-    if (next) {
-      router.replace(`${pathname}?next=${encodeURIComponent(next)}`);
+    if (nextSafe) {
+      router.replace(`${pathname}?next=${encodeURIComponent(nextSafe)}`);
     } else {
       router.replace(pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, sp, pathname]);
+  }, [isMounted, sp, pathname, meLoading, me, router]);
 
   function goSearch(raw: string) {
     const q = raw.trim();
@@ -482,6 +497,7 @@ export function Header() {
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
   const isStoreAdmin = Boolean(me?.isStoreAdmin);
+  const canUseShopFeatures = !meLoading && !isStoreAdmin;
 
   return (
     <header
@@ -506,7 +522,7 @@ export function Header() {
             <nav className="hidden items-center gap-4 md:flex">
               <span className="text-neutral-300">|</span>
               <NavLink href="/productos">Productos</NavLink>
-              {!isStoreAdmin && (
+              {canUseShopFeatures && (
                 <>
                   <span className="text-neutral-300">|</span>
                   <NavLink href="/cupones">Cupones</NavLink>
@@ -527,7 +543,12 @@ export function Header() {
             <div className="h-6 w-px bg-neutral-200" />
 
             <div className="relative" ref={profileBoxRef}>
-              {!me && !meLoading ? (
+              {meLoading ? (
+                <div
+                  className="h-10 w-[150px] rounded-md border border-neutral-200 bg-neutral-100"
+                  aria-hidden
+                />
+              ) : !me ? (
                 <button
                   onClick={openLogin}
                   className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
@@ -547,10 +568,9 @@ export function Header() {
                     className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors"
                     type="button"
                     aria-expanded={profileOpen}
-                    disabled={meLoading}
                   >
                     <User className="h-5 w-5" />
-                    {meLoading ? "Cargando…" : displayName}
+                    {displayName}
                     {/* ✅ Flechita que rota cuando el dropdown está abierto */}
                     <ChevronDown
                       className={[
@@ -576,7 +596,7 @@ export function Header() {
               )}
             </div>
 
-            {!isStoreAdmin && (
+            {canUseShopFeatures && (
               <>
                 <div className="h-6 w-px bg-neutral-200" />
 
@@ -604,20 +624,26 @@ export function Header() {
 
           {/* MOBILE */}
           <div className="flex shrink-0 min-w-0 items-center justify-end gap-1.5 md:hidden sm:gap-2">
-            <button
-              type="button"
-              onClick={onUserPressMobile}
-              className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 sm:max-w-[170px] sm:px-3"
-              aria-label={me ? "Mi perfil" : "Iniciar sesión"}
-              disabled={meLoading}
-            >
-              <User className="h-5 w-5" />
-              <span className="max-w-[78px] truncate sm:max-w-[120px]">
-                {meLoading ? "…" : me ? displayName : "Iniciar sesión"}
-              </span>
-            </button>
+            {meLoading ? (
+              <div
+                className="h-11 w-[132px] rounded-md border border-neutral-200 bg-neutral-100 sm:w-[170px]"
+                aria-hidden
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={onUserPressMobile}
+                className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 sm:max-w-[170px] sm:px-3"
+                aria-label={me ? "Mi perfil" : "Iniciar sesión"}
+              >
+                <User className="h-5 w-5" />
+                <span className="max-w-[78px] truncate sm:max-w-[120px]">
+                  {me ? displayName : "Iniciar sesión"}
+                </span>
+              </button>
+            )}
 
-            {!isStoreAdmin && (
+            {canUseShopFeatures && (
               <Link
                 href="/carrito"
                 className="relative inline-flex h-11 w-11 items-center justify-center rounded-md border border-neutral-200 bg-white"
@@ -654,7 +680,7 @@ export function Header() {
                 <NavLink href="/productos" onClick={() => setMobileOpen(false)}>
                   Productos
                 </NavLink>
-                {!isStoreAdmin && (
+                {canUseShopFeatures && (
                   <NavLink href="/cupones" onClick={() => setMobileOpen(false)}>
                     Cupones
                   </NavLink>
@@ -669,7 +695,7 @@ export function Header() {
       </Container>
 
       <LoginModal
-        open={loginOpen}
+        open={loginOpen && !meLoading && !me}
         onClose={() => setLoginOpen(false)}
         onSuccess={() => {
           refreshMe();

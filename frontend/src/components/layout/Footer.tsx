@@ -10,12 +10,14 @@ import { useEffect, useState } from "react";
  * - Derecha: contacto + redes
  */
 export function Footer() {
+  const [meLoading, setMeLoading] = useState(true);
   const [isStoreAdmin, setIsStoreAdmin] = useState(false);
 
   useEffect(() => {
     let alive = true;
 
     const refreshMe = async () => {
+      setMeLoading(true);
       try {
         const r = await fetch("/api/auth/me", {
           cache: "no-store",
@@ -27,6 +29,8 @@ export function Footer() {
       } catch {
         if (!alive) return;
         setIsStoreAdmin(false);
+      } finally {
+        if (alive) setMeLoading(false);
       }
     };
 
@@ -40,6 +44,8 @@ export function Footer() {
       window.removeEventListener("focus", refreshMe);
     };
   }, []);
+
+  const canUseShopFeatures = !meLoading && !isStoreAdmin;
 
   return (
     <footer className="bg-red-600 text-white">
@@ -84,7 +90,7 @@ export function Footer() {
                     Sobre nosotros
                   </Link>
                 </li>
-                {!isStoreAdmin && (
+                {canUseShopFeatures && (
                   <li>
                     <Link className="hover:text-white" href="/cupones">
                       Cupones
@@ -116,7 +122,7 @@ export function Footer() {
                     Política de privacidad
                   </Link>
                 </li>
-                {!isStoreAdmin && (
+                {canUseShopFeatures && (
                   <li>
                     <Link className="hover:text-white" href="/libro-de-quejas">
                       Libro de Quejas Online

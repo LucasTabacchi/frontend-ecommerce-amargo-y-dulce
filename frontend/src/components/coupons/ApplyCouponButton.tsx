@@ -55,6 +55,8 @@ export function ApplyCouponButton({ code }: Props) {
   const [applied, setApplied] = useState(false);
   const [isStoreAdmin, setIsStoreAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [authResolved, setAuthResolved] = useState(false);
+  const [couponResolved, setCouponResolved] = useState(false);
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -77,10 +79,29 @@ export function ApplyCouponButton({ code }: Props) {
         const nextUser = j?.user ?? null;
         setIsLoggedIn(Boolean(nextUser?.id));
         setIsStoreAdmin(Boolean(nextUser?.isStoreAdmin));
+        if (nextUser?.id) {
+          const claimed = Array.isArray(nextUser?.claimedCoupons)
+            ? nextUser.claimedCoupons
+            : [];
+          const localClaimed = readClaimedCoupons();
+          const claimedSet = new Set(
+            claimed
+              .map((v: unknown) => normalizeCode(String(v ?? "")))
+              .filter(Boolean)
+          );
+          setApplied(Boolean(normalized && (claimedSet.has(normalized) || localClaimed.has(normalized))));
+        } else {
+          setApplied(false);
+        }
       } catch {
         if (!alive) return;
         setIsLoggedIn(false);
+        setApplied(false);
         syncFromStorage();
+      } finally {
+        if (alive) {
+          setAuthResolved(true);
+        }
       }
     };
 
@@ -94,18 +115,25 @@ export function ApplyCouponButton({ code }: Props) {
       window.removeEventListener("amg-auth-changed", refreshMe);
       window.removeEventListener("storage", syncFromStorage);
     };
-  }, []);
+  }, [normalized]);
 
   useEffect(() => {
-    if (!normalized) return;
+    setCouponResolved(false);
+    if (!authResolved) return;
+    if (!normalized) {
+      setCouponResolved(true);
+      return;
+    }
 
     const syncState = () => {
       if (!isLoggedIn) {
         setApplied(false);
+        setCouponResolved(true);
         return;
       }
       const claimed = readClaimedCoupons();
       setApplied(claimed.has(normalized));
+      setCouponResolved(true);
     };
 
     syncState();
@@ -116,7 +144,7 @@ export function ApplyCouponButton({ code }: Props) {
       window.removeEventListener("amg-coupons-changed", syncState);
       window.removeEventListener("storage", syncState);
     };
-  }, [normalized, isLoggedIn]);
+  }, [normalized, isLoggedIn, authResolved]);
 
   useEffect(() => {
     if (isLoggedIn) setLoginNotice(null);
@@ -126,6 +154,7 @@ export function ApplyCouponButton({ code }: Props) {
     setLoginNotice(null);
     if (isStoreAdmin) return;
     if (!normalized) return;
+    if (!authResolved || !couponResolved) return;
 
     let loggedNow = isLoggedIn;
     try {
@@ -155,22 +184,32 @@ export function ApplyCouponButton({ code }: Props) {
     setApplied(true);
   }
 
+  const isLoadingButton = !authResolved || !couponResolved;
+
   return (
     <>
       <button
         type="button"
         onClick={onApply}
-        disabled={isStoreAdmin || !normalized || applied}
+        disabled={isLoadingButton || isStoreAdmin || !normalized || applied}
         className={[
-          "rounded-full px-5 py-2 text-sm font-semibold text-white",
-          isStoreAdmin
+          "rounded-full px-5 py-2 text-sm font-semibold",
+          isLoadingButton
+            ? "bg-neutral-200 text-neutral-500 cursor-wait"
+            : isStoreAdmin
             ? "bg-neutral-300 text-neutral-500 cursor-not-allowed"
             : applied
-            ? "bg-emerald-600"
-            : "bg-red-600 hover:bg-red-700",
+            ? "bg-emerald-600 text-white"
+            : "bg-red-600 text-white hover:bg-red-700",
         ].join(" ")}
       >
-        {isStoreAdmin ? "No disponible para cuenta tienda" : applied ? "Aplicado" : "Aplicar"}
+        {isLoadingButton
+          ? "Cargando..."
+          : isStoreAdmin
+          ? "No disponible"
+          : applied
+          ? "Aplicado"
+          : "Aplicar"}
       </button>
       {loginNotice ? (
         <p className="mt-2 text-xs text-amber-700">{loginNotice}</p>

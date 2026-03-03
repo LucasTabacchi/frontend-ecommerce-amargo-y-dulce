@@ -8,7 +8,25 @@ type Props = {
 export function GoogleLoginButton({ className = "", onStart }: Props) {
   const next =
     typeof window !== "undefined"
-      ? window.location.pathname + window.location.search
+      ? (() => {
+          const pathname = window.location.pathname || "/";
+          const params = new URLSearchParams(window.location.search || "");
+          const hasLoginTrigger = params.get("login") === "1";
+          const nextParam = String(params.get("next") || "").trim();
+
+          // Si el login fue pedido para volver a la misma pantalla
+          // (ej. /cupones -> aplicar cupón), no volvemos con login=1
+          // para evitar reabrir el modal en el retorno de OAuth.
+          if (hasLoginTrigger && nextParam.startsWith("/")) {
+            const nextPathOnly = nextParam.split("?")[0] || nextParam;
+            if (nextPathOnly === pathname) {
+              params.delete("login");
+            }
+          }
+
+          const query = params.toString();
+          return query ? `${pathname}?${query}` : pathname;
+        })()
       : "/";
 
   // ✅ Router único: START es /api/auth/google?start=1&next=...

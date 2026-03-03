@@ -180,7 +180,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
         ].join(" ")}
       >
         {blockedForStoreUser
-          ? "No disponible para cuenta tienda"
+          ? "No disponible"
           : out
           ? "Sin stock"
           : limitReached
