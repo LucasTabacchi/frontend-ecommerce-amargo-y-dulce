@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/ui/Button";
 
@@ -11,6 +12,8 @@ export default function Error({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const router = useRouter();
+
   useEffect(() => {
     console.error(error);
   }, [error]);
@@ -25,11 +28,12 @@ export default function Error({
           </p>
         </div>
         <div className="flex gap-4">
-          <Button onClick={() => reset()} className="bg-orange-600 text-white hover:bg-orange-700">
+          <Button type="button" onClick={reset} className="bg-orange-600 text-white hover:bg-orange-700">
             Reintentar
           </Button>
           <Button
-            onClick={() => (window.location.href = "/")}
+            type="button"
+            onClick={() => router.replace("/")}
             className="bg-orange-600 text-white hover:bg-orange-700"
           >
             Volver al inicio

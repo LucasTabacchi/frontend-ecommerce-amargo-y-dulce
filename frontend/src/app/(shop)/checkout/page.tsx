@@ -376,10 +376,6 @@ export default function CheckoutPage() {
     }
   }, [meReady, isStoreAdmin, router]);
 
-  if (meReady && isStoreAdmin) {
-    return null;
-  }
-
   useEffect(() => {
     const onCouponsChanged = () => setClaimedCouponsVersion((prev) => prev + 1);
     window.addEventListener("storage", onCouponsChanged);
