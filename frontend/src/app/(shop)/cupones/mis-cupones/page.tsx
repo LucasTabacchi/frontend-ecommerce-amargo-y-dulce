@@ -129,6 +129,10 @@ export default function MisCuponesPage() {
   }, [meLoading, me, router]);
 
   useEffect(() => {
+    if (!meLoading && me?.isStoreAdmin) router.replace("/admin/pedidos");
+  }, [meLoading, me, router]);
+
+  useEffect(() => {
     const onCouponsChanged = () => setClaimVersion((prev) => prev + 1);
     window.addEventListener("storage", onCouponsChanged);
     window.addEventListener("amg-coupons-changed", onCouponsChanged);
@@ -139,7 +143,7 @@ export default function MisCuponesPage() {
   }, []);
 
   useEffect(() => {
-    if (!me || meLoading) return;
+    if (!me || meLoading || me?.isStoreAdmin) return;
     (async () => {
       const claimedCodes = readClaimedCodesFromStorage();
       setLoading(true);
@@ -191,7 +195,7 @@ export default function MisCuponesPage() {
     );
   }
 
-  if (!me) return null;
+  if (!me || me?.isStoreAdmin) return null;
 
   return (
     <main>

@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Container } from "@/components/layout/Container";
+import { useRouter } from "next/navigation";
 
 const MOTIVOS = [
   "Agradecimiento",
@@ -15,9 +16,42 @@ const inputClass =
   "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-500";
 
 export default function LibroDeQuejasPage() {
+  const router = useRouter();
+
+  const [meLoading, setMeLoading] = useState(true);
+  const [me, setMe] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [ok, setOk] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setMeLoading(true);
+      try {
+        const r = await fetch("/api/auth/me", { cache: "no-store" });
+        const j = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setMe(j?.user ?? null);
+      } catch {
+        if (!alive) return;
+        setMe(null);
+      } finally {
+        if (alive) setMeLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!meLoading && me?.isStoreAdmin) {
+      router.replace("/admin/pedidos");
+    }
+  }, [meLoading, me, router]);
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
@@ -63,7 +97,15 @@ export default function LibroDeQuejasPage() {
       <div className="mx-auto w-full max-w-md">
         {/* Card vertical */}
         <div className="rounded-lg bg-neutral-50 p-6 shadow-sm ring-1 ring-neutral-200">
-          {ok ? (
+          {meLoading ? (
+            <p className="rounded-md bg-neutral-100 p-4 text-sm text-neutral-700">
+              Cargando…
+            </p>
+          ) : me?.isStoreAdmin ? (
+            <p className="rounded-md bg-blue-50 p-4 text-sm text-blue-800">
+              La cuenta tienda no puede enviar reclamos desde esta sección.
+            </p>
+          ) : ok ? (
             <p className="rounded-md bg-green-100 p-4 text-sm text-green-700">
               Gracias por contactarnos. Tu mensaje fue enviado correctamente.
             </p>

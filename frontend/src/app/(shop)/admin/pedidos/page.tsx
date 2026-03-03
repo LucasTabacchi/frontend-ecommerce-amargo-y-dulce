@@ -343,10 +343,10 @@ export default function AdminPedidosPage() {
             </div>
 
             <Link
-              href="/mis-pedidos"
+              href="/"
               className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
             >
-              Ver mis pedidos
+              Ir a la tienda
             </Link>
           </div>
 

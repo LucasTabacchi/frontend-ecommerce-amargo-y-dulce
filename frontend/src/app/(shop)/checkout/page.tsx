@@ -371,6 +371,16 @@ export default function CheckoutPage() {
   const isStoreAdmin = Boolean(me?.user?.isStoreAdmin);
 
   useEffect(() => {
+    if (meReady && isStoreAdmin) {
+      router.replace("/admin/pedidos");
+    }
+  }, [meReady, isStoreAdmin, router]);
+
+  if (meReady && isStoreAdmin) {
+    return null;
+  }
+
+  useEffect(() => {
     const onCouponsChanged = () => setClaimedCouponsVersion((prev) => prev + 1);
     window.addEventListener("storage", onCouponsChanged);
     window.addEventListener("amg-coupons-changed", onCouponsChanged);

@@ -1,5 +1,8 @@
+"use client";
+
 import Link from "next/link";
 import { Facebook, Instagram, Phone, Mail } from "lucide-react";
+import { useEffect, useState } from "react";
 
 /**
  * Footer del ecommerce:
@@ -7,6 +10,37 @@ import { Facebook, Instagram, Phone, Mail } from "lucide-react";
  * - Derecha: contacto + redes
  */
 export function Footer() {
+  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+
+    const refreshMe = async () => {
+      try {
+        const r = await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const j = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
+      } catch {
+        if (!alive) return;
+        setIsStoreAdmin(false);
+      }
+    };
+
+    refreshMe();
+    window.addEventListener("amg-auth-changed", refreshMe);
+    window.addEventListener("focus", refreshMe);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("amg-auth-changed", refreshMe);
+      window.removeEventListener("focus", refreshMe);
+    };
+  }, []);
+
   return (
     <footer className="bg-red-600 text-white">
       <div className="w-full px-6 py-12 lg:px-12">
@@ -50,11 +84,13 @@ export function Footer() {
                     Sobre nosotros
                   </Link>
                 </li>
-                <li>
-                  <Link className="hover:text-white" href="/cupones">
-                    Cupones
-                  </Link>
-                </li>
+                {!isStoreAdmin && (
+                  <li>
+                    <Link className="hover:text-white" href="/cupones">
+                      Cupones
+                    </Link>
+                  </li>
+                )}
               </ul>
             </div>
 
@@ -80,11 +116,13 @@ export function Footer() {
                     Política de privacidad
                   </Link>
                 </li>
-                <li>
-                  <Link className="hover:text-white" href="/libro-de-quejas">
-                    Libro de Quejas Online
-                  </Link>
-                </li>
+                {!isStoreAdmin && (
+                  <li>
+                    <Link className="hover:text-white" href="/libro-de-quejas">
+                      Libro de Quejas Online
+                    </Link>
+                  </li>
+                )}
               </ul>
             </div>
           </div>

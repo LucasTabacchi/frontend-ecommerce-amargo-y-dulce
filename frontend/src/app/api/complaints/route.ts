@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,6 +9,25 @@ function normalizeStrapiBase(url: string) {
   u = u.endsWith("/") ? u.slice(0, -1) : u;
   if (u.toLowerCase().endsWith("/api")) u = u.slice(0, -4);
   return u;
+}
+
+function readUserJwtFromCookies() {
+  const jar = cookies();
+  return (
+    jar.get("strapi_jwt")?.value ||
+    jar.get("jwt")?.value ||
+    jar.get("token")?.value ||
+    jar.get("access_token")?.value ||
+    null
+  );
+}
+
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
 }
 
 async function fetchWithTimeout(input: string, init: RequestInit, ms = 20000) {
@@ -29,6 +49,22 @@ export async function POST(req: Request) {
     );
     if (!base) {
       return NextResponse.json({ ok: false, error: "Falta STRAPI_URL" }, { status: 500 });
+    }
+
+    // Si el usuario está logueado como tienda, bloqueamos creación de quejas.
+    const jwt = readUserJwtFromCookies();
+    if (jwt) {
+      const meRes = await fetchWithTimeout(`${base}/api/users/me`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      const meJson = await meRes.json().catch(() => null);
+
+      if (meRes.ok && isStoreAdmin(meJson)) {
+        return NextResponse.json(
+          { ok: false, error: "Las cuentas tienda no pueden enviar reclamos." },
+          { status: 403 }
+        );
+      }
     }
 
     const res = await fetchWithTimeout(`${base}/api/complaints`, {

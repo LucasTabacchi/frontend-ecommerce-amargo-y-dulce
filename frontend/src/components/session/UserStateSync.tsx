@@ -5,6 +5,8 @@ import { useCartStore } from "@/store/cart.store";
 
 const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
 const USER_SYNC_KEY_PREFIX = "amg_user_state_synced_v1:";
+const LAST_AUTH_USER_ID_KEY = "amg_last_auth_user_id_v1";
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
 
 function userSyncKey(userId: number) {
   return `${USER_SYNC_KEY_PREFIX}${userId}`;
@@ -23,6 +25,41 @@ function markUserSynced(userId: number) {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(userSyncKey(userId), "1");
+  } catch {}
+}
+
+function readLastAuthUserId() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(LAST_AUTH_USER_ID_KEY);
+    if (!raw) return null;
+    const n = Number(raw);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    return Math.trunc(n);
+  } catch {
+    return null;
+  }
+}
+
+function writeLastAuthUserId(userId: number | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (typeof userId === "number" && Number.isFinite(userId) && userId > 0) {
+      localStorage.setItem(LAST_AUTH_USER_ID_KEY, String(Math.trunc(userId)));
+    } else {
+      localStorage.removeItem(LAST_AUTH_USER_ID_KEY);
+    }
+  } catch {}
+}
+
+function writeStoreAdminFlag(isStoreAdmin: boolean | null) {
+  if (typeof window === "undefined") return;
+  try {
+    if (typeof isStoreAdmin !== "boolean") {
+      localStorage.removeItem(STORE_ADMIN_FLAG_KEY);
+      return;
+    }
+    localStorage.setItem(STORE_ADMIN_FLAG_KEY, isStoreAdmin ? "1" : "0");
   } catch {}
 }
 
@@ -231,14 +268,21 @@ export function UserStateSync() {
           bootstrappedUserIdRef.current = null;
           lastCartSigRef.current = "";
           lastCouponSigRef.current = "";
+          writeLocalClaimedCoupons([]);
+          writeStoreAdminFlag(null);
           setInitialSyncDone(true);
           return;
         }
 
         const nextUserId = Number(user.id);
+        const nextIsStoreAdmin = Boolean(user?.isStoreAdmin);
         setUserId(nextUserId);
+        writeStoreAdminFlag(nextIsStoreAdmin);
         const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
         const syncedBeforeOnThisDevice = hasUserSyncedBefore(nextUserId);
+        const lastAuthUserId = readLastAuthUserId();
+        const switchedAccount =
+          typeof lastAuthUserId === "number" && lastAuthUserId !== nextUserId;
 
         const remoteCoupons = sanitizeClaimedCoupons(user?.claimedCoupons);
         const localCoupons = readLocalClaimedCoupons();
@@ -253,21 +297,27 @@ export function UserStateSync() {
         const shouldMergeCart =
           isFirstSyncForUser &&
           !syncedBeforeOnThisDevice &&
+          !switchedAccount &&
           remoteCart.length === 0 &&
           localCart.length > 0;
         const shouldMergeCoupons =
           isFirstSyncForUser &&
           !syncedBeforeOnThisDevice &&
+          !switchedAccount &&
           remoteCoupons.length === 0 &&
           localCoupons.length > 0;
         const forceEmptyCart = forceEmptyCartRef.current;
 
-        const mergedCoupons = isFirstSyncForUser
+        const mergedCoupons = nextIsStoreAdmin
+          ? []
+          : isFirstSyncForUser
           ? shouldMergeCoupons
             ? sanitizeClaimedCoupons([...remoteCoupons, ...localCoupons])
             : remoteCoupons
           : remoteCoupons;
-        const mergedCart = forceEmptyCart
+        const mergedCart = nextIsStoreAdmin
+          ? []
+          : forceEmptyCart
           ? []
           : shouldMergeCart
           ? mergeCart(remoteCart, localCart)
@@ -292,7 +342,7 @@ export function UserStateSync() {
           setItems(mergedCart as any);
         }
 
-        if ((shouldMergeCoupons || shouldMergeCart || forceEmptyCart) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
+        if ((shouldMergeCoupons || shouldMergeCart || forceEmptyCart || nextIsStoreAdmin) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
           await saveUserPrefs({
             claimedCoupons: mergedCoupons,
             cartItems: mergedCart,
@@ -303,6 +353,7 @@ export function UserStateSync() {
           forceEmptyCartRef.current = false;
         }
         markUserSynced(nextUserId);
+        writeLastAuthUserId(nextUserId);
         bootstrappedUserIdRef.current = nextUserId;
       } finally {
         if (alive) setInitialSyncDone(true);

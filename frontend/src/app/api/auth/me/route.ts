@@ -112,6 +112,14 @@ function sanitizeCartItems(input: unknown, max = 150) {
   return out;
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 export async function GET() {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) return NextResponse.json({ user: null }, { status: 200 });
@@ -217,6 +225,31 @@ export async function PUT(req: Request) {
   }
 
   const userId = meJson.id;
+  if (hasClaimedCoupons && isStoreAdmin(meJson)) {
+    const nextCoupons = Array.isArray(claimedCouponsToSave) ? claimedCouponsToSave : [];
+    if (nextCoupons.length === 0) {
+      // Permitimos limpiar cupones heredados para cuentas tienda.
+      // Lo que no permitimos es asignar nuevos cupones.
+    } else {
+      return NextResponse.json(
+        { error: "Las cuentas tienda no pueden gestionar cupones." },
+        { status: 403 }
+      );
+    }
+  }
+
+  if (hasCartItems && isStoreAdmin(meJson)) {
+    const nextCart = Array.isArray(cartItemsToSave) ? cartItemsToSave : [];
+    if (nextCart.length === 0) {
+      // Permitimos limpiar carrito heredado en cuentas tienda.
+    } else {
+      return NextResponse.json(
+        { error: "Las cuentas tienda no pueden gestionar carrito de compra." },
+        { status: 403 }
+      );
+    }
+  }
+
   const currentFirstName = toOptionalString(meJson?.firstName);
   const currentLastName = toOptionalString(meJson?.lastName);
 

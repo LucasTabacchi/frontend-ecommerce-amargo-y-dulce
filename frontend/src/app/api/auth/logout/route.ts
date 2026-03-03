@@ -1,40 +1,40 @@
 import { NextResponse } from "next/server";
-import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
-function deleteCookieEverywhere(name: string) {
-  const jar = cookies();
-
-  // ✅ Forma recomendada (Next 13+)
+function isHttps(req: Request) {
+  const xf = req.headers.get("x-forwarded-proto");
+  if (xf) return xf.toLowerCase().includes("https");
   try {
-    jar.delete(name);
+    return new URL(req.url).protocol === "https:";
   } catch {
-    // ignore
+    return process.env.NODE_ENV === "production";
   }
+}
 
-  // ✅ Fallback: overwrite con expiración en el pasado
+function expireCookieEverywhere(res: NextResponse, name: string, secure: boolean) {
   const base = {
-    path: "/",
+    value: "",
     httpOnly: true,
     sameSite: "lax" as const,
-    secure: process.env.NODE_ENV === "production",
+    secure,
+    path: "/",
     expires: new Date(0),
     maxAge: 0,
   };
 
-  jar.set(name, "", base);
-
-  // Si alguna vez la guardaste con prefijos de seguridad:
-  jar.set(`__Secure-${name}`, "", base);
-  jar.set(`__Host-${name}`, "", { ...base, path: "/" }); // __Host- no lleva domain
+  res.cookies.set({ name, ...base });
+  res.cookies.set({ name: `__Secure-${name}`, ...base });
+  // __Host- siempre requiere path="/", secure=true y sin domain.
+  res.cookies.set({ name: `__Host-${name}`, ...base, path: "/", secure: true });
 }
 
-export async function POST() {
-  deleteCookieEverywhere("strapi_jwt");
-
+export async function POST(req: Request) {
+  const secure = isHttps(req);
   const res = NextResponse.json({ ok: true });
+  expireCookieEverywhere(res, "strapi_jwt", secure);
+  expireCookieEverywhere(res, "auth_return_to", secure);
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

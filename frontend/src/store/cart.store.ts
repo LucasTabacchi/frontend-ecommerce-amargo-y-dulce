@@ -9,6 +9,8 @@ export type CartItem = ProductCardItem & {
   stock?: number | null;
 };
 
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+
 type CartState = {
   items: CartItem[];
 
@@ -59,6 +61,15 @@ function clampQty(nextQty: number, stock: number | null) {
   const q = normalizeQty(nextQty);
   if (stock == null) return q;
   return Math.min(q, stock);
+}
+
+function isStoreAdminClient() {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(STORE_ADMIN_FLAG_KEY) === "1";
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -151,9 +162,13 @@ export const useCartStore = create<CartState>()(
       hasHydrated: false,
       setHasHydrated: (v) => set({ hasHydrated: v }),
 
-      setItems: (items) => set({ items: normalizeCartItems(items as any[]) }),
+      setItems: (items) =>
+        set({
+          items: isStoreAdminClient() ? [] : normalizeCartItems(items as any[]),
+        }),
 
       addItem: (product, qty = 1) => {
+        if (isStoreAdminClient()) return;
         // ✅ al agregar, mínimo 1
         const addQty = Math.max(1, normalizeQty(qty));
 
@@ -199,12 +214,15 @@ export const useCartStore = create<CartState>()(
         });
       },
 
-      removeItem: (slug) =>
+      removeItem: (slug) => {
+        if (isStoreAdminClient()) return;
         set((state) => ({
           items: state.items.filter((i) => i.slug !== slug),
-        })),
+        }));
+      },
 
-      inc: (slug) =>
+      inc: (slug) => {
+        if (isStoreAdminClient()) return;
         set((state) => ({
           items: state.items.map((i) => {
             if (i.slug !== slug) return i;
@@ -215,9 +233,11 @@ export const useCartStore = create<CartState>()(
 
             return { ...i, qty: nextQty };
           }),
-        })),
+        }));
+      },
 
-      dec: (slug) =>
+      dec: (slug) => {
+        if (isStoreAdminClient()) return;
         set((state) => ({
           items: state.items
             .map((i) => {
@@ -228,7 +248,8 @@ export const useCartStore = create<CartState>()(
             })
             // ✅ si llegó a 0, se elimina del carrito
             .filter((i) => normalizeQty(i.qty) > 0),
-        })),
+        }));
+      },
 
       clear: () => set({ items: [] }),
 

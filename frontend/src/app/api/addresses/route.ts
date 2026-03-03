@@ -35,6 +35,41 @@ function authHeaders() {
   return jwt ? { Authorization: `Bearer ${jwt}` } : {};
 }
 
+function readUserJwtFromCookies() {
+  return cookies().get("strapi_jwt")?.value || null;
+}
+
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
+async function ensureNotStoreAdmin(base: string, jwt: string | null) {
+  if (!base) return { ok: true as const };
+  if (!jwt) return { ok: true as const };
+
+  const meRes = await fetch(`${base}/api/users/me`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+    cache: "no-store",
+  });
+  const meJson = await meRes.json().catch(() => null);
+
+  if (meRes.ok && isStoreAdmin(meJson)) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { ok: false, error: "Las cuentas tienda no pueden gestionar direcciones." },
+        { status: 403 }
+      ),
+    };
+  }
+
+  return { ok: true as const };
+}
+
 // ✅ Normaliza para que el front use siempre documentId como "id"
 function normalizeAddress(x: any) {
   if (!x || typeof x !== "object") return x;
@@ -55,6 +90,12 @@ function normalizeAddress(x: any) {
  */
 export async function GET() {
   try {
+    const base = normalizeStrapiBase(
+      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || ""
+    );
+    const guard = await ensureNotStoreAdmin(base, readUserJwtFromCookies());
+    if (!guard.ok) return guard.response;
+
     const res = await fetch(
       getStrapiUrl(
         "/addresses?pagination[pageSize]=100&sort=isDefault:desc,createdAt:desc"
@@ -96,6 +137,12 @@ export async function GET() {
  */
 export async function POST(req: Request) {
   try {
+    const base = normalizeStrapiBase(
+      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || ""
+    );
+    const guard = await ensureNotStoreAdmin(base, readUserJwtFromCookies());
+    if (!guard.ok) return guard.response;
+
     const body = await req.json().catch(() => ({}));
 
     const res = await fetch(getStrapiUrl("/addresses"), {

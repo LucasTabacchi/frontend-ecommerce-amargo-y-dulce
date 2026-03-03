@@ -22,6 +22,14 @@ function pickIdForOps(row: any) {
   );
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 function pickField(row: any, key: string) {
   return row?.[key] ?? row?.attributes?.[key] ?? null;
 }
@@ -57,6 +65,12 @@ export async function GET() {
   }
 
   const me = meRes.json;
+  if (isStoreAdmin(me)) {
+    return NextResponse.json(
+      { error: "Las cuentas tienda no tienen pedidos de cliente." },
+      { status: 403 }
+    );
+  }
 
   // Strapi v5 suele tener documentId en user
   const userDocumentId = String(me?.documentId ?? "").trim();

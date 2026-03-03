@@ -147,6 +147,7 @@ export function ProfilePanel({
 
   const user = "user" in me ? me.user : null;
   const isStoreAdmin = Boolean((user as any)?.isStoreAdmin);
+  const canRenderAddresses = !loading && !isStoreAdmin && Boolean(user);
 
   // ✅ precargar DNI cuando llega el user
   useEffect(() => {
@@ -170,6 +171,8 @@ export function ProfilePanel({
         });
         router.refresh();
       }
+      setMe({ user: null });
+      window.dispatchEvent(new Event("amg-auth-changed"));
     } finally {
       onClose?.();
       if (variant === "page") router.push("/");
@@ -434,7 +437,7 @@ export function ProfilePanel({
           ) : null}
         </div>
 
-        <div className={`mt-6 grid gap-6 ${isStoreAdmin ? "" : "lg:grid-cols-2"}`}>
+        <div className={`mt-6 grid gap-6 ${canRenderAddresses ? "lg:grid-cols-2" : ""}`}>
           {/* PERFIL */}
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             {loading ? (
@@ -642,7 +645,7 @@ export function ProfilePanel({
           </div>
 
           {/* DIRECCIONES */}
-          {!isStoreAdmin && (
+          {canRenderAddresses && (
           <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex items-start justify-between gap-4">
               <div>

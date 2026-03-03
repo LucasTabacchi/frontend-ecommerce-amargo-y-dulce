@@ -33,12 +33,32 @@ function readUserJwtFromCookies() {
   );
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 export async function GET() {
   const jwt = readUserJwtFromCookies();
   const strapiBase = normalizeStrapiBase(
     process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
   );
   if (jwt) {
+    const meRes = await fetch(`${strapiBase}/api/users/me`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: "no-store",
+    });
+    const meJson = await meRes.json().catch(() => null);
+    if (meRes.ok && isStoreAdmin(meJson)) {
+      return NextResponse.json(
+        { error: "Las cuentas tienda no pueden acceder a cupones." },
+        { status: 403 }
+      );
+    }
+
     const r = await fetch(`${strapiBase}/api/promotions/my-coupons`, {
       headers: { Authorization: `Bearer ${jwt}` },
       cache: "no-store",

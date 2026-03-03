@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 
 type Invoice = {
@@ -37,11 +38,46 @@ function normalizePdfUrl(url: string | null) {
 }
 
 export default function FacturasPage() {
+  const router = useRouter();
+
+  const [meLoading, setMeLoading] = useState(true);
+  const [me, setMe] = useState<any | null>(null);
+
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
   useEffect(() => {
+    let alive = true;
+
+    (async () => {
+      setMeLoading(true);
+      try {
+        const r = await fetch("/api/auth/me", { cache: "no-store" });
+        const j = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setMe(j?.user ?? null);
+      } catch {
+        if (!alive) return;
+        setMe(null);
+      } finally {
+        if (alive) setMeLoading(false);
+      }
+    })();
+
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!meLoading && !me) router.replace("/");
+    if (!meLoading && me?.isStoreAdmin) router.replace("/admin/pedidos");
+  }, [meLoading, me, router]);
+
+  useEffect(() => {
+    if (meLoading || !me || me?.isStoreAdmin) return;
+
     let alive = true;
 
     (async () => {
@@ -70,7 +106,19 @@ export default function FacturasPage() {
     return () => {
       alive = false;
     };
-  }, []);
+  }, [meLoading, me]);
+
+  if (meLoading) {
+    return (
+      <main>
+        <Container className="py-10">
+          <p className="text-sm text-neutral-600">Cargando…</p>
+        </Container>
+      </main>
+    );
+  }
+
+  if (!me || me?.isStoreAdmin) return null;
 
   return (
     <main>

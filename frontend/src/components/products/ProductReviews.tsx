@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+
 type ReviewItem = {
   id: number | string;
   rating: number;
@@ -47,6 +49,18 @@ function normalizeReviewRow(r: any): ReviewItem {
     // name: String(a?.name ?? r?.name ?? "").trim() || undefined,
     createdAt: String(a?.createdAt ?? r?.createdAt ?? "").trim() || undefined,
   };
+}
+
+function readStoreAdminFlag() {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
+    if (raw === "1") return true;
+    if (raw === "0") return false;
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 function StarPicker({
@@ -107,6 +121,8 @@ export function ProductReviews({
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formMsg, setFormMsg] = useState<string | null>(null);
+  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
+  const [authChecked, setAuthChecked] = useState(false);
 
   async function load() {
     if (!canFilter) return;
@@ -142,6 +158,46 @@ export function ProductReviews({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [productDocumentId, productId, pageSize]);
 
+  useEffect(() => {
+    let alive = true;
+
+    const syncFromStorage = () => {
+      const flag = readStoreAdminFlag();
+      if (!alive) return;
+      if (typeof flag === "boolean") {
+        setIsStoreAdmin(flag);
+      }
+    };
+
+    const refreshMe = async () => {
+      try {
+        const r = await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const j = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
+      } catch {
+        if (!alive) return;
+        syncFromStorage();
+      } finally {
+        if (alive) setAuthChecked(true);
+      }
+    };
+
+    syncFromStorage();
+    refreshMe();
+    window.addEventListener("amg-auth-changed", refreshMe);
+    window.addEventListener("storage", syncFromStorage);
+
+    return () => {
+      alive = false;
+      window.removeEventListener("amg-auth-changed", refreshMe);
+      window.removeEventListener("storage", syncFromStorage);
+    };
+  }, []);
+
   const count = reviews.length;
   const avg = useMemo(() => {
     return count > 0
@@ -152,6 +208,11 @@ export function ProductReviews({
   async function submitReview(e: FormEvent) {
     e.preventDefault();
     setFormMsg(null);
+
+    if (isStoreAdmin) {
+      setFormMsg("Las cuentas tienda no pueden dejar reseñas.");
+      return;
+    }
 
     const pidOk = Number.isFinite(productId) && (productId as number) > 0;
     if (!pidOk && !productDocumentId) {
@@ -241,65 +302,75 @@ export function ProductReviews({
       )}
 
       {/* ✅ FORM */}
-      <form onSubmit={submitReview} className="mt-6 rounded-2xl bg-neutral-50 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm font-extrabold text-neutral-900">
-            Dejar reseña
-          </div>
-          <StarPicker value={rating} onChange={setRating} disabled={submitting} />
+      {!authChecked ? (
+        <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+          Cargando permisos para reseñas...
         </div>
+      ) : isStoreAdmin ? (
+        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Esta cuenta de tienda no puede publicar reseñas.
+        </div>
+      ) : (
+        <form onSubmit={submitReview} className="mt-6 rounded-2xl bg-neutral-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-extrabold text-neutral-900">
+              Dejar reseña
+            </div>
+            <StarPicker value={rating} onChange={setRating} disabled={submitting} />
+          </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          {/* <label className="grid gap-1">
-            <span className="text-xs font-semibold text-neutral-600">
-              Nombre (opcional)
-            </span>
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
-              placeholder="Ej: Lucas"
-              disabled={submitting}
-            />
-          </label> */}
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {/* <label className="grid gap-1">
+              <span className="text-xs font-semibold text-neutral-600">
+                Nombre (opcional)
+              </span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
+                placeholder="Ej: Lucas"
+                disabled={submitting}
+              />
+            </label> */}
 
-          <label className="grid gap-1">
-            <span className="text-xs font-semibold text-neutral-600">
-              Título (opcional)
-            </span>
-            <input
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-              className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
-              placeholder="Ej: Excelente"
+            <label className="grid gap-1">
+              <span className="text-xs font-semibold text-neutral-600">
+                Título (opcional)
+              </span>
+              <input
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                className="h-10 rounded-xl border bg-white px-3 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
+                placeholder="Ej: Excelente"
+                disabled={submitting}
+              />
+            </label>
+          </div>
+
+          <label className="mt-3 grid gap-1">
+            <span className="text-xs font-semibold text-neutral-600">Comentario</span>
+            <textarea
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              className="min-h-[96px] rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
+              placeholder="Contá tu experiencia…"
               disabled={submitting}
             />
           </label>
-        </div>
 
-        <label className="mt-3 grid gap-1">
-          <span className="text-xs font-semibold text-neutral-600">Comentario</span>
-          <textarea
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            className="min-h-[96px] rounded-xl border bg-white px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-neutral-900/10"
-            placeholder="Contá tu experiencia…"
-            disabled={submitting}
-          />
-        </label>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button
+              type="submit"
+              disabled={submitting}
+              className="rounded-full bg-red-600 px-5 py-2 text-sm font-extrabold text-white disabled:opacity-60"
+            >
+              {submitting ? "Enviando..." : "Enviar reseña"}
+            </button>
 
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <button
-            type="submit"
-            disabled={submitting}
-            className="rounded-full bg-red-600 px-5 py-2 text-sm font-extrabold text-white disabled:opacity-60"
-          >
-            {submitting ? "Enviando..." : "Enviar reseña"}
-          </button>
-
-          {formMsg && <div className="text-sm text-neutral-700">{formMsg}</div>}
-        </div>
-      </form>
+            {formMsg && <div className="text-sm text-neutral-700">{formMsg}</div>}
+          </div>
+        </form>
+      )}
 
       {/* ✅ LIST */}
       {!loading && count === 0 ? (

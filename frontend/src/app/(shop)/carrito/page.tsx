@@ -184,6 +184,16 @@ export default function CarritoPage() {
     : 0;
   const isStoreAdmin = Boolean(me?.isStoreAdmin);
 
+  useEffect(() => {
+    if (!meLoading && isStoreAdmin) {
+      router.replace("/admin/pedidos");
+    }
+  }, [meLoading, isStoreAdmin, router]);
+
+  if (!meLoading && isStoreAdmin) {
+    return null;
+  }
+
   // ✅ handler: bloquear checkout si no hay sesión
   function onCheckoutClick(e: React.MouseEvent<HTMLAnchorElement>) {
     if (items.length === 0) return;

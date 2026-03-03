@@ -100,9 +100,15 @@ export default function MisPedidosPage() {
     }
   }, [meLoading, me, router]);
 
+  useEffect(() => {
+    if (!meLoading && me?.isStoreAdmin) {
+      router.replace("/admin/pedidos");
+    }
+  }, [meLoading, me, router]);
+
   // 3) Cargar pedidos del usuario logueado
   useEffect(() => {
-    if (meLoading || !me) return;
+    if (meLoading || !me || me?.isStoreAdmin) return;
 
     (async () => {
       setLoading(true);
@@ -138,6 +144,7 @@ export default function MisPedidosPage() {
 
   // Si no está logueado, redirigimos (este return evita flicker)
   if (!me) return null;
+  if (me?.isStoreAdmin) return null;
 
   return (
     <main>

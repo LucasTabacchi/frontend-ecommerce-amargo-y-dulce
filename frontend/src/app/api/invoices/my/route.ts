@@ -48,6 +48,14 @@ function pickPdfUrl(strapiBase: string, pdfField: any) {
   return toAbsStrapiUrl(strapiBase, flat?.url);
 }
 
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
+
 /**
  * Extrae AMG-#### desde un invoice.number (soporta RC-...-AMG-#### y RC_..._AMG-####)
  */
@@ -190,6 +198,13 @@ export async function GET() {
   }
 
   const me = meRes.json;
+  if (isStoreAdmin(me)) {
+    return NextResponse.json(
+      { error: "Las cuentas tienda no acceden a recibos de cliente." },
+      { status: 403 }
+    );
+  }
+
   const userId = me?.id != null ? String(me.id) : null;
   const userEmail = typeof me?.email === "string" ? me.email.trim().toLowerCase() : null;
 

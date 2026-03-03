@@ -119,7 +119,10 @@ export function Header() {
   async function refreshMe() {
     setMeLoading(true);
     try {
-      const r = await fetch("/api/auth/me", { cache: "no-store" });
+      const r = await fetch("/api/auth/me", {
+        cache: "no-store",
+        credentials: "include",
+      });
       const j: MeResponse = await r.json().catch(() => ({ user: null }));
       setMe(j.user ?? null);
     } catch {
@@ -131,7 +134,11 @@ export function Header() {
 
   async function logout() {
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+      });
     } finally {
       setMe(null);
       setLoginOpen(false);
@@ -167,8 +174,13 @@ export function Header() {
     refreshMe();
 
     const onFocus = () => refreshMe();
+    const onAuthChanged = () => refreshMe();
     window.addEventListener("focus", onFocus);
-    return () => window.removeEventListener("focus", onFocus);
+    window.addEventListener("amg-auth-changed", onAuthChanged);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("amg-auth-changed", onAuthChanged);
+    };
   }, []);
 
   useEffect(() => {
@@ -486,8 +498,12 @@ export function Header() {
             <nav className="hidden items-center gap-4 md:flex">
               <span className="text-neutral-300">|</span>
               <NavLink href="/productos">Productos</NavLink>
-              <span className="text-neutral-300">|</span>
-              <NavLink href="/cupones">Cupones</NavLink>
+              {!isStoreAdmin && (
+                <>
+                  <span className="text-neutral-300">|</span>
+                  <NavLink href="/cupones">Cupones</NavLink>
+                </>
+              )}
               <span className="text-neutral-300">|</span>
               <NavLink href="/sobre-nosotros">Sobre nosotros</NavLink>
             </nav>
@@ -630,9 +646,11 @@ export function Header() {
                 <NavLink href="/productos" onClick={() => setMobileOpen(false)}>
                   Productos
                 </NavLink>
-                <NavLink href="/cupones" onClick={() => setMobileOpen(false)}>
-                  Cupones
-                </NavLink>
+                {!isStoreAdmin && (
+                  <NavLink href="/cupones" onClick={() => setMobileOpen(false)}>
+                    Cupones
+                  </NavLink>
+                )}
                 <NavLink href="/sobre-nosotros" onClick={() => setMobileOpen(false)}>
                   Sobre nosotros
                 </NavLink>

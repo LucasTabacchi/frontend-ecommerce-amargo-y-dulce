@@ -42,9 +42,16 @@ export const useAuthStore = create<AuthState>((set, get) => ({
   logout: async () => {
     set({ loading: true, error: null });
     try {
-      await fetch("/api/auth/logout", { method: "POST" });
+      await fetch("/api/auth/logout", {
+        method: "POST",
+        cache: "no-store",
+        credentials: "include",
+      });
     } finally {
       set({ user: null, loading: false });
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new Event("amg-auth-changed"));
+      }
     }
   },
 }));

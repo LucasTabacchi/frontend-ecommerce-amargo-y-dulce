@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -8,6 +9,25 @@ function normalizeStrapiBase(url: string) {
   u = u.endsWith("/") ? u.slice(0, -1) : u;
   if (u.toLowerCase().endsWith("/api")) u = u.slice(0, -4);
   return u;
+}
+
+function readUserJwtFromCookies() {
+  const jar = cookies();
+  return (
+    jar.get("strapi_jwt")?.value ||
+    jar.get("jwt")?.value ||
+    jar.get("token")?.value ||
+    jar.get("access_token")?.value ||
+    null
+  );
+}
+
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
 }
 
 function pickStrapiErrorMessage(details: any) {
@@ -144,6 +164,31 @@ export async function GET(req: Request) {
 /* ===================== POST ===================== */
 
 export async function POST(req: Request) {
+  const strapiBase = normalizeStrapiBase(
+    process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
+  );
+  const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
+  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN" }, { status: 500 });
+
+  // Cuentas de tienda no pueden dejar reseñas.
+  const jwt = readUserJwtFromCookies();
+  if (jwt) {
+    try {
+      const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+      });
+      const meJson = await meRes.json().catch(() => null);
+      if (meRes.ok && isStoreAdmin(meJson)) {
+        return NextResponse.json(
+          { error: "Las cuentas tienda no pueden dejar reseñas." },
+          { status: 403 }
+        );
+      }
+    } catch {
+      // Si falla lectura de sesión, seguimos con flujo normal.
+    }
+  }
+
   const body = await req.json().catch(() => ({}));
 
   const rating = Number(body?.rating ?? 0);
@@ -158,12 +203,6 @@ export async function POST(req: Request) {
   }
   if (!comment) return NextResponse.json({ error: "Falta comentario" }, { status: 400 });
   // if (!name) return NextResponse.json({ error: "Falta nombre" }, { status: 400 });
-
-  const strapiBase = normalizeStrapiBase(
-    process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
-  );
-  const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
-  if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN" }, { status: 500 });
 
   // Intentamos resolver numericId si hace falta
   let productId: number | null =

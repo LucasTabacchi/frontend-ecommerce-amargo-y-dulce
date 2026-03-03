@@ -2,8 +2,36 @@ import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { ApplyCouponButton } from "@/components/coupons/ApplyCouponButton";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+
+function normalizeStrapiBase(url: string) {
+  let u = String(url ?? "").trim();
+  u = u.endsWith("/") ? u.slice(0, -1) : u;
+  if (u.toLowerCase().endsWith("/api")) u = u.slice(0, -4);
+  return u;
+}
+
+function readUserJwtFromCookies() {
+  const jar = cookies();
+  return (
+    jar.get("strapi_jwt")?.value ||
+    jar.get("jwt")?.value ||
+    jar.get("token")?.value ||
+    jar.get("access_token")?.value ||
+    null
+  );
+}
+
+function isStoreAdmin(user: any) {
+  return (
+    user?.isStoreAdmin === true ||
+    user?.isStoreAdmin === 1 ||
+    user?.isStoreAdmin === "true"
+  );
+}
 
 type CouponRow = {
   id: number;
@@ -60,6 +88,26 @@ function isCouponActiveNow(c: CouponRow) {
 }
 
 export default async function CuponesPage() {
+  const jwt = readUserJwtFromCookies();
+  if (jwt) {
+    const strapiBase = normalizeStrapiBase(
+      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
+    );
+
+    try {
+      const meRes = await fetch(`${strapiBase}/api/users/me`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+        cache: "no-store",
+      });
+      const meJson = await meRes.json().catch(() => null);
+      if (meRes.ok && isStoreAdmin(meJson)) {
+        redirect("/admin/pedidos");
+      }
+    } catch {
+      // Si falla auth check, continuamos sin redirigir.
+    }
+  }
+
   const res = await fetcher<{ data?: CouponRow[] }>("/promotions/available", {
     method: "GET",
     cache: "no-store",
