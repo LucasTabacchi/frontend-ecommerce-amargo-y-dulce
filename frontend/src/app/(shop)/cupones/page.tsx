@@ -33,6 +33,22 @@ function isStoreAdmin(user: any) {
   );
 }
 
+function normalizeCouponCode(v: unknown) {
+  return String(v ?? "").trim().toUpperCase();
+}
+
+function sanitizeClaimedCoupons(input: unknown, max = 200) {
+  const arr = Array.isArray(input) ? input : [];
+  const out = new Set<string>();
+  for (const raw of arr) {
+    const code = normalizeCouponCode(raw);
+    if (!code) continue;
+    out.add(code);
+    if (out.size >= max) break;
+  }
+  return Array.from(out);
+}
+
 type CouponRow = {
   id: number;
   name?: string | null;
@@ -89,6 +105,11 @@ function isCouponActiveNow(c: CouponRow) {
 
 export default async function CuponesPage() {
   const jwt = readUserJwtFromCookies();
+  let serverAuthResolved = !jwt;
+  let serverIsLoggedIn = false;
+  let serverIsStoreAdmin = false;
+  const serverClaimedCoupons = new Set<string>();
+
   if (jwt) {
     const strapiBase = normalizeStrapiBase(
       process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
@@ -100,8 +121,17 @@ export default async function CuponesPage() {
         cache: "no-store",
       });
       const meJson = await meRes.json().catch(() => null);
-      if (meRes.ok && isStoreAdmin(meJson)) {
-        redirect("/admin/pedidos");
+      if (meRes.ok) {
+        serverAuthResolved = true;
+        serverIsLoggedIn = Boolean(meJson?.id);
+        serverIsStoreAdmin = isStoreAdmin(meJson);
+
+        if (serverIsStoreAdmin) {
+          redirect("/admin/pedidos");
+        }
+
+        const claimed = sanitizeClaimedCoupons(meJson?.claimedCoupons);
+        for (const code of claimed) serverClaimedCoupons.add(code);
       }
     } catch {
       // Si falla auth check, continuamos sin redirigir.
@@ -145,6 +175,8 @@ export default async function CuponesPage() {
             const minSubtotal = Number(c.minSubtotal ?? 0);
             const maxDiscount = Number(c.maxDiscount ?? 0);
             const expires = c.endAt ? new Date(c.endAt) : null;
+            const couponCode = String(c.code || "");
+            const normalizedCode = normalizeCouponCode(couponCode);
             return (
               <article
                 key={c.id}
@@ -181,7 +213,13 @@ export default async function CuponesPage() {
                 </div>
 
                 <div className="mt-5 flex gap-3">
-                  <ApplyCouponButton code={String(c.code || "")} />
+                  <ApplyCouponButton
+                    code={couponCode}
+                    initialApplied={serverClaimedCoupons.has(normalizedCode)}
+                    initialIsLoggedIn={serverIsLoggedIn}
+                    initialIsStoreAdmin={serverIsStoreAdmin}
+                    initialAuthResolved={serverAuthResolved}
+                  />
                 </div>
               </article>
             );

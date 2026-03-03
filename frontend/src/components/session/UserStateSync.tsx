@@ -214,12 +214,53 @@ export function UserStateSync() {
   const bootstrappedUserIdRef = useRef<number | null>(null);
   const forceEmptyCartRef = useRef(false);
 
+  const CART_PENDING_SYNC_KEY_PREFIX = "amg_cart_pending_sync_v1:";
+  const PENDING_CART_TTL_MS = 2 * 60_000;
+
+  function cartPendingSyncKey(userId: number) {
+    return `${CART_PENDING_SYNC_KEY_PREFIX}${userId}`;
+  }
+
+  function readPendingCartSync(userId: number) {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(cartPendingSyncKey(userId));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      const sig = String(parsed?.sig ?? "");
+      const at = Number(parsed?.at ?? 0);
+      if (!sig || !Number.isFinite(at) || at <= 0) return null;
+      return { sig, at };
+    } catch {
+      return null;
+    }
+  }
+
+  function writePendingCartSync(userId: number, sig: string) {
+    if (typeof window === "undefined") return;
+    if (!sig) return;
+    try {
+      localStorage.setItem(
+        cartPendingSyncKey(userId),
+        JSON.stringify({ sig, at: Date.now() })
+      );
+    } catch {}
+  }
+
+  function clearPendingCartSync(userId: number | null) {
+    if (typeof window === "undefined") return;
+    if (typeof userId !== "number" || !Number.isFinite(userId) || userId <= 0) return;
+    try {
+      localStorage.removeItem(cartPendingSyncKey(Math.trunc(userId)));
+    } catch {}
+  }
+
   const cartPayload = useMemo(() => sanitizeCartItems(items), [items]);
 
   async function saveUserPrefs(partial: { claimedCoupons?: string[]; cartItems?: any[] }) {
     const hasCoupons = Object.prototype.hasOwnProperty.call(partial, "claimedCoupons");
     const hasCart = Object.prototype.hasOwnProperty.call(partial, "cartItems");
-    if (!hasCoupons && !hasCart) return;
+    if (!hasCoupons && !hasCart) return false;
 
     const r = await fetch("/api/auth/me", {
       method: "PUT",
@@ -227,20 +268,31 @@ export function UserStateSync() {
       body: JSON.stringify(partial),
     }).catch(() => null);
 
-    if (!r) return;
+    if (!r) return false;
     if (r.status === 401) {
       setUserId(null);
+      return false;
     }
+
+    return r.ok;
   }
 
   async function saveCartNow(forceItems?: any[]) {
-    if (!userId) return;
+    if (!userId) return false;
     const payload = sanitizeCartItems(forceItems ?? useCartStore.getState().items);
     const nextSig = signatureOf(payload);
-    if (nextSig === lastCartSigRef.current) return;
+    if (nextSig === lastCartSigRef.current) {
+      clearPendingCartSync(userId);
+      return true;
+    }
 
-    lastCartSigRef.current = nextSig;
-    await saveUserPrefs({ cartItems: payload });
+    writePendingCartSync(userId, nextSig);
+    const ok = await saveUserPrefs({ cartItems: payload });
+    if (ok) {
+      lastCartSigRef.current = nextSig;
+      clearPendingCartSync(userId);
+    }
+    return ok;
   }
 
   useEffect(() => {
@@ -255,6 +307,10 @@ export function UserStateSync() {
 
         const user = j?.user ?? null;
         if (!user?.id) {
+          const lastUser = readLastAuthUserId();
+          if (typeof lastUser === "number") {
+            clearPendingCartSync(lastUser);
+          }
           setUserId(null);
           bootstrappedUserIdRef.current = null;
           lastCartSigRef.current = "";
@@ -273,6 +329,10 @@ export function UserStateSync() {
         const lastAuthUserId = readLastAuthUserId();
         const switchedAccount =
           typeof lastAuthUserId === "number" && lastAuthUserId !== nextUserId;
+
+        if (switchedAccount && typeof lastAuthUserId === "number") {
+          clearPendingCartSync(lastAuthUserId);
+        }
 
         const remoteCoupons = sanitizeClaimedCoupons(user?.claimedCoupons);
         const localCoupons = readLocalClaimedCoupons();
@@ -295,6 +355,24 @@ export function UserStateSync() {
           localCoupons.length > 0;
         const forceEmptyCart = forceEmptyCartRef.current;
 
+        const remoteCouponSig = signatureOf(remoteCoupons);
+        const remoteCartSig = signatureOf(remoteCart);
+        const localCouponSig = signatureOf(localCoupons);
+        const localCartSig = signatureOf(localCart);
+
+        const pendingCart = readPendingCartSync(nextUserId);
+        const hasRecentPendingCart =
+          !nextIsStoreAdmin &&
+          Boolean(pendingCart?.sig) &&
+          pendingCart?.sig === localCartSig &&
+          Date.now() - Number(pendingCart?.at ?? 0) <= PENDING_CART_TTL_MS;
+
+        const shouldPreferLocalPendingCart =
+          !forceEmptyCart &&
+          !shouldMergeCart &&
+          hasRecentPendingCart &&
+          remoteCartSig !== localCartSig;
+
         const mergedCoupons = nextIsStoreAdmin
           ? []
           : isFirstSyncForUser
@@ -308,18 +386,20 @@ export function UserStateSync() {
           ? []
           : shouldMergeCart
           ? mergeCart(remoteCart, localCart)
+          : shouldPreferLocalPendingCart
+          ? localCart
           : remoteCart;
 
-        const remoteCouponSig = signatureOf(remoteCoupons);
         const mergedCouponSig = signatureOf(mergedCoupons);
-        const remoteCartSig = signatureOf(remoteCart);
         const mergedCartSig = signatureOf(mergedCart);
-        const localCouponSig = signatureOf(localCoupons);
-        const localCartSig = signatureOf(localCart);
 
-        // Seteamos primero los signatures esperados para evitar rebotes de eventos locales.
+        // Seteamos signature de cupones para evitar rebotes de eventos locales.
         lastCouponSigRef.current = mergedCouponSig;
-        lastCartSigRef.current = mergedCartSig;
+
+        // Para carrito solo marcamos synced cuando la fuente de verdad es remota.
+        if (!forceEmptyCart && !shouldMergeCart && !shouldPreferLocalPendingCart) {
+          lastCartSigRef.current = mergedCartSig;
+        }
 
         if (localCouponSig !== mergedCouponSig) {
           writeLocalClaimedCoupons(mergedCoupons);
@@ -329,11 +409,27 @@ export function UserStateSync() {
           setItems(mergedCart as any);
         }
 
-        if ((shouldMergeCoupons || shouldMergeCart || forceEmptyCart || nextIsStoreAdmin) && (remoteCouponSig !== mergedCouponSig || remoteCartSig !== mergedCartSig)) {
-          await saveUserPrefs({
-            claimedCoupons: mergedCoupons,
-            cartItems: mergedCart,
-          });
+        const shouldPersistCoupons =
+          (shouldMergeCoupons || nextIsStoreAdmin) &&
+          remoteCouponSig !== mergedCouponSig;
+
+        if (shouldPersistCoupons) {
+          await saveUserPrefs({ claimedCoupons: mergedCoupons });
+        }
+
+        const shouldPersistCart =
+          (shouldMergeCart || forceEmptyCart || nextIsStoreAdmin || shouldPreferLocalPendingCart) &&
+          remoteCartSig !== mergedCartSig;
+
+        if (shouldPersistCart) {
+          writePendingCartSync(nextUserId, mergedCartSig);
+          const cartOk = await saveUserPrefs({ cartItems: mergedCart });
+          if (cartOk) {
+            lastCartSigRef.current = mergedCartSig;
+            clearPendingCartSync(nextUserId);
+          }
+        } else if (remoteCartSig === mergedCartSig) {
+          clearPendingCartSync(nextUserId);
         }
 
         if (forceEmptyCart) {
@@ -371,12 +467,17 @@ export function UserStateSync() {
     if (!userId || !initialSyncDone || !hasHydrated) return;
 
     const nextSig = signatureOf(cartPayload);
-    if (nextSig === lastCartSigRef.current) return;
+    if (nextSig === lastCartSigRef.current) {
+      clearPendingCartSync(userId);
+      return;
+    }
+
+    writePendingCartSync(userId, nextSig);
 
     if (cartTimerRef.current) clearTimeout(cartTimerRef.current);
     cartTimerRef.current = setTimeout(async () => {
       await saveCartNow(cartPayload);
-    }, 250);
+    }, 150);
 
     return () => {
       if (cartTimerRef.current) clearTimeout(cartTimerRef.current);
@@ -389,8 +490,12 @@ export function UserStateSync() {
     const flush = () => {
       const payload = sanitizeCartItems(useCartStore.getState().items);
       const nextSig = signatureOf(payload);
-      if (nextSig === lastCartSigRef.current) return;
-      lastCartSigRef.current = nextSig;
+      if (nextSig === lastCartSigRef.current) {
+        clearPendingCartSync(userId);
+        return;
+      }
+
+      writePendingCartSync(userId, nextSig);
 
       // keepalive evita perder cambios al recargar/cerrar pestaña.
       fetch("/api/auth/me", {
@@ -419,6 +524,9 @@ export function UserStateSync() {
       forceEmptyCartRef.current = true;
       setItems([]);
       lastCartSigRef.current = signatureOf([]);
+      if (typeof userId === "number") {
+        writePendingCartSync(userId, signatureOf([]));
+      }
       saveUserPrefs({ cartItems: [] });
     };
 
@@ -426,7 +534,7 @@ export function UserStateSync() {
     return () => {
       window.removeEventListener("amg-cart-force-empty", onForceEmpty);
     };
-  }, [setItems]);
+  }, [setItems, userId]);
 
   useEffect(() => {
     if (!userId || !initialSyncDone) return;
@@ -436,8 +544,10 @@ export function UserStateSync() {
       const nextSig = signatureOf(claimed);
       if (nextSig === lastCouponSigRef.current) return;
 
-      await saveUserPrefs({ claimedCoupons: claimed });
-      lastCouponSigRef.current = nextSig;
+      const ok = await saveUserPrefs({ claimedCoupons: claimed });
+      if (ok) {
+        lastCouponSigRef.current = nextSig;
+      }
     };
 
     const onChange = () => {
@@ -454,4 +564,5 @@ export function UserStateSync() {
 
   return null;
 }
+
 

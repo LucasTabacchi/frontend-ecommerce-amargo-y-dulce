@@ -46,17 +46,26 @@ function readStoreAdminFlag() {
 
 type Props = {
   code: string;
+  initialApplied?: boolean;
+  initialIsStoreAdmin?: boolean;
+  initialIsLoggedIn?: boolean;
+  initialAuthResolved?: boolean;
 };
 
-export function ApplyCouponButton({ code }: Props) {
+export function ApplyCouponButton({
+  code,
+  initialApplied = false,
+  initialIsStoreAdmin = false,
+  initialIsLoggedIn = false,
+  initialAuthResolved = false,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const normalized = normalizeCode(code);
-  const [applied, setApplied] = useState(false);
-  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [authResolved, setAuthResolved] = useState(false);
-  const [couponResolved, setCouponResolved] = useState(false);
+  const [applied, setApplied] = useState(Boolean(initialApplied && normalized));
+  const [isStoreAdmin, setIsStoreAdmin] = useState(Boolean(initialIsStoreAdmin));
+  const [isLoggedIn, setIsLoggedIn] = useState(Boolean(initialIsLoggedIn));
+  const [authResolved, setAuthResolved] = useState(Boolean(initialAuthResolved));
   const [loginNotice, setLoginNotice] = useState<string | null>(null);
 
   useEffect(() => {
@@ -89,7 +98,9 @@ export function ApplyCouponButton({ code }: Props) {
               .map((v: unknown) => normalizeCode(String(v ?? "")))
               .filter(Boolean)
           );
-          setApplied(Boolean(normalized && (claimedSet.has(normalized) || localClaimed.has(normalized))));
+          setApplied(
+            Boolean(normalized && (claimedSet.has(normalized) || localClaimed.has(normalized)))
+          );
         } else {
           setApplied(false);
         }
@@ -105,8 +116,16 @@ export function ApplyCouponButton({ code }: Props) {
       }
     };
 
+    if (initialAuthResolved && initialIsLoggedIn && initialApplied && normalized) {
+      const claimed = readClaimedCoupons();
+      if (!claimed.has(normalized)) {
+        claimed.add(normalized);
+        saveClaimedCoupons(claimed);
+      }
+    }
+
     syncFromStorage();
-    refreshMe();
+    void refreshMe();
     window.addEventListener("amg-auth-changed", refreshMe);
     window.addEventListener("storage", syncFromStorage);
 
@@ -115,25 +134,18 @@ export function ApplyCouponButton({ code }: Props) {
       window.removeEventListener("amg-auth-changed", refreshMe);
       window.removeEventListener("storage", syncFromStorage);
     };
-  }, [normalized]);
+  }, [normalized, initialAuthResolved, initialIsLoggedIn, initialApplied]);
 
   useEffect(() => {
-    setCouponResolved(false);
     if (!authResolved) return;
-    if (!normalized) {
-      setCouponResolved(true);
-      return;
-    }
 
     const syncState = () => {
       if (!isLoggedIn) {
         setApplied(false);
-        setCouponResolved(true);
         return;
       }
       const claimed = readClaimedCoupons();
       setApplied(claimed.has(normalized));
-      setCouponResolved(true);
     };
 
     syncState();
@@ -154,7 +166,7 @@ export function ApplyCouponButton({ code }: Props) {
     setLoginNotice(null);
     if (isStoreAdmin) return;
     if (!normalized) return;
-    if (!authResolved || !couponResolved) return;
+    if (!authResolved) return;
 
     let loggedNow = isLoggedIn;
     try {
@@ -184,7 +196,7 @@ export function ApplyCouponButton({ code }: Props) {
     setApplied(true);
   }
 
-  const isLoadingButton = !authResolved || !couponResolved;
+  const isLoadingButton = !authResolved;
 
   return (
     <>
