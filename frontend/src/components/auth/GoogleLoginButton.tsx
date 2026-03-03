@@ -9,24 +9,24 @@ export function GoogleLoginButton({ className = "", onStart }: Props) {
   const next =
     typeof window !== "undefined"
       ? (() => {
-          const pathname = window.location.pathname || "/";
-          const params = new URLSearchParams(window.location.search || "");
-          const hasLoginTrigger = params.get("login") === "1";
-          const nextParam = String(params.get("next") || "").trim();
+        const pathname = window.location.pathname || "/";
+        const params = new URLSearchParams(window.location.search || "");
+        const nextParam = String(params.get("next") || "").trim();
+        if (nextParam.startsWith("/")) {
+          // Si la pantalla ya define next (ej. carrito -> checkout),
+          // siempre respetamos ese destino para completar el flujo.
+          return nextParam;
+        }
 
-          // Si el login fue pedido para volver a la misma pantalla
-          // (ej. /cupones -> aplicar cupón), no volvemos con login=1
-          // para evitar reabrir el modal en el retorno de OAuth.
-          if (hasLoginTrigger && nextParam.startsWith("/")) {
-            const nextPathOnly = nextParam.split("?")[0] || nextParam;
-            if (nextPathOnly === pathname) {
-              params.delete("login");
-            }
-          }
+        // Si no hay next explícito, limpiamos login=1 para evitar
+        // reabrir el modal al volver del OAuth.
+        if (params.get("login") === "1") {
+          params.delete("login");
+        }
 
-          const query = params.toString();
-          return query ? `${pathname}?${query}` : pathname;
-        })()
+        const query = params.toString();
+        return query ? `${pathname}?${query}` : pathname;
+      })()
       : "/";
 
   // ✅ Router único: START es /api/auth/google?start=1&next=...

@@ -18,8 +18,6 @@ type Suggestion = {
 };
 
 type MeResponse = { user: any | null };
-const AUTH_USER_SNAPSHOT_KEY = "amg_auth_user_snapshot_v1";
-const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
 
 function normalizeQty(v: any) {
   const n = Number(v);
@@ -63,42 +61,7 @@ function safeName(v: any) {
   return s.length ? s : null;
 }
 
-function readAuthUserSnapshot() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(AUTH_USER_SNAPSHOT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed && typeof parsed === "object" ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeAuthUserSnapshot(user: any | null) {
-  if (typeof window === "undefined") return;
-  try {
-    if (user && typeof user === "object") {
-      localStorage.setItem(AUTH_USER_SNAPSHOT_KEY, JSON.stringify(user));
-      return;
-    }
-    localStorage.removeItem(AUTH_USER_SNAPSHOT_KEY);
-  } catch {}
-}
-
-function readStoreAdminFlag() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
-export function Header() {
+export function Header({ initialUser = null }: { initialUser?: any | null }) {
   const router = useRouter();
 
   // ✅ evita hydration mismatch: en SSR siempre contamos 0, y en cliente ya mostramos el real
@@ -120,9 +83,11 @@ export function Header() {
   const [scrolled, setScrolled] = useState(false);
 
   // ✅ auth
-  const [meLoading, setMeLoading] = useState(true);
-  const [me, setMe] = useState<any | null>(null);
-  const [storeAdminHint, setStoreAdminHint] = useState<boolean | null>(null);
+  const [meLoading, setMeLoading] = useState(false);
+  const [me, setMe] = useState<any | null>(initialUser ?? null);
+  const [storeAdminHint, setStoreAdminHint] = useState<boolean | null>(
+    typeof initialUser?.isStoreAdmin === "boolean" ? Boolean(initialUser.isStoreAdmin) : null
+  );
 
   // ✅ Profile dropdown (desktop)
   const [profileOpen, setProfileOpen] = useState(false);
@@ -164,12 +129,10 @@ export function Header() {
       const j: MeResponse = await r.json().catch(() => ({ user: null }));
       const nextUser = j.user ?? null;
       setMe(nextUser);
-      writeAuthUserSnapshot(nextUser);
       setStoreAdminHint(Boolean(nextUser?.isStoreAdmin));
     } catch {
       setMe(null);
-      writeAuthUserSnapshot(null);
-      setStoreAdminHint(readStoreAdminFlag());
+      setStoreAdminHint(null);
     } finally {
       setMeLoading(false);
     }
@@ -184,7 +147,6 @@ export function Header() {
       });
     } finally {
       setMe(null);
-      writeAuthUserSnapshot(null);
       setStoreAdminHint(null);
       setLoginOpen(false);
       setProfileOpen(false);
@@ -216,12 +178,17 @@ export function Header() {
 
   // ✅ mount
   useEffect(() => {
-    const cachedMe = readAuthUserSnapshot();
-    setStoreAdminHint(readStoreAdminFlag());
-    if (cachedMe) {
-      setMe(cachedMe);
+    if (initialUser && typeof initialUser === "object") {
+      setMe(initialUser);
+      if (typeof initialUser?.isStoreAdmin === "boolean") {
+        setStoreAdminHint(Boolean(initialUser.isStoreAdmin));
+      }
+    } else {
+      setMe(null);
+      setStoreAdminHint(null);
     }
-    refreshMe({ quiet: Boolean(cachedMe) });
+
+    refreshMe({ quiet: true });
 
     const onFocus = () => refreshMe({ quiet: true });
     const onAuthChanged = () => refreshMe({ quiet: true });
@@ -546,8 +513,9 @@ export function Header() {
         safeName(me?.username) ||
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
-  const isStoreAdmin = typeof me?.isStoreAdmin === "boolean" ? me.isStoreAdmin : storeAdminHint === true;
-  const canUseShopFeatures = !isStoreAdmin;
+  const resolvedIsStoreAdmin =
+    typeof me?.isStoreAdmin === "boolean" ? me.isStoreAdmin : storeAdminHint;
+  const canUseShopFeatures = resolvedIsStoreAdmin !== true;
 
   return (
     <header
