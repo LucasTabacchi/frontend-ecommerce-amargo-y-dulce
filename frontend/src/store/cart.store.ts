@@ -10,6 +10,7 @@ export type CartItem = ProductCardItem & {
 };
 
 const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+const CART_DIRTY_AT_KEY = "amg_cart_local_dirty_at_v1";
 
 type CartState = {
   items: CartItem[];
@@ -70,6 +71,13 @@ function isStoreAdminClient() {
   } catch {
     return false;
   }
+}
+
+function markCartDirtyClient() {
+  if (typeof window === "undefined") return;
+  try {
+    localStorage.setItem(CART_DIRTY_AT_KEY, String(Date.now()));
+  } catch {}
 }
 
 /**
@@ -169,6 +177,7 @@ export const useCartStore = create<CartState>()(
 
       addItem: (product, qty = 1) => {
         if (isStoreAdminClient()) return;
+        markCartDirtyClient();
         // ✅ al agregar, mínimo 1
         const addQty = Math.max(1, normalizeQty(qty));
 
@@ -216,6 +225,7 @@ export const useCartStore = create<CartState>()(
 
       removeItem: (slug) => {
         if (isStoreAdminClient()) return;
+        markCartDirtyClient();
         set((state) => ({
           items: state.items.filter((i) => i.slug !== slug),
         }));
@@ -223,6 +233,7 @@ export const useCartStore = create<CartState>()(
 
       inc: (slug) => {
         if (isStoreAdminClient()) return;
+        markCartDirtyClient();
         set((state) => ({
           items: state.items.map((i) => {
             if (i.slug !== slug) return i;
@@ -238,6 +249,7 @@ export const useCartStore = create<CartState>()(
 
       dec: (slug) => {
         if (isStoreAdminClient()) return;
+        markCartDirtyClient();
         set((state) => ({
           items: state.items
             .map((i) => {
@@ -251,7 +263,10 @@ export const useCartStore = create<CartState>()(
         }));
       },
 
-      clear: () => set({ items: [] }),
+      clear: () => {
+        markCartDirtyClient();
+        set({ items: [] });
+      },
 
       // ✅ totalItems: no forzamos mínimo 1; sumamos qty real (0 no debería existir igual)
       totalItems: () => get().items.reduce((acc, i) => acc + normalizeQty(i.qty), 0),
@@ -284,3 +299,4 @@ export const useCartStore = create<CartState>()(
     }
   )
 );
+
