@@ -217,6 +217,7 @@ export function UserStateSync() {
   const CART_PENDING_SYNC_KEY_PREFIX = "amg_cart_pending_sync_v1:";
   const PENDING_CART_TTL_MS = 2 * 60_000;
   const CART_DIRTY_AT_KEY = "amg_cart_local_dirty_at_v1";
+  const CART_LOCAL_SNAPSHOT_KEY = "amg_cart_local_snapshot_v1";
 
   function cartPendingSyncKey(userId: number) {
     return `${CART_PENDING_SYNC_KEY_PREFIX}${userId}`;
@@ -274,6 +275,25 @@ export function UserStateSync() {
     } catch {}
   }
 
+  function readLocalCartSnapshot() {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(CART_LOCAL_SNAPSHOT_KEY);
+      if (raw === null) return null;
+      const parsed = JSON.parse(raw);
+      return sanitizeCartItems(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  function clearLocalCartSnapshot() {
+    if (typeof window === "undefined") return;
+    try {
+      localStorage.removeItem(CART_LOCAL_SNAPSHOT_KEY);
+    } catch {}
+  }
+
   const cartPayload = useMemo(() => sanitizeCartItems(items), [items]);
 
   async function saveUserPrefs(partial: { claimedCoupons?: string[]; cartItems?: any[] }) {
@@ -303,6 +323,7 @@ export function UserStateSync() {
     if (nextSig === lastCartSigRef.current) {
       clearPendingCartSync(userId);
       clearLocalCartDirtyAt();
+      clearLocalCartSnapshot();
       return true;
     }
 
@@ -312,6 +333,7 @@ export function UserStateSync() {
       lastCartSigRef.current = nextSig;
       clearPendingCartSync(userId);
       clearLocalCartDirtyAt();
+      clearLocalCartSnapshot();
     }
     return ok;
   }
@@ -333,6 +355,7 @@ export function UserStateSync() {
             clearPendingCartSync(lastUser);
           }
           clearLocalCartDirtyAt();
+          clearLocalCartSnapshot();
           setUserId(null);
           bootstrappedUserIdRef.current = null;
           lastCartSigRef.current = "";
@@ -355,6 +378,7 @@ export function UserStateSync() {
         if (switchedAccount && typeof lastAuthUserId === "number") {
           clearPendingCartSync(lastAuthUserId);
           clearLocalCartDirtyAt();
+          clearLocalCartSnapshot();
         }
 
         const remoteCoupons = sanitizeClaimedCoupons(user?.claimedCoupons);
@@ -362,52 +386,56 @@ export function UserStateSync() {
 
         const remoteCart = sanitizeCartItems(user?.cartItems);
         const localCart = sanitizeCartItems(useCartStore.getState().items);
+        const localCartSnapshot = readLocalCartSnapshot();
+        const localStoreCartSig = signatureOf(localCart);
 
         // Solo en el primer sync del usuario actual hacemos merge local+remoto
         // si el backend está vacío (migración de carrito invitado -> cuenta).
         // Si backend ya tiene datos, backend manda para no revivir items borrados
         // desde otro dispositivo.
-        const shouldMergeCart =
-          isFirstSyncForUser &&
-          remoteCart.length === 0 &&
-          localCart.length > 0;
-        const shouldMergeCoupons =
-          isFirstSyncForUser &&
-          !switchedAccount &&
-          remoteCoupons.length === 0 &&
-          localCoupons.length > 0;
         const forceEmptyCart = forceEmptyCartRef.current;
-
-        const remoteCouponSig = signatureOf(remoteCoupons);
-        const remoteCartSig = signatureOf(remoteCart);
-        const localCouponSig = signatureOf(localCoupons);
-        const localCartSig = signatureOf(localCart);
-
-        const pendingCart = readPendingCartSync(nextUserId);
-        const hasRecentPendingCart =
-          !nextIsStoreAdmin &&
-          Boolean(pendingCart?.sig) &&
-          pendingCart?.sig === localCartSig &&
-          Date.now() - Number(pendingCart?.at ?? 0) <= PENDING_CART_TTL_MS;
-
         const localCartDirtyAt = readLocalCartDirtyAt();
         const hasRecentLocalCartDirty =
           !nextIsStoreAdmin &&
           localCartDirtyAt > 0 &&
           Date.now() - localCartDirtyAt <= PENDING_CART_TTL_MS;
+        const localUnsyncedCart =
+          hasRecentLocalCartDirty && localCartSnapshot !== null ? localCartSnapshot : localCart;
+        const localUnsyncedCartSig = signatureOf(localUnsyncedCart);
+
+        const shouldMergeCart =
+          isFirstSyncForUser &&
+          remoteCart.length === 0 &&
+          localUnsyncedCart.length > 0;
+        const shouldMergeCoupons =
+          isFirstSyncForUser &&
+          !switchedAccount &&
+          remoteCoupons.length === 0 &&
+          localCoupons.length > 0;
+
+        const remoteCouponSig = signatureOf(remoteCoupons);
+        const remoteCartSig = signatureOf(remoteCart);
+        const localCouponSig = signatureOf(localCoupons);
+
+        const pendingCart = readPendingCartSync(nextUserId);
+        const hasRecentPendingCart =
+          !nextIsStoreAdmin &&
+          Boolean(pendingCart?.sig) &&
+          pendingCart?.sig === localUnsyncedCartSig &&
+          Date.now() - Number(pendingCart?.at ?? 0) <= PENDING_CART_TTL_MS;
 
         const shouldPreferLocalPendingCart =
           !forceEmptyCart &&
           !shouldMergeCart &&
           hasRecentPendingCart &&
-          remoteCartSig !== localCartSig;
+          remoteCartSig !== localUnsyncedCartSig;
 
         const shouldPreferRecentLocalCart =
           !forceEmptyCart &&
           !shouldMergeCart &&
           !switchedAccount &&
           hasRecentLocalCartDirty &&
-          remoteCartSig !== localCartSig;
+          remoteCartSig !== localUnsyncedCartSig;
 
         const shouldPreferLocalUnsyncedCart =
           shouldPreferLocalPendingCart || shouldPreferRecentLocalCart;
@@ -424,9 +452,9 @@ export function UserStateSync() {
           : forceEmptyCart
           ? []
           : shouldMergeCart
-          ? mergeCart(remoteCart, localCart)
+          ? mergeCart(remoteCart, localUnsyncedCart)
           : shouldPreferLocalUnsyncedCart
-          ? localCart
+          ? localUnsyncedCart
           : remoteCart;
 
         const mergedCouponSig = signatureOf(mergedCoupons);
@@ -444,7 +472,7 @@ export function UserStateSync() {
           writeLocalClaimedCoupons(mergedCoupons);
         }
 
-        if (localCartSig !== mergedCartSig) {
+        if (localStoreCartSig !== mergedCartSig) {
           setItems(mergedCart as any);
         }
 
@@ -470,10 +498,12 @@ export function UserStateSync() {
             lastCartSigRef.current = mergedCartSig;
             clearPendingCartSync(nextUserId);
             clearLocalCartDirtyAt();
+            clearLocalCartSnapshot();
           }
         } else if (remoteCartSig === mergedCartSig) {
           clearPendingCartSync(nextUserId);
           clearLocalCartDirtyAt();
+          clearLocalCartSnapshot();
         }
 
         if (forceEmptyCart) {
@@ -514,6 +544,7 @@ export function UserStateSync() {
     if (nextSig === lastCartSigRef.current) {
       clearPendingCartSync(userId);
       clearLocalCartDirtyAt();
+      clearLocalCartSnapshot();
       return;
     }
 
@@ -538,6 +569,7 @@ export function UserStateSync() {
       if (nextSig === lastCartSigRef.current) {
         clearPendingCartSync(userId);
         clearLocalCartDirtyAt();
+        clearLocalCartSnapshot();
         return;
       }
 
@@ -579,6 +611,7 @@ export function UserStateSync() {
           clearPendingCartSync(userId);
         }
         clearLocalCartDirtyAt();
+        clearLocalCartSnapshot();
       });
     };
 

@@ -11,6 +11,7 @@ export type CartItem = ProductCardItem & {
 
 const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
 const CART_DIRTY_AT_KEY = "amg_cart_local_dirty_at_v1";
+const CART_LOCAL_SNAPSHOT_KEY = "amg_cart_local_snapshot_v1";
 
 type CartState = {
   items: CartItem[];
@@ -77,6 +78,14 @@ function markCartDirtyClient() {
   if (typeof window === "undefined") return;
   try {
     localStorage.setItem(CART_DIRTY_AT_KEY, String(Date.now()));
+  } catch {}
+}
+
+function writeLocalCartSnapshotClient(items: CartItem[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const normalized = normalizeCartItems(items as any[]);
+    localStorage.setItem(CART_LOCAL_SNAPSHOT_KEY, JSON.stringify(normalized));
   } catch {}
 }
 
@@ -170,10 +179,11 @@ export const useCartStore = create<CartState>()(
       hasHydrated: false,
       setHasHydrated: (v) => set({ hasHydrated: v }),
 
-      setItems: (items) =>
-        set({
-          items: isStoreAdminClient() ? [] : normalizeCartItems(items as any[]),
-        }),
+      setItems: (items) => {
+        const nextItems = isStoreAdminClient() ? [] : normalizeCartItems(items as any[]);
+        writeLocalCartSnapshotClient(nextItems);
+        set({ items: nextItems });
+      },
 
       addItem: (product, qty = 1) => {
         if (isStoreAdminClient()) return;
@@ -195,20 +205,22 @@ export const useCartStore = create<CartState>()(
             const existingStock =
               typeof existing.stock === "number" ? existing.stock : normalized.stock ?? null;
 
+            const nextItems = state.items.map((i: any) => {
+              if ((i.documentId ?? i.slug) !== key) return i;
+
+              const nextQtyRaw = normalizeQty(i.qty) + addQty;
+              const nextQty = Math.max(1, clampQty(nextQtyRaw, existingStock));
+
+              return {
+                ...i,
+                // ✅ mantenemos stock (si aparece nuevo lo actualizamos)
+                stock: existingStock,
+                qty: nextQty,
+              };
+            });
+            writeLocalCartSnapshotClient(nextItems as CartItem[]);
             return {
-              items: state.items.map((i: any) => {
-                if ((i.documentId ?? i.slug) !== key) return i;
-
-                const nextQtyRaw = normalizeQty(i.qty) + addQty;
-                const nextQty = Math.max(1, clampQty(nextQtyRaw, existingStock));
-
-                return {
-                  ...i,
-                  // ✅ mantenemos stock (si aparece nuevo lo actualizamos)
-                  stock: existingStock,
-                  qty: nextQty,
-                };
-              }),
+              items: nextItems,
             };
           }
 
@@ -219,7 +231,9 @@ export const useCartStore = create<CartState>()(
 
           // ✅ si el stock existe, clamp inicial también
           const initialQty = Math.max(1, clampQty(normalized.qty, normalized.stock ?? null));
-          return { items: [...state.items, { ...normalized, qty: initialQty }] };
+          const nextItems = [...state.items, { ...normalized, qty: initialQty }];
+          writeLocalCartSnapshotClient(nextItems as CartItem[]);
+          return { items: nextItems };
         });
       },
 
@@ -227,7 +241,11 @@ export const useCartStore = create<CartState>()(
         if (isStoreAdminClient()) return;
         markCartDirtyClient();
         set((state) => ({
-          items: state.items.filter((i) => i.slug !== slug),
+          items: (() => {
+            const nextItems = state.items.filter((i) => i.slug !== slug);
+            writeLocalCartSnapshotClient(nextItems as CartItem[]);
+            return nextItems;
+          })(),
         }));
       },
 
@@ -235,15 +253,19 @@ export const useCartStore = create<CartState>()(
         if (isStoreAdminClient()) return;
         markCartDirtyClient();
         set((state) => ({
-          items: state.items.map((i) => {
-            if (i.slug !== slug) return i;
+          items: (() => {
+            const nextItems = state.items.map((i) => {
+              if (i.slug !== slug) return i;
 
-            const stock = typeof i.stock === "number" ? i.stock : null;
-            const nextQtyRaw = Math.max(1, normalizeQty(i.qty) + 1);
-            const nextQty = Math.max(1, clampQty(nextQtyRaw, stock));
+              const stock = typeof i.stock === "number" ? i.stock : null;
+              const nextQtyRaw = Math.max(1, normalizeQty(i.qty) + 1);
+              const nextQty = Math.max(1, clampQty(nextQtyRaw, stock));
 
-            return { ...i, qty: nextQty };
-          }),
+              return { ...i, qty: nextQty };
+            });
+            writeLocalCartSnapshotClient(nextItems as CartItem[]);
+            return nextItems;
+          })(),
         }));
       },
 
@@ -251,20 +273,25 @@ export const useCartStore = create<CartState>()(
         if (isStoreAdminClient()) return;
         markCartDirtyClient();
         set((state) => ({
-          items: state.items
-            .map((i) => {
-              if (i.slug !== slug) return i;
-              // ✅ baja 1 y permite 0
-              const nextQty = normalizeQty(i.qty) - 1;
-              return { ...i, qty: normalizeQty(nextQty) };
-            })
-            // ✅ si llegó a 0, se elimina del carrito
-            .filter((i) => normalizeQty(i.qty) > 0),
+          items: (() => {
+            const nextItems = state.items
+              .map((i) => {
+                if (i.slug !== slug) return i;
+                // ✅ baja 1 y permite 0
+                const nextQty = normalizeQty(i.qty) - 1;
+                return { ...i, qty: normalizeQty(nextQty) };
+              })
+              // ✅ si llegó a 0, se elimina del carrito
+              .filter((i) => normalizeQty(i.qty) > 0);
+            writeLocalCartSnapshotClient(nextItems as CartItem[]);
+            return nextItems;
+          })(),
         }));
       },
 
       clear: () => {
         markCartDirtyClient();
+        writeLocalCartSnapshotClient([]);
         set({ items: [] });
       },
 
