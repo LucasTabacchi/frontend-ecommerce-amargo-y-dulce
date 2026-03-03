@@ -19,6 +19,15 @@ function markUserSynced(userId: number) {
   } catch {}
 }
 
+function hasUserSyncedBefore(userId: number) {
+  if (typeof window === "undefined") return false;
+  try {
+    return localStorage.getItem(userSyncKey(userId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
 function readLastAuthUserId() {
   if (typeof window === "undefined") return null;
   try {
@@ -371,6 +380,7 @@ export function UserStateSync() {
         setUserId(nextUserId);
         writeStoreAdminFlag(nextIsStoreAdmin);
         const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
+        const wasSyncedBefore = hasUserSyncedBefore(nextUserId);
         const lastAuthUserId = readLastAuthUserId();
         const switchedAccount =
           typeof lastAuthUserId === "number" && lastAuthUserId !== nextUserId;
@@ -389,10 +399,11 @@ export function UserStateSync() {
         const localCartSnapshot = readLocalCartSnapshot();
         const localStoreCartSig = signatureOf(localCart);
 
-        // Solo en el primer sync del usuario actual hacemos merge local+remoto
-        // si el backend está vacío (migración de carrito invitado -> cuenta).
-        // Si backend ya tiene datos, backend manda para no revivir items borrados
-        // desde otro dispositivo.
+        const remoteCouponSig = signatureOf(remoteCoupons);
+        const remoteCartSig = signatureOf(remoteCart);
+        const localCouponSig = signatureOf(localCoupons);
+
+        const pendingCart = readPendingCartSync(nextUserId);
         const forceEmptyCart = forceEmptyCartRef.current;
         const localCartDirtyAt = readLocalCartDirtyAt();
         const hasRecentLocalCartDirty =
@@ -402,27 +413,26 @@ export function UserStateSync() {
         const localUnsyncedCart =
           hasRecentLocalCartDirty && localCartSnapshot !== null ? localCartSnapshot : localCart;
         const localUnsyncedCartSig = signatureOf(localUnsyncedCart);
-
-        const shouldMergeCart =
-          isFirstSyncForUser &&
-          remoteCart.length === 0 &&
-          localUnsyncedCart.length > 0;
-        const shouldMergeCoupons =
-          isFirstSyncForUser &&
-          !switchedAccount &&
-          remoteCoupons.length === 0 &&
-          localCoupons.length > 0;
-
-        const remoteCouponSig = signatureOf(remoteCoupons);
-        const remoteCartSig = signatureOf(remoteCart);
-        const localCouponSig = signatureOf(localCoupons);
-
-        const pendingCart = readPendingCartSync(nextUserId);
         const hasRecentPendingCart =
           !nextIsStoreAdmin &&
           Boolean(pendingCart?.sig) &&
           pendingCart?.sig === localUnsyncedCartSig &&
           Date.now() - Number(pendingCart?.at ?? 0) <= PENDING_CART_TTL_MS;
+
+        // Migración invitado->cuenta: solo una vez por usuario/dispositivo y
+        // únicamente cuando hay cambios locales recientes para no revivir carritos viejos.
+        const shouldMergeCart =
+          isFirstSyncForUser &&
+          !wasSyncedBefore &&
+          !switchedAccount &&
+          remoteCart.length === 0 &&
+          localUnsyncedCart.length > 0 &&
+          (hasRecentLocalCartDirty || hasRecentPendingCart);
+        const shouldMergeCoupons =
+          isFirstSyncForUser &&
+          !switchedAccount &&
+          remoteCoupons.length === 0 &&
+          localCoupons.length > 0;
 
         const shouldPreferLocalPendingCart =
           !forceEmptyCart &&
