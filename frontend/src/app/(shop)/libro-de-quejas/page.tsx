@@ -53,6 +53,10 @@ export default function LibroDeQuejasPage() {
     }
   }, [meLoading, me, router]);
 
+  if (meLoading || me?.isStoreAdmin) {
+    return null;
+  }
+
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     setLoading(true);
@@ -97,11 +101,7 @@ export default function LibroDeQuejasPage() {
       <div className="mx-auto w-full max-w-md">
         {/* Card vertical */}
         <div className="rounded-lg bg-neutral-50 p-6 shadow-sm ring-1 ring-neutral-200">
-          {meLoading ? null : me?.isStoreAdmin ? (
-            <p className="rounded-md bg-blue-50 p-4 text-sm text-blue-800">
-              La cuenta tienda no puede enviar reclamos desde esta sección.
-            </p>
-          ) : ok ? (
+          {ok ? (
             <p className="rounded-md bg-green-100 p-4 text-sm text-green-700">
               Gracias por contactarnos. Tu mensaje fue enviado correctamente.
             </p>
