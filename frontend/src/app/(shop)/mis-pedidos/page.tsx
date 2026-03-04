@@ -73,7 +73,7 @@ export default function MisPedidosPage() {
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
 
-  const [loading, setLoading] = useState(false);
+  const [ordersReady, setOrdersReady] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -111,7 +111,7 @@ export default function MisPedidosPage() {
     if (meLoading || !me || me?.isStoreAdmin) return;
 
     (async () => {
-      setLoading(true);
+      setOrdersReady(false);
       setError(null);
       try {
         const r = await fetch("/api/orders/my", { cache: "no-store" });
@@ -127,16 +127,21 @@ export default function MisPedidosPage() {
         setOrders([]);
         setError(err?.message || "No se pudieron cargar tus pedidos.");
       } finally {
-        setLoading(false);
+        setOrdersReady(true);
       }
     })();
   }, [meLoading, me]);
 
-  if (meLoading) {
+  const showLoader = meLoading || (!!me && !me.isStoreAdmin && !ordersReady);
+
+  if (showLoader) {
     return (
       <main>
         <Container>
-          <div className="py-10">Cargando…</div>
+          <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-600 border-t-transparent" />
+            <p className="text-sm font-medium text-neutral-600">Cargando...</p>
+          </div>
         </Container>
       </main>
     );
@@ -155,19 +160,13 @@ export default function MisPedidosPage() {
             Estos son tus pedidos asociados a tu cuenta.
           </p>
 
-          {loading && (
-            <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">
-              Cargando pedidos…
-            </div>
-          )}
-
           {error && (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-red-700">
               {error}
             </div>
           )}
 
-          {!error && !loading && orders.length === 0 && (
+          {!error && orders.length === 0 && (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">
               Todavía no tenés pedidos.
             </div>

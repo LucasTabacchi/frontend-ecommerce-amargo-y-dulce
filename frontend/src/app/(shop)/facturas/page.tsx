@@ -43,7 +43,7 @@ export default function FacturasPage() {
   const [meLoading, setMeLoading] = useState(true);
   const [me, setMe] = useState<any | null>(null);
 
-  const [loading, setLoading] = useState(true);
+  const [invoicesReady, setInvoicesReady] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
 
@@ -82,7 +82,7 @@ export default function FacturasPage() {
 
     (async () => {
       try {
-        setLoading(true);
+        setInvoicesReady(false);
         setError(null);
 
         const r = await fetch("/api/invoices/my", { cache: "no-store" });
@@ -99,7 +99,7 @@ export default function FacturasPage() {
         if (!alive) return;
         setError(e?.message || "Error cargando facturas.");
       } finally {
-        if (alive) setLoading(false);
+        if (alive) setInvoicesReady(true);
       }
     })();
 
@@ -108,11 +108,16 @@ export default function FacturasPage() {
     };
   }, [meLoading, me]);
 
-  if (meLoading) {
+  const showLoader = meLoading || (!!me && !me.isStoreAdmin && !invoicesReady);
+
+  if (showLoader) {
     return (
       <main>
-        <Container className="py-10">
-          <p className="text-sm text-neutral-600">Cargando…</p>
+        <Container>
+          <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
+            <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-600 border-t-transparent" />
+            <p className="text-sm font-medium text-neutral-600">Cargando...</p>
+          </div>
         </Container>
       </main>
     );
@@ -139,9 +144,7 @@ export default function FacturasPage() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          {loading ? (
-            <p className="text-sm text-neutral-600">Cargando…</p>
-          ) : error ? (
+          {error ? (
             <p className="text-sm text-red-600">{error}</p>
           ) : invoices.length === 0 ? (
             <p className="text-sm text-neutral-600">
