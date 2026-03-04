@@ -139,6 +139,19 @@ function getActionByStatus(status?: string | null) {
   return null;
 }
 
+function AdminPedidosLoader() {
+  return (
+    <main>
+      <Container>
+        <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
+          <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-600 border-t-transparent" />
+          <p className="text-sm font-medium text-neutral-600">Cargando...</p>
+        </div>
+      </Container>
+    </main>
+  );
+}
+
 function AdminPedidosPageContent() {
   const router = useRouter();
   const pathname = usePathname();
@@ -156,6 +169,7 @@ function AdminPedidosPageContent() {
   const [total, setTotal] = useState(0);
 
   const [loading, setLoading] = useState(false);
+  const [ordersReady, setOrdersReady] = useState(false);
   const [orders, setOrders] = useState<OrderRow[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -249,11 +263,13 @@ function AdminPedidosPageContent() {
       setError(e?.message || "No se pudieron cargar los pedidos.");
     } finally {
       setLoading(false);
+      setOrdersReady(true);
     }
   }
 
   useEffect(() => {
     if (!me || !isStoreAdmin) return;
+    setOrdersReady(false);
     loadOrders(q, statusFilter, page, pageSize);
   }, [me, isStoreAdmin, q, statusFilter, page, pageSize]);
 
@@ -300,15 +316,8 @@ function AdminPedidosPageContent() {
     return `Página ${page} de ${Math.max(1, pageCount)} · ${total} pedido${total === 1 ? "" : "s"}`;
   }, [page, pageCount, total]);
 
-  if (meLoading) {
-    return (
-      <main>
-        <Container>
-          <div className="py-10">Cargando…</div>
-        </Container>
-      </main>
-    );
-  }
+  const showLoader = meLoading || (!!me && isStoreAdmin && !ordersReady);
+  if (showLoader) return <AdminPedidosLoader />;
 
   if (!me) return null;
 
@@ -428,12 +437,6 @@ function AdminPedidosPageContent() {
             </div>
           </div>
 
-          {loading && (
-            <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">
-              Cargando pedidos…
-            </div>
-          )}
-
           {error && (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-red-700">
               {error}
@@ -446,7 +449,7 @@ function AdminPedidosPageContent() {
             </div>
           )}
 
-          {!error && !loading && orders.length === 0 && (
+          {!error && orders.length === 0 && (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">
               No se encontraron pedidos.
             </div>
@@ -567,7 +570,7 @@ function AdminPedidosPageContent() {
 
 export default function AdminPedidosPage() {
   return (
-    <Suspense fallback={<main><Container><div className="py-10">Cargando…</div></Container></main>}>
+    <Suspense fallback={<AdminPedidosLoader />}>
       <AdminPedidosPageContent />
     </Suspense>
   );
