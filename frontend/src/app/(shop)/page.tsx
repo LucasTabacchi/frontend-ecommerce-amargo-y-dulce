@@ -5,7 +5,6 @@ import { strapiGet } from "@/lib/strapi";
 import { toCardItem } from "@/lib/strapi-mappers";
 import { HeroCarousel } from "@/components/home/HeroCarousel";
 import { Metadata } from "next";
-import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -50,12 +49,9 @@ async function getBestSellers() {
   }
 }
 
-async function HomeBestSellersSection() {
+export default async function HomePage() {
   const bestSellers = await getBestSellers();
-  return <HomeBestSellers products={bestSellers} />;
-}
 
-export default function HomePage() {
   // Slides estáticos (pueden venir de Strapi en el futuro)
   const slides = [
     {
@@ -101,9 +97,7 @@ export default function HomePage() {
       </Container>
       <Container>
         <div className="pb-16">
-          <Suspense fallback={null}>
-            <HomeBestSellersSection />
-          </Suspense>
+          <HomeBestSellers products={bestSellers} />
         </div>
       </Container>
     </>
