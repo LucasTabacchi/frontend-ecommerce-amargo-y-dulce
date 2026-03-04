@@ -43,7 +43,7 @@ async function getBestSellers() {
     return Array.isArray(raw) ? raw.map(toCardItem) : [];
   } catch (error) {
     console.error("Error fetching best sellers:", error);
-    return [];
+    throw error instanceof Error ? error : new Error("Error fetching best sellers");
   } finally {
     clearTimeout(timeout);
   }
