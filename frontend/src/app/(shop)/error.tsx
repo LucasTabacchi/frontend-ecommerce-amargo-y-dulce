@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { Button } from "@/components/ui/Button";
@@ -13,10 +13,37 @@ export default function Error({
   reset: () => void;
 }) {
   const router = useRouter();
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
     console.error(error);
   }, [error]);
+
+  function handleRetry() {
+    if (busy) return;
+    setBusy(true);
+
+    try {
+      reset();
+      router.refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function handleGoHome() {
+    if (busy) return;
+    setBusy(true);
+
+    try {
+      router.replace("/");
+      setTimeout(() => {
+        window.location.assign("/");
+      }, 80);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   return (
     <Container>
@@ -28,13 +55,19 @@ export default function Error({
           </p>
         </div>
         <div className="flex gap-4">
-          <Button type="button" onClick={reset} className="bg-orange-600 text-white hover:bg-orange-700">
+          <Button
+            type="button"
+            onClick={handleRetry}
+            disabled={busy}
+            className="bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-60"
+          >
             Reintentar
           </Button>
           <Button
             type="button"
-            onClick={() => router.replace("/")}
-            className="bg-orange-600 text-white hover:bg-orange-700"
+            onClick={handleGoHome}
+            disabled={busy}
+            className="bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-60"
           >
             Volver al inicio
           </Button>

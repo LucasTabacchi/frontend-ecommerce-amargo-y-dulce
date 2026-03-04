@@ -223,7 +223,7 @@ function HeroSlide({
                 </div>
                 {isBlockedForStoreUser && (
                   <p className="mt-2 text-xs font-medium text-neutral-700">
-                    No disponible para cuenta tienda.
+                    No disponible para esta cuenta.
                   </p>
                 )}
               </>
