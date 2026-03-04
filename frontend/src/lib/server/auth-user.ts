@@ -1,8 +1,13 @@
 import "server-only";
 import { cookies } from "next/headers";
+import { cache } from "react";
 
 function normBase(url: string) {
-  return String(url || "").trim().replace(/\/$/, "");
+  let base = String(url || "").trim().replace(/\/$/, "");
+  if (base.toLowerCase().endsWith("/api")) {
+    base = base.slice(0, -4);
+  }
+  return base;
 }
 
 function normalizeUser(raw: any) {
@@ -20,7 +25,7 @@ function normalizeUser(raw: any) {
   };
 }
 
-export async function getServerAuthUser() {
+export const getServerAuthUser = cache(async function getServerAuthUser() {
   const jwt = cookies().get("strapi_jwt")?.value;
   if (!jwt) return null;
 
@@ -29,13 +34,24 @@ export async function getServerAuthUser() {
   );
   if (!STRAPI) return null;
 
-  const res = await fetch(`${STRAPI}/api/users/me`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: "no-store",
-  }).catch(() => null);
+  const timeoutMs = 1200;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
-  if (!res || !res.ok) return null;
+  try {
+    const res = await fetch(`${STRAPI}/api/users/me`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: "no-store",
+      signal: controller.signal,
+    }).catch(() => null);
 
-  const payload = await res.json().catch(() => null);
-  return normalizeUser(payload);
-}
+    if (!res || !res.ok) return null;
+
+    const payload = await res.json().catch(() => null);
+    return normalizeUser(payload);
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+});
