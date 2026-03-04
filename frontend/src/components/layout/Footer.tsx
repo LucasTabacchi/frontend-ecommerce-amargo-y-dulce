@@ -10,7 +10,12 @@ import { useEffect, useState } from "react";
  * - Derecha: contacto + redes
  */
 export function Footer({ initialUser = null }: { initialUser?: any | null }) {
-  const [isStoreAdmin, setIsStoreAdmin] = useState(Boolean(initialUser?.isStoreAdmin));
+  const initialRole =
+    typeof initialUser?.isStoreAdmin === "boolean"
+      ? Boolean(initialUser.isStoreAdmin)
+      : null;
+  const [isStoreAdmin, setIsStoreAdmin] = useState(initialRole ?? false);
+  const [roleResolved, setRoleResolved] = useState(initialRole !== null);
 
   useEffect(() => {
     let alive = true;
@@ -24,9 +29,11 @@ export function Footer({ initialUser = null }: { initialUser?: any | null }) {
         const j = await r.json().catch(() => ({ user: null }));
         if (!alive) return;
         setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
+        setRoleResolved(true);
       } catch {
         if (!alive) return;
-        setIsStoreAdmin(Boolean(initialUser?.isStoreAdmin));
+        setIsStoreAdmin(initialRole ?? false);
+        setRoleResolved(true);
       }
     };
 
@@ -39,9 +46,9 @@ export function Footer({ initialUser = null }: { initialUser?: any | null }) {
       window.removeEventListener("amg-auth-changed", refreshMe);
       window.removeEventListener("focus", refreshMe);
     };
-  }, [initialUser]);
+  }, [initialRole]);
 
-  const canUseShopFeatures = !isStoreAdmin;
+  const canUseShopFeatures = roleResolved && !isStoreAdmin;
 
   return (
     <footer className="bg-red-600 text-white">

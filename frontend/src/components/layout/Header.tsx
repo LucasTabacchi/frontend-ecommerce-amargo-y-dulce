@@ -515,7 +515,12 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
         "Cuenta";
   const resolvedIsStoreAdmin =
     typeof me?.isStoreAdmin === "boolean" ? me.isStoreAdmin : storeAdminHint;
-  const canUseShopFeatures = resolvedIsStoreAdmin !== true;
+  // Mientras no resolvimos sesión/rol evitamos mostrar UI de cuenta común
+  // para no generar flash al cambiar a cuenta tienda.
+  const roleResolved =
+    (me !== null && typeof me?.isStoreAdmin === "boolean") ||
+    typeof storeAdminHint === "boolean";
+  const canUseShopFeatures = roleResolved && resolvedIsStoreAdmin !== true;
 
   return (
     <header
@@ -561,7 +566,17 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
             <div className="h-6 w-px bg-neutral-200" />
 
             <div className="relative" ref={profileBoxRef}>
-              {!me ? (
+              {!roleResolved ? (
+                <button
+                  className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 opacity-70"
+                  type="button"
+                  disabled
+                  aria-expanded={false}
+                >
+                  <User className="h-5 w-5" />
+                  Cuenta
+                </button>
+              ) : !me ? (
                 <button
                   onClick={openLogin}
                   className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors disabled:cursor-default disabled:opacity-70"
@@ -642,12 +657,12 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
               type="button"
               onClick={onUserPressMobile}
               className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 disabled:cursor-default disabled:opacity-70 sm:max-w-[170px] sm:px-3"
-              aria-label={me ? "Mi perfil" : "Iniciar sesión"}
-              disabled={meLoading && !me}
+              aria-label={me ? "Mi perfil" : roleResolved ? "Iniciar sesión" : "Cuenta"}
+              disabled={!roleResolved || (meLoading && !me)}
             >
               <User className="h-5 w-5" />
               <span className="max-w-[78px] truncate sm:max-w-[120px]">
-                {me ? displayName : meLoading ? "Cuenta" : "Iniciar sesión"}
+                {me ? displayName : roleResolved ? (meLoading ? "Cuenta" : "Iniciar sesión") : "Cuenta"}
               </span>
             </button>
 

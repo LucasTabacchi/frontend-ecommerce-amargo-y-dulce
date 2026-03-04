@@ -97,11 +97,7 @@ export default function LibroDeQuejasPage() {
       <div className="mx-auto w-full max-w-md">
         {/* Card vertical */}
         <div className="rounded-lg bg-neutral-50 p-6 shadow-sm ring-1 ring-neutral-200">
-          {meLoading ? (
-            <p className="rounded-md bg-neutral-100 p-4 text-sm text-neutral-700">
-              Cargando…
-            </p>
-          ) : me?.isStoreAdmin ? (
+          {meLoading ? null : me?.isStoreAdmin ? (
             <p className="rounded-md bg-blue-50 p-4 text-sm text-blue-800">
               La cuenta tienda no puede enviar reclamos desde esta sección.
             </p>

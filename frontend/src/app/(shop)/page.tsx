@@ -29,23 +29,20 @@ type StrapiSingleResponse<T> = {
 };
 
 async function getBestSellers() {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2500);
-
   try {
     const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(
       "/api/home-page?populate[bestSellers][populate]=*",
-      { cache: "no-store", signal: controller.signal }
+      { cache: "no-store" }
     );
 
     const home = (res?.data?.attributes ?? res?.data) as HomePageAttributes | undefined;
     const raw = home?.bestSellers ?? [];
     return Array.isArray(raw) ? raw.map(toCardItem) : [];
   } catch (error) {
+    // Si Strapi está lento o momentáneamente caído, no rompemos la home.
+    // Mostramos la página con el resto del contenido y sin best sellers.
     console.error("Error fetching best sellers:", error);
-    throw error instanceof Error ? error : new Error("Error fetching best sellers");
-  } finally {
-    clearTimeout(timeout);
+    return [];
   }
 }
 
