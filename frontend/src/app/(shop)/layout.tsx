@@ -22,7 +22,7 @@ export default function ShopLayout({
   return (
     <div className="min-h-screen min-h-[100dvh] bg-[#FAF6F6] flex flex-col">
       <UserStateSync />
-      <Suspense fallback={null}>
+      <Suspense fallback={<Header initialUser={null} />}>
         <HeaderWithAuth />
       </Suspense>
       <main className="flex-1">{children}</main>
