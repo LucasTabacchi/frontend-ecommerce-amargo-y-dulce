@@ -67,7 +67,7 @@ export default async function HomePage() {
       id: "s2",
       image: "/home/hero-2.jpg",
       alt: "Promociones",
-      href: "/productos",
+      href: "/cupones",
       title: "Promociones",
       subtitle: "Ofertas por tiempo limitado",
       cta: "Ver promos",

@@ -4,6 +4,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 
+const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+
 type Slide = {
   id: string;
   image: string; // URL (local /public o remota)
@@ -40,6 +42,7 @@ export function HeroCarousel({
 }) {
   const safeSlides = useMemo(() => (Array.isArray(slides) ? slides.filter(Boolean) : []), [slides]);
   const [index, setIndex] = useState(0);
+  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
 
   const total = safeSlides.length;
 
@@ -56,6 +59,39 @@ export function HeroCarousel({
     return () => window.clearInterval(t);
   }, [total, intervalMs]);
 
+  useEffect(() => {
+    let alive = true;
+
+    try {
+      const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
+      if (raw === "1") setIsStoreAdmin(true);
+      if (raw === "0") setIsStoreAdmin(false);
+    } catch {}
+
+    const refreshMe = async () => {
+      try {
+        const r = await fetch("/api/auth/me", {
+          cache: "no-store",
+          credentials: "include",
+        });
+        const j = await r.json().catch(() => ({ user: null }));
+        if (!alive) return;
+        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
+      } catch {
+        if (!alive) return;
+      }
+    };
+
+    refreshMe();
+    window.addEventListener("amg-auth-changed", refreshMe);
+    window.addEventListener("focus", refreshMe);
+    return () => {
+      alive = false;
+      window.removeEventListener("amg-auth-changed", refreshMe);
+      window.removeEventListener("focus", refreshMe);
+    };
+  }, []);
+
   function prev() {
     if (!total) return;
     setIndex((i) => (i - 1 + total) % total);
@@ -70,16 +106,18 @@ export function HeroCarousel({
 
   const current = safeSlides[index];
   const imgSrc = normalizePublicImageSrc(current.image);
+  const isCouponsSlide = current.href === "/cupones" || current.href === "/promociones";
+  const blockSlideForStoreUser = isStoreAdmin && isCouponsSlide;
 
   return (
     <section className="relative overflow-hidden rounded-2xl border bg-white min-h-[40dvh] md:min-h-0">
-      {current.href ? (
+      {current.href && !blockSlideForStoreUser ? (
         <Link href={current.href} className="block" aria-label={`Ir a ${current.href}`}>
-          <HeroSlide imgSrc={imgSrc} current={current} />
+          <HeroSlide imgSrc={imgSrc} current={current} isBlockedForStoreUser={false} />
         </Link>
       ) : (
         <div className="block">
-          <HeroSlide imgSrc={imgSrc} current={current} />
+          <HeroSlide imgSrc={imgSrc} current={current} isBlockedForStoreUser={blockSlideForStoreUser} />
         </div>
       )}
 
@@ -126,7 +164,15 @@ export function HeroCarousel({
   );
 }
 
-function HeroSlide({ imgSrc, current }: { imgSrc: string; current: Slide }) {
+function HeroSlide({
+  imgSrc,
+  current,
+  isBlockedForStoreUser,
+}: {
+  imgSrc: string;
+  current: Slide;
+  isBlockedForStoreUser: boolean;
+}) {
   const [imgError, setImgError] = useState(false);
 
   return (
@@ -166,9 +212,21 @@ function HeroSlide({ imgSrc, current }: { imgSrc: string; current: Slide }) {
               </div>
             )}
             {current.cta && (
-              <div className="mt-4 inline-flex rounded-full bg-red-600 px-fluid-md py-2 text-fluid-xs font-bold text-white md:mt-6 md:text-fluid-sm">
-                {current.cta}
-              </div>
+              <>
+                <div
+                  className={[
+                    "mt-4 inline-flex rounded-full px-fluid-md py-2 text-fluid-xs font-bold text-white md:mt-6 md:text-fluid-sm",
+                    isBlockedForStoreUser ? "bg-neutral-400" : "bg-red-600",
+                  ].join(" ")}
+                >
+                  {current.cta}
+                </div>
+                {isBlockedForStoreUser && (
+                  <p className="mt-2 text-xs font-medium text-neutral-700">
+                    No disponible para cuenta tienda.
+                  </p>
+                )}
+              </>
             )}
           </div>
         </div>
