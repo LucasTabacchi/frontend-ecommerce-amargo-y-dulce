@@ -5,6 +5,7 @@ import { strapiGet } from "@/lib/strapi";
 import { toCardItem } from "@/lib/strapi-mappers";
 import { HeroCarousel } from "@/components/home/HeroCarousel";
 import { Metadata } from "next";
+import { Suspense } from "react";
 
 export const dynamic = "force-dynamic";
 
@@ -29,10 +30,13 @@ type StrapiSingleResponse<T> = {
 };
 
 async function getBestSellers() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2500);
+
   try {
     const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(
       "/api/home-page?populate[bestSellers][populate]=*",
-      { cache: "no-store" }
+      { cache: "no-store", signal: controller.signal }
     );
 
     const home = (res?.data?.attributes ?? res?.data) as HomePageAttributes | undefined;
@@ -41,12 +45,17 @@ async function getBestSellers() {
   } catch (error) {
     console.error("Error fetching best sellers:", error);
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-export default async function HomePage() {
+async function HomeBestSellersSection() {
   const bestSellers = await getBestSellers();
+  return <HomeBestSellers products={bestSellers} />;
+}
 
+export default function HomePage() {
   // Slides estáticos (pueden venir de Strapi en el futuro)
   const slides = [
     {
@@ -92,7 +101,9 @@ export default async function HomePage() {
       </Container>
       <Container>
         <div className="pb-16">
-          <HomeBestSellers products={bestSellers} />
+          <Suspense fallback={null}>
+            <HomeBestSellersSection />
+          </Suspense>
         </div>
       </Container>
     </>
