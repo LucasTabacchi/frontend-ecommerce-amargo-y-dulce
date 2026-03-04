@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 
@@ -139,7 +139,7 @@ function getActionByStatus(status?: string | null) {
   return null;
 }
 
-export default function AdminPedidosPage() {
+function AdminPedidosPageContent() {
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
@@ -562,5 +562,13 @@ export default function AdminPedidosPage() {
         </div>
       </Container>
     </main>
+  );
+}
+
+export default function AdminPedidosPage() {
+  return (
+    <Suspense fallback={<main><Container><div className="py-10">Cargando…</div></Container></main>}>
+      <AdminPedidosPageContent />
+    </Suspense>
   );
 }

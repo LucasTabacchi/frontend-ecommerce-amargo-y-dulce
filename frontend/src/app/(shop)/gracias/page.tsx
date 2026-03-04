@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { useCartStore } from "@/store/cart.store";
@@ -85,7 +85,7 @@ function mapOrderStatusToUi(orderStatus: string | null | undefined): StatusKind 
   return "pending";
 }
 
-export default function GraciasPage() {
+function GraciasPageContent() {
   const sp = useSearchParams();
 
   const clear = useCartStore((s) => s.clear);
@@ -352,5 +352,13 @@ export default function GraciasPage() {
         </div>
       </Container>
     </main>
+  );
+}
+
+export default function GraciasPage() {
+  return (
+    <Suspense fallback={<main><Container><div className="py-10">Cargando…</div></Container></main>}>
+      <GraciasPageContent />
+    </Suspense>
   );
 }

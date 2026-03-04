@@ -1,7 +1,7 @@
 // src/app/(shop)/checkout/page.tsx
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
@@ -230,7 +230,7 @@ function readClaimedCouponCodes() {
 
 /* ================= page ================= */
 
-export default function CheckoutPage() {
+function CheckoutPageContent() {
   const router = useRouter();
   const sp = useSearchParams();
 
@@ -1541,5 +1541,13 @@ export default function CheckoutPage() {
         )}
       </Container>
     </main>
+  );
+}
+
+export default function CheckoutPage() {
+  return (
+    <Suspense fallback={<main><Container><div className="py-10">Cargando checkout…</div></Container></main>}>
+      <CheckoutPageContent />
+    </Suspense>
   );
 }
