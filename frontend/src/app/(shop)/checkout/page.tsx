@@ -421,7 +421,7 @@ function CheckoutPageContent() {
         for (const row of list) {
           const code = normalizeCouponCode(row?.code);
           if (!code || !claimed.has(code) || map.has(code)) continue;
-          const name = String(row?.name ?? "").trim() || code;
+          const name = String(row?.name ?? "").trim() || "Cupón";
           const startAt = String(row?.startAt ?? "").trim() || null;
           const endAt = String(row?.endAt ?? "").trim() || null;
           const exhausted = Boolean(row?.exhausted);
@@ -1362,9 +1362,7 @@ function CheckoutPageContent() {
                 <option value="">Sin cupón</option>
                 {myCoupons.map((item) => {
                   const cleanName = String(item.name ?? "").trim();
-                  const showName =
-                    cleanName.length > 0 && normalizeCouponCode(cleanName) !== normalizeCouponCode(item.code);
-                  const baseLabel = showName ? `${item.code} - ${cleanName}` : item.code;
+                  const baseLabel = cleanName || "Cupón";
                   const label = item.isAvailable
                     ? baseLabel
                     : `${baseLabel} (${item.unavailableLabel || "No disponible"})`;
@@ -1448,20 +1446,12 @@ function CheckoutPageContent() {
                 <div className="mt-3">
                   <div className="text-xs font-semibold">Promociones aplicadas</div>
                   <ul className="mt-1 space-y-1 text-xs">
-                    {quote.appliedPromotions.map((p) => {
-                      const showCode =
-                        Boolean(p.code) &&
-                        normalizeCouponCode(p.code) !== normalizeCouponCode(p.name || "");
-                      return (
-                        <li key={p.id} className="flex justify-between gap-3">
-                          <span className="truncate">
-                            {p.name}
-                            {showCode ? ` (${p.code})` : ""}
-                          </span>
-                          <span>-{formatARS(p.amount)}</span>
-                        </li>
-                      );
-                    })}
+                    {quote.appliedPromotions.map((p) => (
+                      <li key={p.id} className="flex justify-between gap-3">
+                        <span className="truncate">{p.name || "Cupón"}</span>
+                        <span>-{formatARS(p.amount)}</span>
+                      </li>
+                    ))}
                   </ul>
                 </div>
               ) : null}
