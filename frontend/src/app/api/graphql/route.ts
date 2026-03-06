@@ -13,14 +13,25 @@ function normalizeStrapiBase(url: string) {
 }
 
 function extractCookieJWT(cookieHeader: string) {
-  // Si tu cookie se llama distinto (por ej "strapi_jwt"), cambiá acá
   const token = cookieHeader
     .split(";")
     .map((s) => s.trim())
-    .find((s) => s.startsWith("jwt="))
-    ?.slice("jwt=".length);
+    .find(
+      (s) =>
+        s.startsWith("strapi_jwt=") ||
+        s.startsWith("jwt=") ||
+        s.startsWith("token=") ||
+        s.startsWith("access_token=")
+    );
 
-  return token || null;
+  if (!token) return null;
+
+  if (token.startsWith("strapi_jwt=")) return token.slice("strapi_jwt=".length);
+  if (token.startsWith("jwt=")) return token.slice("jwt=".length);
+  if (token.startsWith("token=")) return token.slice("token=".length);
+  if (token.startsWith("access_token=")) return token.slice("access_token=".length);
+
+  return null;
 }
 
 async function safeJson(req: Request) {
