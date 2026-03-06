@@ -191,13 +191,6 @@ export default async function MisPedidosPage({
             </div>
           ) : (
             <>
-              <PaginationControls
-                page={pagination.page}
-                pageCount={pagination.pageCount}
-                total={pagination.total}
-                pageSize={pagination.pageSize}
-              />
-
               <div className="mt-8 space-y-4">
                 {orders.map((order) => {
                   const totalNum =

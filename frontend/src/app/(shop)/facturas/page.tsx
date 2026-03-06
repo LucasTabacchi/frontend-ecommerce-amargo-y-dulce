@@ -146,15 +146,6 @@ export default async function FacturasPage({
           </Link>
         </div>
 
-        {invoices.length > 0 ? (
-          <PaginationControls
-            page={pagination.page}
-            pageCount={pagination.pageCount}
-            total={pagination.total}
-            pageSize={pagination.pageSize}
-          />
-        ) : null}
-
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
           {invoices.length === 0 ? (
             <p className="text-sm text-neutral-600">
