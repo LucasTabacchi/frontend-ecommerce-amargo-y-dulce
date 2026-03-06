@@ -60,6 +60,14 @@ export type ServerReview = {
   createdAt?: string;
 };
 
+export type PaginatedResult<T> = {
+  items: T[];
+  page: number;
+  pageSize: number;
+  total: number;
+  pageCount: number;
+};
+
 function getServerToken() {
   return process.env.STRAPI_API_TOKEN || process.env.STRAPI_TOKEN || null;
 }
@@ -135,6 +143,34 @@ function extractOrderNumberFromInvoiceNumber(invoiceNumber: any): string | null 
   return match?.[1] ? match[1].toUpperCase() : null;
 }
 
+function normalizePage(value: number | string | null | undefined, fallback = 1) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+}
+
+function normalizePageSize(value: number | string | null | undefined, fallback = 10) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.min(50, Math.max(5, Math.floor(parsed)));
+}
+
+function buildPaginationMeta(meta: any, page: number, pageSize: number, totalFallback: number) {
+  const safePage = normalizePage(meta?.page, page);
+  const safePageSize = normalizePageSize(meta?.pageSize, pageSize);
+  const safeTotal = Math.max(0, Number(meta?.total ?? totalFallback) || 0);
+  const safePageCount =
+    Math.max(0, Number(meta?.pageCount) || 0) ||
+    (safeTotal > 0 ? Math.ceil(safeTotal / safePageSize) : 0);
+
+  return {
+    page: safePage,
+    pageSize: safePageSize,
+    total: safeTotal,
+    pageCount: safePageCount,
+  };
+}
+
 async function fetchUserScopedJson(path: string, init: RequestInit = {}) {
   const jwt = getServerUserJwt();
   const strapiBase = getStrapiBase();
@@ -198,11 +234,24 @@ export async function getServerAddresses(user?: ServerAuthUser | null) {
 }
 
 export async function getServerCustomerOrders(user?: ServerAuthUser | null) {
+  const result = await getServerCustomerOrdersPaginated(user, { page: 1, pageSize: 50 });
+  return result.items;
+}
+
+export async function getServerCustomerOrdersPaginated(
+  user?: ServerAuthUser | null,
+  options?: { page?: number; pageSize?: number }
+): Promise<PaginatedResult<ServerOrder>> {
   const viewer = await resolveCustomer(user);
-  if (!viewer) return [] as ServerOrder[];
+  const page = normalizePage(options?.page, 1);
+  const pageSize = normalizePageSize(options?.pageSize, 10);
+  if (!viewer) {
+    return { items: [], page, pageSize, total: 0, pageCount: 0 };
+  }
 
   const params = new URLSearchParams();
-  params.set("pagination[pageSize]", "50");
+  params.set("pagination[page]", String(page));
+  params.set("pagination[pageSize]", String(pageSize));
   params.set("sort[0]", "createdAt:desc");
   params.set("populate", "*");
 
@@ -213,10 +262,12 @@ export async function getServerCustomerOrders(user?: ServerAuthUser | null) {
   }
 
   const result = await fetchUserScopedJson(`/api/orders?${params.toString()}`);
-  if (!result.ok) return [] as ServerOrder[];
+  if (!result.ok) {
+    return { items: [], page, pageSize, total: 0, pageCount: 0 };
+  }
 
   const rows = Array.isArray(result.json?.data) ? result.json.data : [];
-  return rows.map((row: any) => ({
+  const items = rows.map((row: any) => ({
     id: pickIdForOps(row),
     documentId:
       typeof row?.documentId === "string"
@@ -237,6 +288,11 @@ export async function getServerCustomerOrders(user?: ServerAuthUser | null) {
     email: pickField(row, "email"),
     phone: pickField(row, "phone"),
   }));
+
+  return {
+    items,
+    ...buildPaginationMeta(result.json?.meta?.pagination, page, pageSize, items.length),
+  };
 }
 
 export async function getServerCustomerOrderById(
@@ -311,12 +367,41 @@ async function getMyOrderNumbers(user: ServerAuthUser) {
 }
 
 export async function getServerCustomerInvoices(user?: ServerAuthUser | null) {
-  const viewer = await resolveCustomer(user);
-  if (!viewer) return [] as ServerInvoice[];
+  const result = await getServerCustomerInvoicesPaginated(user, { page: 1, pageSize: 20 });
+  return result.items;
+}
 
+function mapServerInvoice(strapiBase: string, row: any): ServerInvoice {
+  const flat = flattenAny(row);
+  const rawOrder = flat?.order?.data ?? flat?.order ?? null;
+  const order = Array.isArray(rawOrder) ? flattenAny(rawOrder[0]) : flattenAny(rawOrder);
+  const invoiceNumber =
+    typeof flat?.number === "string" ? flat.number.trim() : null;
+  const orderNumber =
+    typeof order?.orderNumber === "string" && order.orderNumber.trim()
+      ? order.orderNumber.trim()
+      : extractOrderNumberFromInvoiceNumber(invoiceNumber);
+
+  return {
+    id: flat?.documentId ?? flat?.id ?? null,
+    number: invoiceNumber,
+    total: flat?.total ?? null,
+    issuedAt: flat?.issuedAt ?? flat?.createdAt ?? null,
+    pdfUrl: pickPdfUrl(strapiBase, flat?.pdf),
+    orderNumber,
+  };
+}
+
+async function getServerCustomerInvoicesLegacyPaginated(
+  viewer: ServerAuthUser,
+  page: number,
+  pageSize: number
+): Promise<PaginatedResult<ServerInvoice>> {
   const strapiBase = getStrapiBase();
   const myOrderNumbers = await getMyOrderNumbers(viewer);
-  if (!strapiBase || myOrderNumbers.size === 0) return [] as ServerInvoice[];
+  if (!strapiBase || myOrderNumbers.size === 0) {
+    return { items: [], page, pageSize, total: 0, pageCount: 0 };
+  }
 
   const params = new URLSearchParams();
   params.set("pagination[pageSize]", "200");
@@ -331,10 +416,10 @@ export async function getServerCustomerInvoices(user?: ServerAuthUser | null) {
     list = await fetchServerScopedJson(`/api/invoices?${fallback.toString()}`);
   }
 
-  if (!list.ok) return [] as ServerInvoice[];
+  if (!list.ok) return { items: [], page, pageSize, total: 0, pageCount: 0 };
 
   const rows = Array.isArray(list.json?.data) ? list.json.data : [];
-  return rows
+  const ownedRows = rows
     .filter((row: any) => {
       const flat = flattenAny(row);
       const invoiceNumber =
@@ -343,19 +428,72 @@ export async function getServerCustomerInvoices(user?: ServerAuthUser | null) {
       return Boolean(orderNumber && myOrderNumbers.has(orderNumber));
     })
     .map((row: any) => {
-      const flat = flattenAny(row);
-      const invoiceNumber =
-        typeof flat?.number === "string" ? flat.number.trim() : null;
-
-      return {
-        id: flat?.documentId ?? flat?.id ?? null,
-        number: invoiceNumber,
-        total: flat?.total ?? null,
-        issuedAt: flat?.issuedAt ?? flat?.createdAt ?? null,
-        pdfUrl: pickPdfUrl(strapiBase, flat?.pdf),
-        orderNumber: extractOrderNumberFromInvoiceNumber(invoiceNumber),
-      };
+      return mapServerInvoice(strapiBase, row);
     });
+
+  const total = ownedRows.length;
+  const pageCount = total > 0 ? Math.ceil(total / pageSize) : 0;
+  const start = (page - 1) * pageSize;
+  const items = ownedRows.slice(start, start + pageSize);
+
+  return {
+    items,
+    page,
+    pageSize,
+    total,
+    pageCount,
+  };
+}
+
+export async function getServerCustomerInvoicesPaginated(
+  user?: ServerAuthUser | null,
+  options?: { page?: number; pageSize?: number }
+): Promise<PaginatedResult<ServerInvoice>> {
+  const viewer = await resolveCustomer(user);
+  const page = normalizePage(options?.page, 1);
+  const pageSize = normalizePageSize(options?.pageSize, 10);
+  if (!viewer) {
+    return { items: [], page, pageSize, total: 0, pageCount: 0 };
+  }
+
+  const strapiBase = getStrapiBase();
+  if (!strapiBase) {
+    return { items: [], page, pageSize, total: 0, pageCount: 0 };
+  }
+
+  const filterAttempts =
+    viewer.documentId && viewer.documentId.trim().length > 0
+      ? [
+          { key: "filters[order][user][documentId][$eq]", value: viewer.documentId.trim() },
+          { key: "filters[order][user][id][$eq]", value: String(viewer.id) },
+        ]
+      : [{ key: "filters[order][user][id][$eq]", value: String(viewer.id) }];
+
+  let list: { ok: boolean; status: number; json: any } | null = null;
+
+  for (const filter of filterAttempts) {
+    for (const sortField of ["issuedAt:desc", "createdAt:desc"]) {
+      const params = new URLSearchParams();
+      params.set("pagination[page]", String(page));
+      params.set("pagination[pageSize]", String(pageSize));
+      params.set("sort[0]", sortField);
+      params.set("populate", "*");
+      params.set(filter.key, filter.value);
+
+      list = await fetchServerScopedJson(`/api/invoices?${params.toString()}`);
+      if (list.ok) {
+        const rows = Array.isArray(list.json?.data) ? list.json.data : [];
+        const items = rows.map((row: any) => mapServerInvoice(strapiBase, row));
+        const meta = buildPaginationMeta(list.json?.meta?.pagination, page, pageSize, items.length);
+
+        if (meta.total > 0) {
+          return { items, ...meta };
+        }
+      }
+    }
+  }
+
+  return getServerCustomerInvoicesLegacyPaginated(viewer, page, pageSize);
 }
 
 export async function getServerMyCoupons(user?: ServerAuthUser | null) {

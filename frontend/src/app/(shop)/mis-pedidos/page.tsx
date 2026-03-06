@@ -1,8 +1,33 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { requireServerAuthUser } from "@/lib/server/auth-user";
-import { getServerCustomerOrders } from "@/lib/server/shop-data";
+import { getServerCustomerOrdersPaginated } from "@/lib/server/shop-data";
 import type { ServerOrder } from "@/lib/server/shop-data";
+
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+
+function parsePositiveInt(value: string | string[] | undefined, fallback: number) {
+  const raw = Array.isArray(value) ? value[0] : value;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return Math.floor(parsed);
+}
+
+function parsePageSize(value: string | string[] | undefined, fallback = 10) {
+  const requested = parsePositiveInt(value, fallback);
+  return PAGE_SIZE_OPTIONS.includes(requested as (typeof PAGE_SIZE_OPTIONS)[number])
+    ? requested
+    : fallback;
+}
+
+function buildPageHref(page: number, pageSize: number) {
+  const params = new URLSearchParams();
+  if (page > 1) params.set("page", String(page));
+  if (pageSize !== PAGE_SIZE_OPTIONS[0]) params.set("pageSize", String(pageSize));
+  const query = params.toString();
+  return query ? `/mis-pedidos?${query}` : "/mis-pedidos";
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -56,12 +81,100 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export default async function MisPedidosPage() {
+function PaginationControls(props: {
+  page: number;
+  pageCount: number;
+  total: number;
+  pageSize: number;
+}) {
+  const { page, pageCount, total, pageSize } = props;
+  const canPrev = page > 1;
+  const canNext = pageCount > 0 && page < pageCount;
+
+  return (
+    <div className="mt-6 flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+      <div className="text-sm text-neutral-600">
+        Página {pageCount > 0 ? page : 0} de {pageCount} · {total} pedidos
+      </div>
+
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <form method="get" className="flex items-center gap-2">
+          <input type="hidden" name="page" value="1" />
+          <label htmlFor="orders-page-size" className="text-sm text-neutral-600">
+            Por página
+          </label>
+          <select
+            id="orders-page-size"
+            name="pageSize"
+            defaultValue={String(pageSize)}
+            className="rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+          >
+            {PAGE_SIZE_OPTIONS.map((value) => (
+              <option key={value} value={value}>
+                {value}
+              </option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            className="rounded-xl border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800"
+          >
+            Aplicar
+          </button>
+        </form>
+
+        <div className="flex items-center gap-2">
+          {canPrev ? (
+            <Link
+              href={buildPageHref(page - 1, pageSize)}
+              className="rounded-xl border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800"
+            >
+              Anterior
+            </Link>
+          ) : (
+            <span className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-400">
+              Anterior
+            </span>
+          )}
+
+          {canNext ? (
+            <Link
+              href={buildPageHref(page + 1, pageSize)}
+              className="rounded-xl border border-neutral-300 px-3 py-2 text-sm font-semibold text-neutral-800"
+            >
+              Siguiente
+            </Link>
+          ) : (
+            <span className="rounded-xl border border-neutral-200 px-3 py-2 text-sm font-semibold text-neutral-400">
+              Siguiente
+            </span>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default async function MisPedidosPage({
+  searchParams,
+}: {
+  searchParams?: { page?: string | string[]; pageSize?: string | string[] };
+}) {
+  const requestedPage = parsePositiveInt(searchParams?.page, 1);
+  const requestedPageSize = parsePageSize(searchParams?.pageSize, 10);
   const user = await requireServerAuthUser({
     unauthenticatedRedirect: "/",
     storeAdminRedirect: "/admin/pedidos",
   });
-  const orders: ServerOrder[] = await getServerCustomerOrders(user);
+  const pagination = await getServerCustomerOrdersPaginated(user, {
+    page: requestedPage,
+    pageSize: requestedPageSize,
+  });
+  const orders: ServerOrder[] = pagination.items;
+
+  if (pagination.total > 0 && pagination.pageCount > 0 && requestedPage > pagination.pageCount) {
+    redirect(buildPageHref(pagination.pageCount, requestedPageSize));
+  }
 
   return (
     <main>
@@ -77,51 +190,67 @@ export default async function MisPedidosPage() {
               Todavía no tenés pedidos.
             </div>
           ) : (
-            <div className="mt-8 space-y-4">
-              {orders.map((order) => {
-                const totalNum =
-                  typeof order.total === "number" ? order.total : Number(order.total || 0);
+            <>
+              <PaginationControls
+                page={pagination.page}
+                pageCount={pagination.pageCount}
+                total={pagination.total}
+                pageSize={pagination.pageSize}
+              />
 
-                const date = order.createdAt ? new Date(order.createdAt) : null;
-                const dateLabel = date
-                  ? date.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })
-                  : "";
+              <div className="mt-8 space-y-4">
+                {orders.map((order) => {
+                  const totalNum =
+                    typeof order.total === "number" ? order.total : Number(order.total || 0);
 
-                return (
-                  <Link
-                    key={String(order.id)}
-                    href={`/mis-pedidos/${encodeURIComponent(String(order.id))}`}
-                    className="block rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <div className="text-sm text-neutral-600">Pedido</div>
-                        <div className="text-base font-extrabold text-neutral-900 break-words">
-                          {order.orderNumber || String(order.id)}
+                  const date = order.createdAt ? new Date(order.createdAt) : null;
+                  const dateLabel = date
+                    ? date.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })
+                    : "";
+
+                  return (
+                    <Link
+                      key={String(order.id)}
+                      href={`/mis-pedidos/${encodeURIComponent(String(order.id))}`}
+                      className="block rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <div className="text-sm text-neutral-600">Pedido</div>
+                          <div className="text-base font-extrabold text-neutral-900 break-words">
+                            {order.orderNumber || String(order.id)}
+                          </div>
+                          {dateLabel ? (
+                            <div className="mt-1 text-sm text-neutral-600">{dateLabel}</div>
+                          ) : null}
                         </div>
-                        {dateLabel ? (
-                          <div className="mt-1 text-sm text-neutral-600">{dateLabel}</div>
-                        ) : null}
-                      </div>
 
-                      <div className="flex items-center gap-3">
-                        <StatusPill status={String(order.orderStatus || "")} />
-                        <div className="text-right">
-                          <div className="text-sm text-neutral-600">Total</div>
-                          <div className="text-base font-extrabold text-neutral-900 whitespace-nowrap">
-                            {formatARS(totalNum)}
+                        <div className="flex items-center gap-3">
+                          <StatusPill status={String(order.orderStatus || "")} />
+                          <div className="text-right">
+                            <div className="text-sm text-neutral-600">Total</div>
+                            <div className="text-base font-extrabold text-neutral-900 whitespace-nowrap">
+                              {formatARS(totalNum)}
+                            </div>
                           </div>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="mt-4 text-sm font-semibold text-red-700 opacity-80">
-                      Ver detalle →
-                    </div>
-                  </Link>
-                );
-              })}
-            </div>
+                      <div className="mt-4 text-sm font-semibold text-red-700 opacity-80">
+                        Ver detalle →
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              <PaginationControls
+                page={pagination.page}
+                pageCount={pagination.pageCount}
+                total={pagination.total}
+                pageSize={pagination.pageSize}
+              />
+            </>
           )}
 
           <div className="mt-10">
