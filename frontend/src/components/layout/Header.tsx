@@ -9,6 +9,7 @@ import { LoginModal } from "@/components/auth/LoginModal";
 import { CartBadge } from "@/components/cart/CartBadge";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { useCartStore } from "@/store/cart.store";
+import { useAuthStore } from "@/store/auth.store";
 
 type Suggestion = {
   id: string | number | null;
@@ -16,8 +17,6 @@ type Suggestion = {
   price: number | null;
   slug: string | null;
 };
-
-type MeResponse = { user: any | null };
 
 function normalizeQty(v: any) {
   const n = Number(v);
@@ -61,8 +60,11 @@ function safeName(v: any) {
   return s.length ? s : null;
 }
 
-export function Header({ initialUser = null }: { initialUser?: any | null }) {
+export function Header() {
   const router = useRouter();
+  const me = useAuthStore((s) => s.user);
+  const authResolved = useAuthStore((s) => s.resolved);
+  const logoutAuth = useAuthStore((s) => s.logout);
 
   // ✅ evita hydration mismatch: en SSR siempre contamos 0, y en cliente ya mostramos el real
   const [isMounted, setIsMounted] = useState(false);
@@ -81,13 +83,6 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [loginOpen, setLoginOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
-
-  // ✅ auth
-  const [meLoading, setMeLoading] = useState(false);
-  const [me, setMe] = useState<any | null>(initialUser ?? null);
-  const [storeAdminHint, setStoreAdminHint] = useState<boolean | null>(
-    typeof initialUser?.isStoreAdmin === "boolean" ? Boolean(initialUser.isStoreAdmin) : null
-  );
 
   // ✅ Profile dropdown (desktop)
   const [profileOpen, setProfileOpen] = useState(false);
@@ -119,39 +114,13 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
     };
   }, [stableId]);
 
-  async function refreshMe(opts?: { quiet?: boolean }) {
-    if (!opts?.quiet) setMeLoading(true);
-    try {
-      const r = await fetch("/api/auth/me", {
-        cache: "no-store",
-        credentials: "include",
-      });
-      const j: MeResponse = await r.json().catch(() => ({ user: null }));
-      const nextUser = j.user ?? null;
-      setMe(nextUser);
-      setStoreAdminHint(Boolean(nextUser?.isStoreAdmin));
-    } catch {
-      setMe(null);
-      setStoreAdminHint(null);
-    } finally {
-      setMeLoading(false);
-    }
-  }
-
   async function logout() {
     try {
-      await fetch("/api/auth/logout", {
-        method: "POST",
-        cache: "no-store",
-        credentials: "include",
-      });
+      await logoutAuth();
     } finally {
-      setMe(null);
-      setStoreAdminHint(null);
       setLoginOpen(false);
       setProfileOpen(false);
       setMobileOpen(false);
-      window.dispatchEvent(new Event("amg-auth-changed"));
       router.refresh();
     }
   }
@@ -167,7 +136,6 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
 
   // ✅ click en user desde MOBILE: si no hay sesión -> login; si hay sesión -> /mi-perfil
   function onUserPressMobile() {
-    if (meLoading && !me) return;
     if (!me) {
       openLogin();
       return;
@@ -175,30 +143,6 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
     setMobileOpen(false);
     router.push("/mi-perfil");
   }
-
-  // ✅ mount
-  useEffect(() => {
-    if (initialUser && typeof initialUser === "object") {
-      setMe(initialUser);
-      if (typeof initialUser?.isStoreAdmin === "boolean") {
-        setStoreAdminHint(Boolean(initialUser.isStoreAdmin));
-      }
-    } else {
-      setMe(null);
-      setStoreAdminHint(null);
-    }
-
-    refreshMe({ quiet: true });
-
-    const onFocus = () => refreshMe({ quiet: true });
-    const onAuthChanged = () => refreshMe({ quiet: true });
-    window.addEventListener("focus", onFocus);
-    window.addEventListener("amg-auth-changed", onAuthChanged);
-    return () => {
-      window.removeEventListener("focus", onFocus);
-      window.removeEventListener("amg-auth-changed", onAuthChanged);
-    };
-  }, []);
 
   // ✅ Si ya hay sesión activa, cerramos cualquier modal de login abierto
   // (ej. retorno desde OAuth con ?login=1 en la URL).
@@ -287,7 +231,7 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
 
     const wantsLogin = sp.get("login") === "1";
     if (!wantsLogin) return;
-    if (meLoading) return;
+    if (!authResolved) return;
 
     const nextRaw = String(sp.get("next") || "").trim();
     const nextSafe = nextRaw.startsWith("/") ? nextRaw : "";
@@ -318,7 +262,7 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
       router.replace(pathname);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isMounted, sp, pathname, meLoading, me, router]);
+  }, [isMounted, sp, pathname, authResolved, me, router]);
 
   function goSearch(raw: string) {
     const q = raw.trim();
@@ -445,7 +389,6 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
                 : "h-11 w-full rounded-full border border-neutral-300 bg-white pl-12 pr-4 text-[15px] focus:outline-none"
             }
             aria-autocomplete="list"
-            aria-expanded={showDropdown}
             aria-controls={listId}
             aria-activedescendant={
               activeIndex >= 0 && suggestions[activeIndex]
@@ -513,13 +456,10 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
         safeName(me?.username) ||
         (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
         "Cuenta";
-  const resolvedIsStoreAdmin =
-    typeof me?.isStoreAdmin === "boolean" ? me.isStoreAdmin : storeAdminHint;
+  const resolvedIsStoreAdmin = Boolean(me?.isStoreAdmin);
   // Mientras no resolvimos sesión/rol evitamos mostrar UI de cuenta común
   // para no generar flash al cambiar a cuenta tienda.
-  const roleResolved =
-    (me !== null && typeof me?.isStoreAdmin === "boolean") ||
-    typeof storeAdminHint === "boolean";
+  const roleResolved = authResolved;
   const canUseShopFeatures = roleResolved && resolvedIsStoreAdmin !== true;
 
   return (
@@ -581,11 +521,11 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
                   onClick={openLogin}
                   className="flex items-center gap-2 text-[15px] font-medium text-neutral-500 hover:text-neutral-900 transition-colors disabled:cursor-default disabled:opacity-70"
                   type="button"
-                  disabled={meLoading}
+                  disabled={!roleResolved}
                   aria-expanded={loginOpen}
                 >
                   <User className="h-5 w-5" />
-                  {meLoading ? "Cuenta" : "Iniciar sesión"}
+                  Iniciar sesión
                 </button>
               ) : (
                 <>
@@ -658,11 +598,11 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
               onClick={onUserPressMobile}
               className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 disabled:cursor-default disabled:opacity-70 sm:max-w-[170px] sm:px-3"
               aria-label={me ? "Mi perfil" : roleResolved ? "Iniciar sesión" : "Cuenta"}
-              disabled={!roleResolved || (meLoading && !me)}
+              disabled={!roleResolved}
             >
               <User className="h-5 w-5" />
               <span className="max-w-[78px] truncate sm:max-w-[120px]">
-                {me ? displayName : roleResolved ? (meLoading ? "Cuenta" : "Iniciar sesión") : "Cuenta"}
+                {me ? displayName : roleResolved ? "Iniciar sesión" : "Cuenta"}
               </span>
             </button>
 
@@ -718,10 +658,9 @@ export function Header({ initialUser = null }: { initialUser?: any | null }) {
       </Container>
 
       <LoginModal
-        open={loginOpen && !meLoading && !me}
+        open={loginOpen && roleResolved && !me}
         onClose={() => setLoginOpen(false)}
         onSuccess={() => {
-          refreshMe();
           setLoginOpen(false);
           window.dispatchEvent(new Event("amg-auth-changed"));
 

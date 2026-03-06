@@ -2,53 +2,17 @@
 
 import Link from "next/link";
 import { Facebook, Instagram, Phone, Mail } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useAuthStore } from "@/store/auth.store";
 
 /**
  * Footer del ecommerce:
  * - Centro: navegación extra (ayuda / legal)
  * - Derecha: contacto + redes
  */
-export function Footer({ initialUser = null }: { initialUser?: any | null }) {
-  const initialRole =
-    typeof initialUser?.isStoreAdmin === "boolean"
-      ? Boolean(initialUser.isStoreAdmin)
-      : null;
-  const [isStoreAdmin, setIsStoreAdmin] = useState(initialRole ?? false);
-  const [roleResolved, setRoleResolved] = useState(initialRole !== null);
-
-  useEffect(() => {
-    let alive = true;
-
-    const refreshMe = async () => {
-      try {
-        const r = await fetch("/api/auth/me", {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const j = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
-        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
-        setRoleResolved(true);
-      } catch {
-        if (!alive) return;
-        setIsStoreAdmin(initialRole ?? false);
-        setRoleResolved(true);
-      }
-    };
-
-    refreshMe();
-    window.addEventListener("amg-auth-changed", refreshMe);
-    window.addEventListener("focus", refreshMe);
-
-    return () => {
-      alive = false;
-      window.removeEventListener("amg-auth-changed", refreshMe);
-      window.removeEventListener("focus", refreshMe);
-    };
-  }, [initialRole]);
-
-  const canUseShopFeatures = roleResolved && !isStoreAdmin;
+export function Footer() {
+  const user = useAuthStore((s) => s.user);
+  const roleResolved = useAuthStore((s) => s.resolved);
+  const canUseShopFeatures = roleResolved && !Boolean(user?.isStoreAdmin);
 
   return (
     <footer className="bg-red-600 text-white">

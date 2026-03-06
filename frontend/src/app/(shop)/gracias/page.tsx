@@ -1,10 +1,6 @@
-"use client";
-
-import Link from "next/link";
-import { Suspense, useEffect, useMemo, useRef, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { Container } from "@/components/layout/Container";
-import { useCartStore } from "@/store/cart.store";
+import { getServerAuthUser } from "@/lib/server/auth-user";
+import { getServerCustomerOrderById } from "@/lib/server/shop-data";
+import GraciasPageClient from "./page.client";
 
 type StatusKind = "success" | "pending" | "failure" | "unknown";
 
@@ -16,67 +12,6 @@ function normalizeStatus(s?: string | null): StatusKind {
   return "unknown";
 }
 
-function StatusBadge({ status }: { status: StatusKind }) {
-  const cfg = useMemo(() => {
-    switch (status) {
-      case "success":
-        return {
-          title: "Compra realizada",
-          subtitle: "Tu pago fue aprobado. ¡Gracias por tu compra!",
-          ring: "ring-emerald-200",
-          bg: "bg-emerald-50",
-          iconBg: "bg-emerald-600",
-          icon: "✓",
-        };
-      case "pending":
-        return {
-          title: "Pago pendiente",
-          subtitle: "Estamos esperando confirmación. Podría tardar unos segundos.",
-          ring: "ring-amber-200",
-          bg: "bg-amber-50",
-          iconBg: "bg-amber-600",
-          icon: "⏳",
-        };
-      case "failure":
-        return {
-          title: "Pago rechazado",
-          subtitle: "El pago no se aprobó. Podés intentar nuevamente.",
-          ring: "ring-red-200",
-          bg: "bg-red-50",
-          iconBg: "bg-red-600",
-          icon: "✕",
-        };
-      default:
-        return {
-          title: "Estado de compra",
-          subtitle: "Recibimos tu retorno de pago.",
-          ring: "ring-neutral-200",
-          bg: "bg-neutral-50",
-          iconBg: "bg-neutral-700",
-          icon: "ℹ",
-        };
-    }
-  }, [status]);
-
-  return (
-    <div className={`rounded-2xl ${cfg.bg} ring-1 ${cfg.ring} p-6`}>
-      <div className="flex items-start gap-4">
-        <div
-          className={`grid h-12 w-12 place-items-center rounded-xl ${cfg.iconBg} text-white text-xl font-black`}
-          aria-hidden
-        >
-          {cfg.icon}
-        </div>
-
-        <div className="min-w-0">
-          <h1 className="text-2xl font-extrabold text-neutral-900">{cfg.title}</h1>
-          <p className="mt-1 text-sm text-neutral-700">{cfg.subtitle}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 function mapOrderStatusToUi(orderStatus: string | null | undefined): StatusKind {
   const s = String(orderStatus ?? "").toLowerCase();
   if (s === "paid") return "success";
@@ -85,280 +20,37 @@ function mapOrderStatusToUi(orderStatus: string | null | undefined): StatusKind 
   return "pending";
 }
 
-function GraciasPageContent() {
-  const sp = useSearchParams();
+export default async function GraciasPage({
+  searchParams,
+}: {
+  searchParams?: {
+    orderId?: string;
+    external_reference?: string;
+    status?: string;
+  };
+}) {
+  const orderId = String(searchParams?.orderId || "").trim();
+  const externalRef = String(searchParams?.external_reference || "").trim();
+  const fallbackStatus = normalizeStatus(searchParams?.status);
 
-  const clear = useCartStore((s) => s.clear);
-  const hasHydrated = useCartStore((s) => s.hasHydrated);
+  const user = await getServerAuthUser();
+  const order =
+    orderId && user && !user.isStoreAdmin
+      ? await getServerCustomerOrderById(orderId, user)
+      : null;
 
-  // ✅ Evita hydration mismatch: no dependemos de searchParams en SSR/primer render
-  const [isMounted, setIsMounted] = useState(false);
-
-  // Valores derivados de la URL (solo cliente)
-  const [orderId, setOrderId] = useState<string>("");
-  const [externalRef, setExternalRef] = useState<string>("");
-
-  // Estado UI
-  const [status, setStatus] = useState<StatusKind>("pending");
-  const [hint, setHint] = useState<string | null>(null);
-  const [orderNumber, setOrderNumber] = useState<string>("");
-
-  // ✅ para evitar re-poll innecesario cuando llega orderNumber
-  const orderNumberRef = useRef("");
-  useEffect(() => {
-    orderNumberRef.current = orderNumber;
-  }, [orderNumber]);
-
-  const clearedRef = useRef(false);
-  const resolvedRef = useRef<StatusKind | null>(null);
-
-  // Montaje (cliente)
-  useEffect(() => {
-    setIsMounted(true);
-  }, []);
-
-  // ✅ Leer params solo luego de montar, y sincronizar si cambian
-  useEffect(() => {
-    if (!isMounted) return;
-
-    const nextOrderId = sp.get("orderId") || "";
-    const nextExternalRef = sp.get("external_reference") || "";
-    const nextUrlStatus = normalizeStatus(sp.get("status"));
-
-    setOrderId(nextOrderId);
-    setExternalRef(nextExternalRef);
-
-    // Si todavía no resolvimos por Strapi, usamos status de URL como fallback
-    if (!resolvedRef.current) {
-      setStatus(nextUrlStatus);
-      setHint(null);
-    }
-  }, [isMounted, sp]);
-
-  // ✅ Vaciar carrito cuando la UI esté en success (1 sola vez) y el store ya hidrató
-  useEffect(() => {
-    if (!hasHydrated) return;
-    if (status !== "success") return;
-    if (clearedRef.current) return;
-
-    clearedRef.current = true;
-    clear();
-
-    // Notifica al sincronizador global que debe forzar carrito vacío
-    // y persistirlo en backend para todos los dispositivos.
-    window.dispatchEvent(new Event("amg-cart-force-empty"));
-
-    // Persistencia directa como refuerzo (por si el sync tarda en reaccionar).
-    fetch("/api/auth/me", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ cartItems: [] }),
-      keepalive: true,
-    }).catch(() => null);
-  }, [status, clear, hasHydrated]);
-
-  // Poll a Strapi para resolver estado real + orderNumber
-  useEffect(() => {
-    if (!isMounted) return;
-    if (!orderId) return;
-
-    let alive = true;
-    const startedAt = Date.now();
-    let timer: any = null;
-
-    async function tick() {
-      try {
-        const res = await fetch(`/api/orders/${encodeURIComponent(orderId)}`, {
-          cache: "no-store",
-        });
-        const json = await res.json().catch(() => null);
-
-        if (!alive) return;
-
-        const data = json?.data;
-
-        const orderStatus: string | null =
-          data?.attributes?.orderStatus ?? data?.orderStatus ?? null;
-
-        const fetchedOrderNumber: string =
-          data?.orderNumber ?? data?.attributes?.orderNumber ?? "";
-
-        if (fetchedOrderNumber && fetchedOrderNumber !== orderNumberRef.current) {
-          setOrderNumber(fetchedOrderNumber);
-        }
-
-        const nextUi = mapOrderStatusToUi(orderStatus);
-
-        // nunca permitir downgrade success -> pending
-        if (resolvedRef.current === "success") {
-          setStatus("success");
-          return;
-        }
-
-        if (nextUi === "success" || nextUi === "failure") {
-          resolvedRef.current = nextUi;
-        }
-
-        setStatus((prev) => (prev === "success" ? "success" : nextUi));
-
-        if (nextUi === "success" && hasHydrated && !clearedRef.current) {
-          clearedRef.current = true;
-          clear();
-          window.dispatchEvent(new Event("amg-cart-force-empty"));
-          fetch("/api/auth/me", {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ cartItems: [] }),
-            keepalive: true,
-          }).catch(() => null);
-        }
-
-        if (Date.now() - startedAt > 30_000 && nextUi === "pending") {
-          setHint(
-            "Todavía no pudimos confirmar el pago. Podés refrescar la página o revisar tu email: el webhook puede tardar unos segundos."
-          );
-        } else {
-          setHint(null);
-        }
-      } catch {
-        if (!alive) return;
-        if (Date.now() - startedAt > 30_000) {
-          setHint(
-            "Tuvimos un problema verificando el estado. Podés refrescar la página o revisar tu email."
-          );
-        }
-      }
-    }
-
-    const schedule = async () => {
-      await tick();
-
-      const elapsed = Date.now() - startedAt;
-
-      if (!alive) return;
-      if (resolvedRef.current === "success" || resolvedRef.current === "failure") return;
-      if (elapsed > 30_000) return;
-
-      const delay = elapsed <= 8_000 ? 500 : 2500;
-      timer = setTimeout(schedule, delay);
-    };
-
-    schedule();
-
-    return () => {
-      alive = false;
-      if (timer) clearTimeout(timer);
-    };
-  }, [isMounted, orderId, clear, hasHydrated]);
-
-  const statusLabel =
-    status === "success"
-      ? "Aprobado"
-      : status === "pending"
-      ? "Pendiente"
-      : status === "failure"
-      ? "Rechazado"
-      : "—";
+  const initialStatus = order
+    ? mapOrderStatusToUi(order.orderStatus)
+    : fallbackStatus;
+  const initialOrderNumber =
+    typeof order?.orderNumber === "string" ? order.orderNumber : "";
 
   return (
-    <main>
-      <Container>
-        <div className="py-10">
-          {/* ✅ Mientras no montó: render estable (sin depender de query) */}
-          <StatusBadge status={isMounted ? status : "pending"} />
-
-          <div className="mt-6 rounded-2xl border bg-white p-6 shadow-sm">
-            <h2 className="text-lg font-extrabold text-neutral-900">Detalle del pedido</h2>
-
-            <div className="mt-4 space-y-3 text-sm">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-neutral-600">Pedido</span>
-                <span className="font-semibold text-neutral-900 break-all">
-                  {isMounted && orderNumber ? (
-                    orderNumber
-                  ) : (
-                    <span className="inline-flex items-center gap-2">
-                      <span className="inline-block h-4 w-44 animate-pulse rounded bg-neutral-200 align-middle" />
-                      <span className="text-xs text-neutral-500">
-                        {isMounted ? "Generando…" : "Cargando…"}
-                      </span>
-                    </span>
-                  )}
-                </span>
-              </div>
-
-              {isMounted && externalRef && (
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-neutral-600">Referencia</span>
-                  <span className="font-semibold text-neutral-900 break-all">
-                    {externalRef}
-                  </span>
-                </div>
-              )}
-
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-neutral-600">Estado</span>
-                <span className="font-semibold text-neutral-900">
-                  {isMounted ? statusLabel : "—"}
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-6 flex flex-wrap gap-3">
-              <Link
-                href="/"
-                className="rounded-full bg-red-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-red-700"
-              >
-                Volver a la tienda
-              </Link>
-
-              <Link
-                href="/productos"
-                className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-              >
-                Ver productos
-              </Link>
-
-              <Link
-                href="/promociones"
-                className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-              >
-                Seguir comprando
-              </Link>
-
-              {isMounted && status === "success" && orderId && (
-                <Link
-                  href={`/mis-pedidos/${encodeURIComponent(orderId)}`}
-                  className="rounded-full border px-5 py-2.5 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-                >
-                  Ver mi pedido →
-                </Link>
-              )}
-            </div>
-
-            {isMounted && status === "pending" && (
-              <p className="mt-4 text-xs text-neutral-500">
-                {hint ||
-                  "Si el estado no cambia, refrescá la página o revisá tu email. El webhook puede tardar unos segundos."}
-              </p>
-            )}
-
-            {isMounted && status === "success" && (
-              <p className="mt-4 text-xs text-neutral-500">
-                Si no te llega el email de confirmación, revisá Spam/Promociones.
-              </p>
-            )}
-          </div>
-        </div>
-      </Container>
-    </main>
-  );
-}
-
-export default function GraciasPage() {
-  return (
-    <Suspense fallback={<main><Container><div className="py-10">Cargando…</div></Container></main>}>
-      <GraciasPageContent />
-    </Suspense>
+    <GraciasPageClient
+      initialOrderId={orderId}
+      initialExternalRef={externalRef}
+      initialStatus={initialStatus}
+      initialOrderNumber={initialOrderNumber}
+    />
   );
 }

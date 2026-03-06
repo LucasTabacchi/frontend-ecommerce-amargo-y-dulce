@@ -1,19 +1,8 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
-
-type OrderRow = {
-  id: string | number;
-  orderNumber?: string | null;
-  orderStatus?: string | null;
-  total?: number | string | null;
-  createdAt?: string | null;
-  shippingAddress?: any;
-  items?: any;
-};
+import { requireServerAuthUser } from "@/lib/server/auth-user";
+import { getServerCustomerOrders } from "@/lib/server/shop-data";
+import type { ServerOrder } from "@/lib/server/shop-data";
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -67,89 +56,12 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-export default function MisPedidosPage() {
-  const router = useRouter();
-
-  const [meLoading, setMeLoading] = useState(true);
-  const [me, setMe] = useState<any | null>(null);
-
-  const [ordersReady, setOrdersReady] = useState(false);
-  const [orders, setOrders] = useState<OrderRow[]>([]);
-  const [error, setError] = useState<string | null>(null);
-
-  // 1) Traer usuario logueado
-  useEffect(() => {
-    (async () => {
-      setMeLoading(true);
-      try {
-        const r = await fetch("/api/auth/me", { cache: "no-store" });
-        const j = await r.json().catch(() => ({ user: null }));
-        setMe(j?.user ?? null);
-      } catch {
-        setMe(null);
-      } finally {
-        setMeLoading(false);
-      }
-    })();
-  }, []);
-
-  // 2) Si no hay usuario, redirigir a home
-  useEffect(() => {
-    if (!meLoading && !me) {
-      router.replace("/");
-    }
-  }, [meLoading, me, router]);
-
-  useEffect(() => {
-    if (!meLoading && me?.isStoreAdmin) {
-      router.replace("/admin/pedidos");
-    }
-  }, [meLoading, me, router]);
-
-  // 3) Cargar pedidos del usuario logueado
-  useEffect(() => {
-    if (meLoading || !me || me?.isStoreAdmin) return;
-
-    (async () => {
-      setOrdersReady(false);
-      setError(null);
-      try {
-        const r = await fetch("/api/orders/my", { cache: "no-store" });
-        const json = await r.json().catch(() => null);
-
-        if (!r.ok) {
-          throw new Error(json?.error || `HTTP ${r.status}`);
-        }
-
-        const list = Array.isArray(json?.orders) ? json.orders : [];
-        setOrders(list);
-      } catch (err: any) {
-        setOrders([]);
-        setError(err?.message || "No se pudieron cargar tus pedidos.");
-      } finally {
-        setOrdersReady(true);
-      }
-    })();
-  }, [meLoading, me]);
-
-  const showLoader = meLoading || (!!me && !me.isStoreAdmin && !ordersReady);
-
-  if (showLoader) {
-    return (
-      <main>
-        <Container>
-          <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-600 border-t-transparent" />
-            <p className="text-sm font-medium text-neutral-600">Cargando...</p>
-          </div>
-        </Container>
-      </main>
-    );
-  }
-
-  // Si no está logueado, redirigimos (este return evita flicker)
-  if (!me) return null;
-  if (me?.isStoreAdmin) return null;
+export default async function MisPedidosPage() {
+  const user = await requireServerAuthUser({
+    unauthenticatedRedirect: "/",
+    storeAdminRedirect: "/admin/pedidos",
+  });
+  const orders: ServerOrder[] = await getServerCustomerOrders(user);
 
   return (
     <main>
@@ -160,48 +72,40 @@ export default function MisPedidosPage() {
             Estos son tus pedidos asociados a tu cuenta.
           </p>
 
-          {error && (
-            <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-red-700">
-              {error}
-            </div>
-          )}
-
-          {!error && orders.length === 0 && (
+          {orders.length === 0 ? (
             <div className="mt-6 rounded-2xl border bg-white p-5 text-sm text-neutral-700">
               Todavía no tenés pedidos.
             </div>
-          )}
-
-          {orders.length > 0 && (
+          ) : (
             <div className="mt-8 space-y-4">
-              {orders.map((o) => {
+              {orders.map((order) => {
                 const totalNum =
-                  typeof o.total === "number" ? o.total : Number(o.total || 0);
+                  typeof order.total === "number" ? order.total : Number(order.total || 0);
 
-                const date = o.createdAt ? new Date(o.createdAt) : null;
+                const date = order.createdAt ? new Date(order.createdAt) : null;
                 const dateLabel = date
                   ? date.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })
                   : "";
 
                 return (
                   <Link
-                    key={String(o.id)}
-                    href={`/mis-pedidos/${encodeURIComponent(String(o.id))}`}
+                    key={String(order.id)}
+                    href={`/mis-pedidos/${encodeURIComponent(String(order.id))}`}
                     className="block rounded-2xl border bg-white p-5 shadow-sm transition hover:shadow-md"
                   >
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div>
                         <div className="text-sm text-neutral-600">Pedido</div>
                         <div className="text-base font-extrabold text-neutral-900 break-words">
-                          {o.orderNumber || String(o.id)}
+                          {order.orderNumber || String(order.id)}
                         </div>
-                        {dateLabel && (
+                        {dateLabel ? (
                           <div className="mt-1 text-sm text-neutral-600">{dateLabel}</div>
-                        )}
+                        ) : null}
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <StatusPill status={String(o.orderStatus || "")} />
+                        <StatusPill status={String(order.orderStatus || "")} />
                         <div className="text-right">
                           <div className="text-sm text-neutral-600">Total</div>
                           <div className="text-base font-extrabold text-neutral-900 whitespace-nowrap">

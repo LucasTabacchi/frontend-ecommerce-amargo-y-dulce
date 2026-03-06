@@ -3,10 +3,12 @@ import { notFound, redirect } from "next/navigation";
 import Image from "next/image";
 import Link from "next/link";
 import { Metadata } from "next";
+import { cache } from "react";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
+import { getServerProductReviews } from "@/lib/server/shop-data";
 
 export const revalidate = 3600;
 
@@ -80,7 +82,7 @@ function pickImage(rowOrAttr: any) {
   return strapiMediaUrl(url);
 }
 
-async function getProduct(pid: string) {
+const getProduct = cache(async function getProduct(pid: string) {
   const clean = String(pid || "").trim();
   if (!clean) return null;
 
@@ -123,7 +125,7 @@ async function getProduct(pid: string) {
     console.error("[productos/[id]] getProduct error:", e);
     return null;
   }
-}
+});
 
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const product = await getProduct(params.id);
@@ -179,6 +181,10 @@ export default async function ProductDetailPage({ params }: Props) {
   const outOfStock = stock != null && stock <= 0;
 
   const imageUrl = pickImage(row);
+  const initialReviews = await getServerProductReviews({
+    productDocumentId: documentId ?? undefined,
+    productId: id,
+  });
 
   return (
     <main>
@@ -304,6 +310,7 @@ export default async function ProductDetailPage({ params }: Props) {
           <ProductReviews
             productDocumentId={documentId ?? undefined}
             productId={id}
+            initialReviews={initialReviews}
           />
         </div>
       </Container>

@@ -5,8 +5,9 @@ import { strapiGet } from "@/lib/strapi";
 import { toCardItem } from "@/lib/strapi-mappers";
 import { HeroCarousel } from "@/components/home/HeroCarousel";
 import { Metadata } from "next";
+import { Suspense } from "react";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 3600;
 
 export const metadata: Metadata = {
   title: "Inicio | Chocolates Artesanales",
@@ -29,10 +30,13 @@ type StrapiSingleResponse<T> = {
 };
 
 async function getBestSellers() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+
   try {
     const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(
       "/api/home-page?populate[bestSellers][populate]=*",
-      { cache: "no-store" }
+      { next: { revalidate: 3600 }, signal: controller.signal }
     );
 
     const home = (res?.data?.attributes ?? res?.data) as HomePageAttributes | undefined;
@@ -43,12 +47,35 @@ async function getBestSellers() {
     // Mostramos la página con el resto del contenido y sin best sellers.
     console.error("Error fetching best sellers:", error);
     return [];
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-export default async function HomePage() {
+async function HomeBestSellersSection() {
   const bestSellers = await getBestSellers();
+  return <HomeBestSellers products={bestSellers} />;
+}
 
+function HomeBestSellersFallback() {
+  return (
+    <section className="py-fluid-lg">
+      <div className="mx-auto w-full max-w-7xl px-fluid-sm md:px-fluid-md lg:px-fluid-lg">
+        <div className="mx-auto h-5 w-64 animate-pulse rounded bg-neutral-200" />
+        <div className="mt-fluid-md grid grid-cols-[repeat(auto-fit,minmax(min(280px,100%),1fr))] gap-fluid-md">
+          {Array.from({ length: 4 }).map((_, index) => (
+            <div
+              key={index}
+              className="h-[340px] animate-pulse rounded-2xl border bg-white"
+            />
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+export default function HomePage() {
   // Slides estáticos (pueden venir de Strapi en el futuro)
   const slides = [
     {
@@ -94,7 +121,9 @@ export default async function HomePage() {
       </Container>
       <Container>
         <div className="pb-16">
-          <HomeBestSellers products={bestSellers} />
+          <Suspense fallback={<HomeBestSellersFallback />}>
+            <HomeBestSellersSection />
+          </Suspense>
         </div>
       </Container>
     </>

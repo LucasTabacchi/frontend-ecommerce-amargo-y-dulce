@@ -1,7 +1,10 @@
 import MiPerfilPage from "./page.client";
+import { getServerAuthUser } from "@/lib/server/auth-user";
+import { getServerAddresses } from "@/lib/server/shop-data";
 
-export const dynamic = "force-dynamic";
+export default async function Page() {
+  const user = await getServerAuthUser();
+  const addresses = user && !user.isStoreAdmin ? await getServerAddresses(user) : [];
 
-export default function Page() {
-  return <MiPerfilPage />;
+  return <MiPerfilPage initialUser={user} initialAddresses={addresses} />;
 }

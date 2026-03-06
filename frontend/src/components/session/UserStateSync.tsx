@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
+import { useAuthStore } from "@/store/auth.store";
 
 const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
 const USER_SYNC_KEY_PREFIX = "amg_user_state_synced_v1:";
@@ -213,6 +214,7 @@ export function UserStateSync() {
   const items = useCartStore((s) => s.items);
   const hasHydrated = useCartStore((s) => s.hasHydrated);
   const setItems = useCartStore((s) => s.setItems);
+  const setAuthState = useAuthStore((s) => s.setAuthState);
 
   const [userId, setUserId] = useState<number | null>(null);
   const [initialSyncDone, setInitialSyncDone] = useState(false);
@@ -319,6 +321,7 @@ export function UserStateSync() {
     if (!r) return false;
     if (r.status === 401) {
       setUserId(null);
+      setAuthState({ user: null, resolved: true, loading: false });
       return false;
     }
 
@@ -371,12 +374,14 @@ export function UserStateSync() {
           lastCouponSigRef.current = "";
           writeLocalClaimedCoupons([]);
           writeStoreAdminFlag(null);
+          setAuthState({ user: null, resolved: true, loading: false, error: null });
           setInitialSyncDone(true);
           return;
         }
 
         const nextUserId = Number(user.id);
         const nextIsStoreAdmin = Boolean(user?.isStoreAdmin);
+        setAuthState({ user, resolved: true, loading: false, error: null });
         setUserId(nextUserId);
         writeStoreAdminFlag(nextIsStoreAdmin);
         const isFirstSyncForUser = bootstrappedUserIdRef.current !== nextUserId;
@@ -522,6 +527,11 @@ export function UserStateSync() {
         markUserSynced(nextUserId);
         writeLastAuthUserId(nextUserId);
         bootstrappedUserIdRef.current = nextUserId;
+      } catch {
+        if (!alive) return;
+        setUserId(null);
+        writeStoreAdminFlag(null);
+        setAuthState({ user: null, resolved: true, loading: false });
       } finally {
         if (alive) setInitialSyncDone(true);
       }

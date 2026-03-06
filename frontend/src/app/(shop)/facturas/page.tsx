@@ -1,129 +1,19 @@
-"use client";
-
 import Link from "next/link";
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
-
-type Invoice = {
-  id: string | number | null; // puede ser documentId o id numérico
-  number: string | null;
-  total: number | string | null;
-  issuedAt: string | null;
-  pdfUrl: string | null;
-  order?: {
-    orderNumber?: string | null;
-    documentId?: string | null;
-  } | null;
-};
+import { requireServerAuthUser } from "@/lib/server/auth-user";
+import { getServerCustomerInvoices } from "@/lib/server/shop-data";
+import type { ServerInvoice } from "@/lib/server/shop-data";
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-/**
- * (Opcional) helper por si querés mostrar "Ver" con url directa.
- * Para DESCARGA usamos /api/invoices/download/[id] sí o sí.
- */
-function normalizePdfUrl(url: string | null) {
-  if (!url) return null;
-
-  let out = url;
-
-  if (!out.includes("fl_attachment") && out.includes("/upload/")) {
-    out = out.replace("/upload/", "/upload/fl_attachment/");
-  }
-
-  return encodeURI(out);
-}
-
-export default function FacturasPage() {
-  const router = useRouter();
-
-  const [meLoading, setMeLoading] = useState(true);
-  const [me, setMe] = useState<any | null>(null);
-
-  const [invoicesReady, setInvoicesReady] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [invoices, setInvoices] = useState<Invoice[]>([]);
-
-  useEffect(() => {
-    let alive = true;
-
-    (async () => {
-      setMeLoading(true);
-      try {
-        const r = await fetch("/api/auth/me", { cache: "no-store" });
-        const j = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
-        setMe(j?.user ?? null);
-      } catch {
-        if (!alive) return;
-        setMe(null);
-      } finally {
-        if (alive) setMeLoading(false);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!meLoading && !me) router.replace("/");
-    if (!meLoading && me?.isStoreAdmin) router.replace("/admin/pedidos");
-  }, [meLoading, me, router]);
-
-  useEffect(() => {
-    if (meLoading || !me || me?.isStoreAdmin) return;
-
-    let alive = true;
-
-    (async () => {
-      try {
-        setInvoicesReady(false);
-        setError(null);
-
-        const r = await fetch("/api/invoices/my", { cache: "no-store" });
-        const j = await r.json().catch(() => null);
-
-        if (!alive) return;
-
-        if (!r.ok) {
-          throw new Error(j?.error || "No se pudieron cargar tus facturas.");
-        }
-
-        setInvoices(Array.isArray(j?.invoices) ? j.invoices : []);
-      } catch (e: any) {
-        if (!alive) return;
-        setError(e?.message || "Error cargando facturas.");
-      } finally {
-        if (alive) setInvoicesReady(true);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
-  }, [meLoading, me]);
-
-  const showLoader = meLoading || (!!me && !me.isStoreAdmin && !invoicesReady);
-
-  if (showLoader) {
-    return (
-      <main>
-        <Container>
-          <div className="flex min-h-[70vh] flex-col items-center justify-center gap-4">
-            <div className="h-12 w-12 animate-spin rounded-full border-4 border-orange-600 border-t-transparent" />
-            <p className="text-sm font-medium text-neutral-600">Cargando...</p>
-          </div>
-        </Container>
-      </main>
-    );
-  }
-
-  if (!me || me?.isStoreAdmin) return null;
+export default async function FacturasPage() {
+  const user = await requireServerAuthUser({
+    unauthenticatedRedirect: "/",
+    storeAdminRedirect: "/admin/pedidos",
+  });
+  const invoices: ServerInvoice[] = await getServerCustomerInvoices(user);
 
   return (
     <main>
@@ -144,46 +34,42 @@ export default function FacturasPage() {
         </div>
 
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-          {error ? (
-            <p className="text-sm text-red-600">{error}</p>
-          ) : invoices.length === 0 ? (
+          {invoices.length === 0 ? (
             <p className="text-sm text-neutral-600">
-              Todavía no tenés facturas. Cuando una compra quede como{" "}
-              <b>pagada</b>, vas a ver el comprobante acá.
+              Todavía no tenés facturas. Cuando una compra quede como <b>pagada</b>, vas a ver el comprobante acá.
             </p>
           ) : (
             <div className="space-y-3">
-              {invoices.map((inv, idx) => {
+              {invoices.map((invoice, idx) => {
                 const downloadHref =
-                  inv.id != null ? `/api/invoices/download/${encodeURIComponent(String(inv.id))}` : null;
-
-                // si querés mostrar un link directo (no recomendado para descargar):
-                // const directHref = normalizePdfUrl(inv.pdfUrl);
+                  invoice.id != null
+                    ? `/api/invoices/download/${encodeURIComponent(String(invoice.id))}`
+                    : null;
 
                 return (
                   <div
-                    key={String(inv.id ?? inv.number ?? idx)}
+                    key={String(invoice.id ?? invoice.number ?? idx)}
                     className="rounded-xl border border-neutral-200 p-4"
                   >
                     <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                       <div className="min-w-0">
                         <div className="font-extrabold text-neutral-900">
-                          {inv.number ? `Recibo ${inv.number}` : "Factura"}
+                          {invoice.number ? `Recibo ${invoice.number}` : "Factura"}
                         </div>
                         <div className="mt-1 text-sm text-neutral-600">
-                          {inv.order?.orderNumber ? `Pedido ${inv.order.orderNumber}` : ""}
-                          {inv.issuedAt
-                            ? ` • ${new Date(inv.issuedAt).toLocaleString("es-AR")}`
+                          {invoice.orderNumber ? `Pedido ${invoice.orderNumber}` : ""}
+                          {invoice.issuedAt
+                            ? ` • ${new Date(invoice.issuedAt).toLocaleString("es-AR")}`
                             : ""}
                         </div>
                       </div>
 
                       <div className="flex items-center gap-3">
                         <div className="text-sm font-bold text-neutral-900">
-                          {typeof inv.total === "number"
-                            ? formatARS(inv.total)
-                            : inv.total != null
-                            ? String(inv.total)
+                          {typeof invoice.total === "number"
+                            ? formatARS(invoice.total)
+                            : invoice.total != null
+                            ? String(invoice.total)
                             : ""}
                         </div>
 

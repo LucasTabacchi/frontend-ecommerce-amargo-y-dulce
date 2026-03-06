@@ -1,24 +1,25 @@
 import { Header } from "@/components/layout/Header";
 import { Footer } from "@/components/layout/Footer";
 import { UserStateSync } from "@/components/session/UserStateSync";
-import { getServerAuthUser } from "@/lib/server/auth-user";
+import { Suspense } from "react";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
+function HeaderFallback() {
+  return <div className="sticky top-0 z-50 h-[72px] border-b bg-white/95 backdrop-blur" />;
+}
 
-export default async function ShopLayout({
+export default function ShopLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
-  const initialUser = await getServerAuthUser();
-
   return (
     <div className="min-h-screen min-h-[100dvh] bg-[#FAF6F6] flex flex-col">
       <UserStateSync />
-      <Header initialUser={initialUser} />
+      <Suspense fallback={<HeaderFallback />}>
+        <Header />
+      </Suspense>
       <main className="flex-1">{children}</main>
-      <Footer initialUser={initialUser} />
+      <Footer />
     </div>
   );
 }

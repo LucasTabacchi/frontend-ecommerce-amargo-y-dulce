@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useSearchParams, useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { useCartStore } from "@/store/cart.store";
+import { useAuthStore } from "@/store/auth.store";
 
 const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
 
@@ -137,6 +138,7 @@ type Address = {
 // ✅ auth/me (ahora incluye dni)
 type MeResponse = {
   user: {
+    id?: number | null;
     email?: string | null;
     name?: string | null;
     dni?: string | null;
@@ -233,6 +235,9 @@ function readClaimedCouponCodes() {
 function CheckoutPageContent() {
   const router = useRouter();
   const sp = useSearchParams();
+  const authUser = useAuthStore((s) => s.user);
+  const authResolved = useAuthStore((s) => s.resolved);
+  const setAuthState = useAuthStore((s) => s.setAuthState);
 
   const cartItems = useCartStore((s) => s.items);
   const clear = useCartStore((s) => s.clear);
@@ -266,8 +271,8 @@ function CheckoutPageContent() {
   const [selectedAddressId, setSelectedAddressId] = useState<string>("");
 
   // ✅ usuario (para autocompletar email/nombre/dni)
-  const [me, setMe] = useState<MeResponse>({ user: null });
-  const [meReady, setMeReady] = useState(false);
+  const [me, setMe] = useState<MeResponse>({ user: authUser ?? null });
+  const [meReady, setMeReady] = useState(authResolved);
 
   // cupón
   const [coupon, setCoupon] = useState("");
@@ -333,40 +338,21 @@ function CheckoutPageContent() {
     }
   }, [redirectedOrderId, redirectedStatus]);
 
-  /* ================== AUTOFILL (ME + LOCALSTORAGE) ================== */
-
   useEffect(() => {
-    let alive = true;
+    setMe({ user: authUser ?? null });
+    setMeReady(authResolved);
 
-    (async () => {
-      try {
-        const r = await fetch("/api/auth/me", { cache: "no-store" });
-        const j: MeResponse = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
+    if (!authResolved) return;
 
-        setMe({ user: j?.user ?? null });
+    const uEmail = String(authUser?.email ?? "").trim();
+    const uName = String(authUser?.name ?? "").trim();
+    const uDni = String(authUser?.dni ?? "").trim();
 
-        const uEmail = String(j?.user?.email ?? "").trim();
-        const uName = String(j?.user?.name ?? "").trim();
-        const uDni = String(j?.user?.dni ?? "").trim();
-
-        if (uEmail && isEmptyish(email)) setEmail(uEmail);
-        if (uName && isEmptyish(name)) setName(uName);
-        if (uDni && isEmptyish(dni)) setDni(uDni);
-      } catch {
-        if (!alive) return;
-        setMe({ user: null });
-      } finally {
-        if (!alive) return;
-        setMeReady(true);
-      }
-    })();
-
-    return () => {
-      alive = false;
-    };
+    if (uEmail && isEmptyish(email)) setEmail(uEmail);
+    if (uName && isEmptyish(name)) setName(uName);
+    if (uDni && isEmptyish(dni)) setDni(uDni);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [authUser, authResolved]);
 
   const isStoreAdmin = Boolean(me?.user?.isStoreAdmin);
 
@@ -555,6 +541,12 @@ function CheckoutPageContent() {
       setMe((prev) => ({
         user: prev.user ? { ...prev.user, dni: clean } : prev.user,
       }));
+      setAuthState({
+        user: authUser ? { ...authUser, dni: clean } : authUser,
+        resolved: true,
+        loading: false,
+        error: null,
+      });
     } catch (e: any) {
       setDniError(e?.message || "Error guardando DNI.");
     } finally {
@@ -600,9 +592,17 @@ function CheckoutPageContent() {
   }
 
   useEffect(() => {
-    loadAddresses();
+    if (!meReady) return;
+    if (!me?.user || isStoreAdmin) {
+      setAddresses([]);
+      setSelectedAddressId("");
+      setAddrLoading(false);
+      return;
+    }
+
+    void loadAddresses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [meReady, me?.user?.id, isStoreAdmin]);
 
   const selectedAddress = useMemo(() => {
     return addresses.find((a) => String(a.id) === String(selectedAddressId)) || null;

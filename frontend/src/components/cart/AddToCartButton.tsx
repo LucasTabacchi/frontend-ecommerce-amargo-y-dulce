@@ -3,26 +3,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import type { ProductCardItem } from "@/components/products/ProductCard";
-
-const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+import { useAuthStore } from "@/store/auth.store";
 
 function toIntStock(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
   const n = Number(v);
   if (!Number.isFinite(n)) return null;
   return Math.max(0, Math.trunc(n));
-}
-
-function readStoreAdminFlag() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-    return null;
-  } catch {
-    return null;
-  }
 }
 
 function getKey(p: any) {
@@ -38,9 +25,10 @@ function getKey(p: any) {
 export function AddToCartButton({ item }: { item: ProductCardItem }) {
   const addItem = useCartStore((s) => s.addItem);
   const items = useCartStore((s) => s.items);
+  const authResolved = useAuthStore((s) => s.resolved);
+  const isStoreAdmin = useAuthStore((s) => Boolean(s.user?.isStoreAdmin));
 
   const [msg, setMsg] = useState<string | null>(null);
-  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
   const timerRef = useRef<any>(null);
 
   const stock = useMemo(() => toIntStock((item as any)?.stock), [item]);
@@ -53,7 +41,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
   }, [items, key]);
 
   const out = stock !== null && stock <= 0;
-  const blockedForStoreUser = isStoreAdmin;
+  const blockedForStoreUser = authResolved && isStoreAdmin;
   const limitReached = stock !== null && currentQty >= stock;
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
 
@@ -63,56 +51,8 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
     timerRef.current = setTimeout(() => setMsg(null), 2200);
   }
 
-  async function verifyStoreAdminNow() {
-    try {
-      const r = await fetch("/api/auth/me", {
-        cache: "no-store",
-        credentials: "include",
-      });
-      const j = await r.json().catch(() => ({ user: null }));
-      const next = Boolean(j?.user?.isStoreAdmin);
-      setIsStoreAdmin(next);
-      return next;
-    } catch {
-      return isStoreAdmin;
-    }
-  }
-
   useEffect(() => {
-    let alive = true;
-
-    const syncFromStorage = () => {
-      const flag = readStoreAdminFlag();
-      if (typeof flag === "boolean" && alive) setIsStoreAdmin(flag);
-    };
-
-    const refreshMe = async () => {
-      try {
-        const r = await fetch("/api/auth/me", {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const j = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
-        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
-      } catch {
-        if (!alive) return;
-        syncFromStorage();
-      }
-    };
-
-    syncFromStorage();
-    refreshMe();
-
-    window.addEventListener("amg-auth-changed", refreshMe);
-    window.addEventListener("storage", syncFromStorage);
-    window.addEventListener("focus", refreshMe);
-
     return () => {
-      alive = false;
-      window.removeEventListener("amg-auth-changed", refreshMe);
-      window.removeEventListener("storage", syncFromStorage);
-      window.removeEventListener("focus", refreshMe);
       if (timerRef.current) clearTimeout(timerRef.current);
     };
   }, []);
@@ -122,9 +62,8 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
       <button
         type="button"
         disabled={blockedForStoreUser || out || limitReached}
-        onClick={async () => {
-          const blockedByServerRole = blockedForStoreUser || (await verifyStoreAdminNow());
-          if (blockedByServerRole) {
+        onClick={() => {
+          if (blockedForStoreUser) {
             showTemp("La cuenta tienda no puede comprar.");
             return;
           }

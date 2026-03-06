@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-
-const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+import { useAuthStore } from "@/store/auth.store";
 
 type ReviewItem = {
   id: number | string;
@@ -51,18 +50,6 @@ function normalizeReviewRow(r: any): ReviewItem {
   };
 }
 
-function readStoreAdminFlag() {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
-    if (raw === "1") return true;
-    if (raw === "0") return false;
-    return null;
-  } catch {
-    return null;
-  }
-}
-
 function StarPicker({
   value,
   onChange,
@@ -101,17 +88,20 @@ export function ProductReviews({
   productDocumentId,
   productId,
   pageSize = 20,
+  initialReviews,
 }: {
   productDocumentId?: string;
   productId?: number;
   pageSize?: number;
+  initialReviews?: ReviewItem[];
 }) {
+  const hasInitialReviews = initialReviews !== undefined;
   const canFilter =
     Boolean(productDocumentId) ||
     (Number.isFinite(productId) && (productId as number) > 0);
 
-  const [loading, setLoading] = useState(true);
-  const [reviews, setReviews] = useState<ReviewItem[]>([]);
+  const [loading, setLoading] = useState(!hasInitialReviews);
+  const [reviews, setReviews] = useState<ReviewItem[]>(() => initialReviews ?? []);
   const [error, setError] = useState<string | null>(null);
 
   // form
@@ -121,8 +111,9 @@ export function ProductReviews({
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [formMsg, setFormMsg] = useState<string | null>(null);
-  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
-  const [authChecked, setAuthChecked] = useState(false);
+  const authUser = useAuthStore((s) => s.user);
+  const authChecked = useAuthStore((s) => s.resolved);
+  const isStoreAdmin = Boolean(authUser?.isStoreAdmin);
 
   async function load() {
     if (!canFilter) return;
@@ -154,49 +145,10 @@ export function ProductReviews({
   }
 
   useEffect(() => {
+    if (hasInitialReviews) return;
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productDocumentId, productId, pageSize]);
-
-  useEffect(() => {
-    let alive = true;
-
-    const syncFromStorage = () => {
-      const flag = readStoreAdminFlag();
-      if (!alive) return;
-      if (typeof flag === "boolean") {
-        setIsStoreAdmin(flag);
-      }
-    };
-
-    const refreshMe = async () => {
-      try {
-        const r = await fetch("/api/auth/me", {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const j = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
-        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
-      } catch {
-        if (!alive) return;
-        syncFromStorage();
-      } finally {
-        if (alive) setAuthChecked(true);
-      }
-    };
-
-    syncFromStorage();
-    refreshMe();
-    window.addEventListener("amg-auth-changed", refreshMe);
-    window.addEventListener("storage", syncFromStorage);
-
-    return () => {
-      alive = false;
-      window.removeEventListener("amg-auth-changed", refreshMe);
-      window.removeEventListener("storage", syncFromStorage);
-    };
-  }, []);
+  }, [productDocumentId, productId, pageSize, hasInitialReviews]);
 
   const count = reviews.length;
   const avg = useMemo(() => {

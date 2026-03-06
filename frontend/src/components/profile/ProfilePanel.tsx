@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useAuthStore } from "@/store/auth.store";
 
 type MeResponse =
   | { user: null; ok?: boolean; error?: string }
@@ -20,7 +21,7 @@ type MeResponse =
     };
 
 type Address = {
-  id: number | string;
+  id: number | string | null;
   label?: string | null;
   fullName?: string | null;
   phone?: string | null;
@@ -79,23 +80,32 @@ type ProfilePanelProps = {
   onClose?: () => void;
   /** ✅ Para que el Header controle el logout (recomendado) */
   onLogout?: () => void | Promise<void>;
+  initialUser?: any | null;
+  initialAddresses?: Address[];
 };
 
 export function ProfilePanel({
   variant = "dropdown",
   onClose,
   onLogout,
+  initialUser,
+  initialAddresses = [],
 }: ProfilePanelProps) {
   const router = useRouter();
+  const setAuthState = useAuthStore((s) => s.setAuthState);
+  const hasInitialUser = initialUser !== undefined;
+  const skipInitialAddressesLoadRef = useRef(hasInitialUser);
 
-  const [loading, setLoading] = useState(true);
-  const [me, setMe] = useState<MeResponse>({ user: null });
+  const [loading, setLoading] = useState(!hasInitialUser);
+  const [me, setMe] = useState<MeResponse>(() => ({
+    user: hasInitialUser ? initialUser ?? null : null,
+  }));
 
   const [showAddressForm, setShowAddressForm] = useState(false);
 
   const [addrLoading, setAddrLoading] = useState(false);
   const [addrError, setAddrError] = useState<string | null>(null);
-  const [addresses, setAddresses] = useState<Address[]>([]);
+  const [addresses, setAddresses] = useState<Address[]>(initialAddresses);
 
   const [editingId, setEditingId] = useState<number | string | null>(null);
   const [form, setForm] = useState<AddressPayload>(EMPTY_FORM);
@@ -117,8 +127,20 @@ export function ProfilePanel({
       });
       const data = (await res.json()) as MeResponse;
       setMe(data);
+      setAuthState({
+        user: data?.user ?? null,
+        resolved: true,
+        loading: false,
+        error: null,
+      });
     } catch {
       setMe({ user: null, error: "No se pudo cargar tu perfil." });
+      setAuthState({
+        user: null,
+        resolved: true,
+        loading: false,
+        error: "No se pudo cargar tu perfil.",
+      });
     } finally {
       setLoading(false);
     }
@@ -129,13 +151,25 @@ export function ProfilePanel({
 
     const run = async () => {
       if (!alive) return;
-      setLoading(true);
-      await refreshMe();
+      if (!hasInitialUser) {
+        setLoading(true);
+        await refreshMe();
+      } else {
+        setAuthState({
+          user: initialUser ?? null,
+          resolved: true,
+          loading: false,
+          error: null,
+        });
+        setLoading(false);
+      }
     };
 
-    run();
+    void run();
 
-    const onFocus = () => refreshMe();
+    const onFocus = () => {
+      void refreshMe();
+    };
     window.addEventListener("focus", onFocus);
 
     return () => {
@@ -146,17 +180,18 @@ export function ProfilePanel({
   }, []);
 
   const user = "user" in me ? me.user : null;
+  const userId = user?.id;
+  const userDni = safeText((user as any)?.dni ?? "");
   const isStoreAdmin = Boolean((user as any)?.isStoreAdmin);
   const canRenderAddresses = !loading && !isStoreAdmin && Boolean(user);
 
   // ✅ precargar DNI cuando llega el user
   useEffect(() => {
-    if (!user) return;
-    const initial = safeText((user as any)?.dni ?? "");
-    setDni(initial);
-    setSavedDni(initial);
-    setDniEditing(!initial);
-  }, [user?.id, (user as any)?.dni]);
+    if (!userId) return;
+    setDni(userDni);
+    setSavedDni(userDni);
+    setDniEditing(!userDni);
+  }, [userDni, userId]);
 
   async function handleLogout() {
     try {
@@ -172,6 +207,7 @@ export function ProfilePanel({
         router.refresh();
       }
       setMe({ user: null });
+      setAuthState({ user: null, resolved: true, loading: false, error: null });
       window.dispatchEvent(new Event("amg-auth-changed"));
     } finally {
       onClose?.();
@@ -262,9 +298,13 @@ export function ProfilePanel({
 
   useEffect(() => {
     if (!user) return;
+    if (skipInitialAddressesLoadRef.current) {
+      skipInitialAddressesLoadRef.current = false;
+      return;
+    }
     loadAddresses();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.id]);
+  }, [userId]);
 
   const sortedAddresses = useMemo(() => {
     const list = [...addresses];
@@ -732,9 +772,12 @@ export function ProfilePanel({
                         </div>
 
                         <div className="flex shrink-0 flex-col items-end gap-2">
-                          {!a.isDefault && (
+                          {!a.isDefault && a.id != null && (
                             <button
-                              onClick={() => setDefault(a.id)}
+                              onClick={() => {
+                                if (a.id == null) return;
+                                void setDefault(a.id);
+                              }}
                               type="button"
                               className="text-xs font-semibold text-neutral-900 underline hover:text-neutral-700 disabled:opacity-60"
                               disabled={saving}
@@ -748,15 +791,18 @@ export function ProfilePanel({
                               onClick={() => startEdit(a)}
                               type="button"
                               className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-50 disabled:opacity-60"
-                              disabled={saving}
+                              disabled={saving || a.id == null}
                             >
                               Editar
                             </button>
                             <button
-                              onClick={() => deleteAddress(a.id)}
+                              onClick={() => {
+                                if (a.id == null) return;
+                                void deleteAddress(a.id);
+                              }}
                               type="button"
                               className="rounded-lg border border-neutral-300 px-3 py-1.5 text-xs font-semibold hover:bg-neutral-50 disabled:opacity-60"
-                              disabled={saving}
+                              disabled={saving || a.id == null}
                             >
                               Eliminar
                             </button>

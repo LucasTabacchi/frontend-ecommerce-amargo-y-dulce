@@ -3,8 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-
-const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
+import { useAuthStore } from "@/store/auth.store";
 
 type Slide = {
   id: string;
@@ -42,7 +41,7 @@ export function HeroCarousel({
 }) {
   const safeSlides = useMemo(() => (Array.isArray(slides) ? slides.filter(Boolean) : []), [slides]);
   const [index, setIndex] = useState(0);
-  const [isStoreAdmin, setIsStoreAdmin] = useState(false);
+  const isStoreAdmin = useAuthStore((s) => Boolean(s.user?.isStoreAdmin));
 
   const total = safeSlides.length;
 
@@ -58,39 +57,6 @@ export function HeroCarousel({
     }, intervalMs);
     return () => window.clearInterval(t);
   }, [total, intervalMs]);
-
-  useEffect(() => {
-    let alive = true;
-
-    try {
-      const raw = localStorage.getItem(STORE_ADMIN_FLAG_KEY);
-      if (raw === "1") setIsStoreAdmin(true);
-      if (raw === "0") setIsStoreAdmin(false);
-    } catch {}
-
-    const refreshMe = async () => {
-      try {
-        const r = await fetch("/api/auth/me", {
-          cache: "no-store",
-          credentials: "include",
-        });
-        const j = await r.json().catch(() => ({ user: null }));
-        if (!alive) return;
-        setIsStoreAdmin(Boolean(j?.user?.isStoreAdmin));
-      } catch {
-        if (!alive) return;
-      }
-    };
-
-    refreshMe();
-    window.addEventListener("amg-auth-changed", refreshMe);
-    window.addEventListener("focus", refreshMe);
-    return () => {
-      alive = false;
-      window.removeEventListener("amg-auth-changed", refreshMe);
-      window.removeEventListener("focus", refreshMe);
-    };
-  }, []);
 
   function prev() {
     if (!total) return;

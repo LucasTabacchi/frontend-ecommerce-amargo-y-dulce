@@ -170,23 +170,38 @@ export async function POST(req: Request) {
   const token = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
   if (!token) return NextResponse.json({ error: "Falta STRAPI_TOKEN" }, { status: 500 });
 
-  // Cuentas de tienda no pueden dejar reseñas.
   const jwt = readUserJwtFromCookies();
-  if (jwt) {
-    try {
-      const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
-        headers: { Authorization: `Bearer ${jwt}` },
-      });
-      const meJson = await meRes.json().catch(() => null);
-      if (meRes.ok && isStoreAdmin(meJson)) {
-        return NextResponse.json(
-          { error: "Las cuentas tienda no pueden dejar reseñas." },
-          { status: 403 }
-        );
-      }
-    } catch {
-      // Si falla lectura de sesión, seguimos con flujo normal.
+  if (!jwt) {
+    return NextResponse.json(
+      { error: "Tenés que iniciar sesión para dejar una reseña." },
+      { status: 401 }
+    );
+  }
+
+  try {
+    const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+    const meJson = await meRes.json().catch(() => null);
+
+    if (!meRes.ok || !meJson) {
+      return NextResponse.json(
+        { error: "No se pudo validar la sesión." },
+        { status: 401 }
+      );
     }
+
+    if (isStoreAdmin(meJson)) {
+      return NextResponse.json(
+        { error: "Las cuentas tienda no pueden dejar reseñas." },
+        { status: 403 }
+      );
+    }
+  } catch {
+    return NextResponse.json(
+      { error: "No se pudo validar la sesión." },
+      { status: 401 }
+    );
   }
 
   const body = await req.json().catch(() => ({}));
