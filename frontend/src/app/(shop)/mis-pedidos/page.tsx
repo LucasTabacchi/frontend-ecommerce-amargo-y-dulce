@@ -92,13 +92,13 @@ function PaginationControls(props: {
   const canNext = pageCount > 0 && page < pageCount;
 
   return (
-    <div className="mt-6 flex flex-col gap-3 rounded-2xl border bg-white p-4 shadow-sm md:flex-row md:items-center md:justify-between">
+    <div className="mt-6 flex flex-col items-center gap-3 rounded-2xl border bg-white p-4 text-center shadow-sm md:flex-row md:items-center md:justify-between md:text-left">
       <div className="text-sm text-neutral-600">
         Página {pageCount > 0 ? page : 0} de {pageCount} · {total} pedidos
       </div>
 
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-        <form method="get" className="flex items-center gap-2">
+      <div className="flex flex-col items-center gap-3 sm:flex-row sm:flex-wrap sm:justify-center sm:items-center">
+        <form method="get" className="flex flex-wrap items-center justify-center gap-2">
           <input type="hidden" name="page" value="1" />
           <label htmlFor="orders-page-size" className="text-sm text-neutral-600">
             Por página
@@ -123,7 +123,7 @@ function PaginationControls(props: {
           </button>
         </form>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center justify-center gap-2">
           {canPrev ? (
             <Link
               href={buildPageHref(page - 1, pageSize)}
