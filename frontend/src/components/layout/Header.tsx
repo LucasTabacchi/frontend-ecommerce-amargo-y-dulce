@@ -609,6 +609,7 @@ export function Header() {
               <span className="max-w-[92px] truncate sm:max-w-[130px]">
                 {me ? headerDisplayName : roleResolved ? "Iniciar sesión" : "Cuenta"}
               </span>
+              {me ? <ChevronDown className="h-4 w-4 shrink-0 text-neutral-500" /> : null}
             </button>
 
             {canUseShopFeatures && (
