@@ -3,8 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import { useAuthStore } from "@/store/auth.store";
-
-const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+import { CLAIMED_COUPONS_KEY, sanitizeClaimedCouponValues } from "@/lib/coupon-claims";
 const USER_SYNC_KEY_PREFIX = "amg_user_state_synced_v1:";
 const LAST_AUTH_USER_ID_KEY = "amg_last_auth_user_id_v1";
 const STORE_ADMIN_FLAG_KEY = "amg_is_store_admin_v1";
@@ -64,20 +63,8 @@ function writeStoreAdminFlag(isStoreAdmin: boolean | null) {
   } catch {}
 }
 
-function normalizeCouponCode(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
-}
-
 function sanitizeClaimedCoupons(input: unknown, max = 200) {
-  const arr = Array.isArray(input) ? input : [];
-  const out = new Set<string>();
-  for (const raw of arr) {
-    const code = normalizeCouponCode(raw);
-    if (!code) continue;
-    out.add(code);
-    if (out.size >= max) break;
-  }
-  return Array.from(out).sort((a, b) => a.localeCompare(b));
+  return sanitizeClaimedCouponValues(input, max);
 }
 
 function readLocalClaimedCoupons() {

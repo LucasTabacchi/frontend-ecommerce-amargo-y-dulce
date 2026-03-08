@@ -2,6 +2,10 @@ import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { ApplyCouponButton } from "@/components/coupons/ApplyCouponButton";
+import {
+  isCouponClaimed,
+  sanitizeClaimedCouponValues,
+} from "@/lib/coupon-claims";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -33,24 +37,9 @@ function isStoreAdmin(user: any) {
   );
 }
 
-function normalizeCouponCode(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
-}
-
-function sanitizeClaimedCoupons(input: unknown, max = 200) {
-  const arr = Array.isArray(input) ? input : [];
-  const out = new Set<string>();
-  for (const raw of arr) {
-    const code = normalizeCouponCode(raw);
-    if (!code) continue;
-    out.add(code);
-    if (out.size >= max) break;
-  }
-  return Array.from(out);
-}
-
 type CouponRow = {
   id: number;
+  documentId?: string | null;
   name?: string | null;
   description?: string | null;
   requiresCoupon?: boolean;
@@ -130,8 +119,8 @@ export default async function CuponesPage() {
           redirect("/admin/pedidos");
         }
 
-        const claimed = sanitizeClaimedCoupons(meJson?.claimedCoupons);
-        for (const code of claimed) serverClaimedCoupons.add(code);
+        const claimed = sanitizeClaimedCouponValues(meJson?.claimedCoupons);
+        for (const value of claimed) serverClaimedCoupons.add(value);
       }
     } catch {
       // Si falla auth check, continuamos sin redirigir.
@@ -176,7 +165,6 @@ export default async function CuponesPage() {
             const maxDiscount = Number(c.maxDiscount ?? 0);
             const expires = c.endAt ? new Date(c.endAt) : null;
             const couponCode = String(c.code || "");
-            const normalizedCode = normalizeCouponCode(couponCode);
             return (
               <article
                 key={c.id}
@@ -214,8 +202,12 @@ export default async function CuponesPage() {
 
                 <div className="mt-5 flex gap-3">
                   <ApplyCouponButton
+                    documentId={c.documentId ?? null}
                     code={couponCode}
-                    initialApplied={serverClaimedCoupons.has(normalizedCode)}
+                    initialApplied={isCouponClaimed(serverClaimedCoupons, {
+                      documentId: c.documentId ?? null,
+                      code: couponCode,
+                    })}
                     initialIsLoggedIn={serverIsLoggedIn}
                     initialIsStoreAdmin={serverIsStoreAdmin}
                     initialAuthResolved={serverAuthResolved}

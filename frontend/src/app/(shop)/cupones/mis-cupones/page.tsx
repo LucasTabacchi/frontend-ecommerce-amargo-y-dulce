@@ -4,11 +4,16 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
-
-const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+import {
+  CLAIMED_COUPONS_KEY,
+  isCouponClaimed,
+  migrateClaimedCouponsForList,
+  sanitizeClaimedCouponValues,
+} from "@/lib/coupon-claims";
 
 type CouponRow = {
   id: number;
+  documentId?: string | null;
   name?: string | null;
   code?: string | null;
   description?: string | null;
@@ -26,10 +31,6 @@ type CouponRow = {
   isAvailable?: boolean;
 };
 
-function normalizeCode(code: string) {
-  return String(code || "").trim().toUpperCase();
-}
-
 function pickApiErrorMessage(payload: any, fallback: string) {
   const msg =
     (typeof payload?.error === "string" && payload.error) ||
@@ -41,20 +42,22 @@ function pickApiErrorMessage(payload: any, fallback: string) {
   return msg && msg.trim() ? msg.trim() : fallback;
 }
 
-function readClaimedCodesFromStorage() {
+function readClaimedCouponsFromStorage() {
   if (typeof window === "undefined") return new Set<string>();
   try {
     const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) return new Set<string>();
-    return new Set(
-      parsed
-        .map((v) => normalizeCode(String(v)))
-        .filter(Boolean)
-    );
+    return new Set(sanitizeClaimedCouponValues(parsed));
   } catch {
     return new Set<string>();
   }
+}
+
+function writeClaimedCouponsToStorage(values: string[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CLAIMED_COUPONS_KEY, JSON.stringify(sanitizeClaimedCouponValues(values)));
+  window.dispatchEvent(new Event("amg-coupons-changed"));
 }
 
 function formatARS(n: number) {
@@ -145,11 +148,11 @@ export default function MisCuponesPage() {
   useEffect(() => {
     if (!me || meLoading || me?.isStoreAdmin) return;
     (async () => {
-      const claimedCodes = readClaimedCodesFromStorage();
+      const claimedCoupons = readClaimedCouponsFromStorage();
       setLoading(true);
       setError(null);
       try {
-        if (claimedCodes.size === 0) {
+        if (claimedCoupons.size === 0) {
           setRows([]);
           return;
         }
@@ -159,8 +162,15 @@ export default function MisCuponesPage() {
         if (!r.ok) throw new Error(pickApiErrorMessage(j, "No se pudieron cargar tus cupones."));
         const list = Array.isArray(j?.data) ? j.data : [];
         const filtered = list.filter((coupon: CouponRow) =>
-          claimedCodes.has(normalizeCode(String(coupon?.code || "")))
+          isCouponClaimed(claimedCoupons, {
+            documentId: coupon?.documentId ?? null,
+            code: coupon?.code ?? null,
+          })
         );
+        const migrated = migrateClaimedCouponsForList(Array.from(claimedCoupons), filtered);
+        if (migrated.changed) {
+          writeClaimedCouponsToStorage(migrated.values);
+        }
         setRows(filtered);
       } catch (e: any) {
         setRows([]);

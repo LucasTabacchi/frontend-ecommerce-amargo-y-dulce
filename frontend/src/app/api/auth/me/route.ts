@@ -1,6 +1,7 @@
 // src/app/api/auth/me/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { sanitizeClaimedCouponValues } from "@/lib/coupon-claims";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -38,22 +39,6 @@ function normInt(v: unknown, fallback: number) {
 function normNumber(v: unknown, fallback: number) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : fallback;
-}
-
-function normalizeCouponCode(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
-}
-
-function sanitizeClaimedCoupons(input: unknown, max = 200) {
-  const arr = Array.isArray(input) ? input : [];
-  const out = new Set<string>();
-  for (const raw of arr) {
-    const code = normalizeCouponCode(raw);
-    if (!code) continue;
-    out.add(code);
-    if (out.size >= max) break;
-  }
-  return Array.from(out);
 }
 
 function sanitizeCartItems(input: unknown, max = 150) {
@@ -142,7 +127,7 @@ export async function GET() {
       ? {
           ...user,
           isStoreAdmin: Boolean((user as any)?.isStoreAdmin),
-          claimedCoupons: sanitizeClaimedCoupons((user as any)?.claimedCoupons),
+          claimedCoupons: sanitizeClaimedCouponValues((user as any)?.claimedCoupons),
           cartItems: sanitizeCartItems((user as any)?.cartItems),
         }
       : user;
@@ -206,7 +191,7 @@ export async function PUT(req: Request) {
   const lastNameToSave = hasLastName ? toOptionalString(body.lastName) : undefined;
   const nameToSave = hasName ? toOptionalString(body.name) : undefined;
   const claimedCouponsToSave = hasClaimedCoupons
-    ? sanitizeClaimedCoupons(body.claimedCoupons)
+    ? sanitizeClaimedCouponValues(body.claimedCoupons)
     : undefined;
   const cartItemsToSave = hasCartItems ? sanitizeCartItems(body.cartItems) : undefined;
 
@@ -295,7 +280,7 @@ export async function PUT(req: Request) {
       ? {
           ...updJson,
           isStoreAdmin: Boolean((updJson as any)?.isStoreAdmin),
-          claimedCoupons: sanitizeClaimedCoupons((updJson as any)?.claimedCoupons),
+          claimedCoupons: sanitizeClaimedCouponValues((updJson as any)?.claimedCoupons),
           cartItems: sanitizeCartItems((updJson as any)?.cartItems),
         }
       : updJson;

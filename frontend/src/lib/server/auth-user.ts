@@ -2,6 +2,7 @@ import "server-only";
 import { cookies } from "next/headers";
 import { cache } from "react";
 import { redirect } from "next/navigation";
+import { sanitizeClaimedCouponValues } from "@/lib/coupon-claims";
 
 export type ServerAuthUser = {
   id: number;
@@ -23,22 +24,6 @@ function normBase(url: string) {
     base = base.slice(0, -4);
   }
   return base;
-}
-
-function normalizeCouponCode(v: unknown) {
-  return String(v ?? "").trim().toUpperCase();
-}
-
-function sanitizeClaimedCoupons(input: unknown, max = 200) {
-  const arr = Array.isArray(input) ? input : [];
-  const out = new Set<string>();
-  for (const raw of arr) {
-    const code = normalizeCouponCode(raw);
-    if (!code) continue;
-    out.add(code);
-    if (out.size >= max) break;
-  }
-  return Array.from(out);
 }
 
 function sanitizeCartItems(input: unknown, max = 150) {
@@ -68,7 +53,7 @@ function normalizeUser(raw: any): ServerAuthUser | null {
     email: typeof raw.email === "string" ? raw.email : null,
     dni: typeof raw.dni === "string" ? raw.dni : null,
     isStoreAdmin: Boolean(raw.isStoreAdmin),
-    claimedCoupons: sanitizeClaimedCoupons(raw.claimedCoupons),
+    claimedCoupons: sanitizeClaimedCouponValues(raw.claimedCoupons),
     cartItems: sanitizeCartItems(raw.cartItems),
   };
 }

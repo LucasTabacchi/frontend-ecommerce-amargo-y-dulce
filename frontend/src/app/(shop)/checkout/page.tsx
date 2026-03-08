@@ -7,8 +7,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { useCartStore } from "@/store/cart.store";
 import { useAuthStore } from "@/store/auth.store";
-
-const CLAIMED_COUPONS_KEY = "amg_my_coupon_codes";
+import {
+  CLAIMED_COUPONS_KEY,
+  isCouponClaimed,
+  migrateClaimedCouponsForList,
+  normalizeCouponCode,
+  sanitizeClaimedCouponValues,
+} from "@/lib/coupon-claims";
 
 /* ================= helpers ================= */
 
@@ -148,6 +153,7 @@ type MeResponse = {
 
 type MyCouponOption = {
   id: number;
+  documentId?: string | null;
   code: string;
   name: string;
   startAt: string | null;
@@ -214,20 +220,22 @@ function isEmptyish(v: string) {
   return String(v ?? "").trim().length === 0;
 }
 
-function normalizeCouponCode(code: any) {
-  return String(code ?? "").trim().toUpperCase();
-}
-
-function readClaimedCouponCodes() {
+function readClaimedCouponClaims() {
   if (typeof window === "undefined") return new Set<string>();
   try {
     const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
     const parsed = JSON.parse(raw || "[]");
     if (!Array.isArray(parsed)) return new Set<string>();
-    return new Set(parsed.map((v) => normalizeCouponCode(v)).filter(Boolean));
+    return new Set(sanitizeClaimedCouponValues(parsed));
   } catch {
     return new Set<string>();
   }
+}
+
+function writeClaimedCouponClaims(values: string[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(CLAIMED_COUPONS_KEY, JSON.stringify(sanitizeClaimedCouponValues(values)));
+  window.dispatchEvent(new Event("amg-coupons-changed"));
 }
 
 /* ================= page ================= */
@@ -377,7 +385,7 @@ function CheckoutPageContent() {
     let alive = true;
 
     (async () => {
-      const claimed = readClaimedCouponCodes();
+      const claimed = readClaimedCouponClaims();
       if (!claimed.size) {
         if (!alive) return;
         setMyCoupons([]);
@@ -406,7 +414,17 @@ function CheckoutPageContent() {
 
         for (const row of list) {
           const code = normalizeCouponCode(row?.code);
-          if (!code || !claimed.has(code) || map.has(code)) continue;
+          const documentId =
+            typeof row?.documentId === "string" && row.documentId.trim()
+              ? row.documentId.trim()
+              : null;
+          if (
+            !code ||
+            !isCouponClaimed(claimed, { documentId, code }) ||
+            map.has(code)
+          ) {
+            continue;
+          }
           const name = String(row?.name ?? "").trim() || "Cupón";
           const startAt = String(row?.startAt ?? "").trim() || null;
           const endAt = String(row?.endAt ?? "").trim() || null;
@@ -442,6 +460,7 @@ function CheckoutPageContent() {
 
           map.set(code, {
             id: Number.isFinite(Number(row?.id)) ? Number(row.id) : map.size + 1,
+            documentId,
             code,
             name,
             startAt,
@@ -455,7 +474,12 @@ function CheckoutPageContent() {
         }
 
         if (!alive) return;
-        setMyCoupons(Array.from(map.values()));
+        const nextCoupons = Array.from(map.values());
+        const migrated = migrateClaimedCouponsForList(Array.from(claimed), nextCoupons);
+        if (migrated.changed) {
+          writeClaimedCouponClaims(migrated.values);
+        }
+        setMyCoupons(nextCoupons);
       } catch (e: any) {
         if (!alive) return;
         setMyCoupons([]);
