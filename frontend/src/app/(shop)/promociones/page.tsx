@@ -1,7 +1,5 @@
-import { redirect } from "next/navigation";
-
-export const dynamic = "force-dynamic";
+import { permanentRedirect } from "next/navigation";
 
 export default function PromocionesRedirectPage() {
-  redirect("/cupones");
+  permanentRedirect("/cupones");
 }

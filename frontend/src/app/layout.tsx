@@ -1,8 +1,12 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://amargo-y-dulce.vercel.app";
+const metadataBase = new URL(SITE_URL);
 
 export const metadata: Metadata = {
+  metadataBase,
   title: {
     default: "Tienda de Chocolates Artesanales",
     template: "%s | Tienda de Chocolates",
@@ -13,7 +17,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "es_AR",
-    url: "https://tutienda.com",
+    url: SITE_URL,
     siteName: "Chocolates Artesanales",
     images: [
       {
