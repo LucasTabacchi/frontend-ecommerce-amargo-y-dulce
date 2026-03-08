@@ -41,8 +41,8 @@ async function getBestSellers() {
     "/api/home-page?populate=*",
   ];
 
-  try {
-    for (const query of queries) {
+  for (const query of queries) {
+    try {
       const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(query, {
         next: { revalidate: 300 },
       });
@@ -55,13 +55,12 @@ async function getBestSellers() {
       if (raw.length > 0) {
         return raw.map(toCardItem);
       }
+    } catch (error) {
+      console.error(`Error fetching best sellers with query "${query}":`, error);
     }
-
-    return [];
-  } catch (error) {
-    console.error("Error fetching best sellers:", error);
-    return [];
   }
+
+  return [];
 }
 
 async function HomeBestSellersSection() {
