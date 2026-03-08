@@ -60,6 +60,12 @@ function safeName(v: any) {
   return s.length ? s : null;
 }
 
+function firstToken(v: any) {
+  const s = safeName(v);
+  if (!s) return null;
+  return s.split(/\s+/)[0] || null;
+}
+
 export function Header() {
   const router = useRouter();
   const me = useAuthStore((s) => s.user);
@@ -449,13 +455,12 @@ export function Header() {
   }
 
   // ✅ Muestra firstName + lastName si existen, si no cae a username o email
-  const displayName =
-    safeName(me?.firstName)
-      ? `${safeName(me.firstName)}${safeName(me?.lastName) ? " " + safeName(me.lastName) : ""}`
-      : safeName(me?.name) ||
-        safeName(me?.username) ||
-        (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
-        "Cuenta";
+  const headerDisplayName =
+    safeName(me?.firstName) ||
+    firstToken(me?.name) ||
+    safeName(me?.username) ||
+    (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
+    "Cuenta";
   const resolvedIsStoreAdmin = Boolean(me?.isStoreAdmin);
   // Mientras no resolvimos sesión/rol evitamos mostrar UI de cuenta común
   // para no generar flash al cambiar a cuenta tienda.
@@ -539,7 +544,7 @@ export function Header() {
                     aria-expanded={profileOpen}
                   >
                     <User className="h-5 w-5" />
-                    {displayName}
+                    {headerDisplayName}
                     {/* ✅ Flechita que rota cuando el dropdown está abierto */}
                     <ChevronDown
                       className={[
@@ -596,13 +601,13 @@ export function Header() {
             <button
               type="button"
               onClick={onUserPressMobile}
-              className="inline-flex h-11 min-w-0 max-w-[132px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 disabled:cursor-default disabled:opacity-70 sm:max-w-[170px] sm:px-3"
+              className="inline-flex h-11 min-w-0 max-w-[148px] items-center gap-2 rounded-md border border-neutral-200 bg-white px-2.5 text-[14px] font-medium text-neutral-800 disabled:cursor-default disabled:opacity-70 sm:max-w-[180px] sm:px-3"
               aria-label={me ? "Mi perfil" : roleResolved ? "Iniciar sesión" : "Cuenta"}
               disabled={!roleResolved}
             >
               <User className="h-5 w-5" />
-              <span className="max-w-[78px] truncate sm:max-w-[120px]">
-                {me ? displayName : roleResolved ? "Iniciar sesión" : "Cuenta"}
+              <span className="max-w-[92px] truncate sm:max-w-[130px]">
+                {me ? headerDisplayName : roleResolved ? "Iniciar sesión" : "Cuenta"}
               </span>
             </button>
 
