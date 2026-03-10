@@ -25,10 +25,9 @@ export default function Error({
 
     try {
       reset();
-      router.refresh();
-    } finally {
-      setBusy(false);
-    }
+    } catch {}
+
+    window.location.reload();
   }
 
   function handleGoHome() {
@@ -61,7 +60,7 @@ export default function Error({
             disabled={busy}
             className="bg-orange-600 text-white hover:bg-orange-700 disabled:opacity-60"
           >
-            Reintentar
+            {busy ? "Reintentando..." : "Reintentar"}
           </Button>
           <Button
             type="button"
