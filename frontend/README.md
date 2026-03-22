@@ -11,9 +11,18 @@ npm install
 ```
 
 ## Variables de entorno
-Copia el archivo `.env.example` a `.env.local`:
+Para el envío de emails transaccionales con Brevo, definí al menos:
+
 ```bash
-cp .env.example .env.local
+BREVO_API_KEY=tu_api_key_de_brevo
+EMAIL_FROM=tienda@tudominio.com
+```
+
+Opcionales:
+
+```bash
+EMAIL_FROM_NAME=Amargo y Dulce
+TEST_EMAIL_TO=tu_correo_verificado@dominio.com
 ```
 
 ## Correr en desarrollo

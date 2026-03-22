@@ -1,17 +1,26 @@
 import { NextResponse } from "next/server";
-import { Resend } from "resend";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-const resend = new Resend(process.env.RESEND_API_KEY || "re_dummy");
+const BREVO_SEND_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 
 // Dedupe best-effort en memoria (sirve si llegan 2 hits al mismo runtime)
 const recentSends = new Map<string, number>();
 const DEDUPE_WINDOW_MS = 10_000;
 
-// Límite razonable para adjuntos (Resend suele aceptar, pero el límite real depende del plan/infra)
+// Límite razonable para adjuntos
 const MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024; // 10MB
+
+type BrevoSender = {
+  email: string;
+  name?: string;
+};
+
+type BrevoAttachment = {
+  name: string;
+  content: string;
+};
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -26,13 +35,79 @@ function escapeHtml(s: string) {
     .replaceAll("'", "&#039;");
 }
 
-function looksRateLimitError(e: any) {
-  const msg = String(e?.message || e?.error?.message || "").toLowerCase();
+function parseEmailIdentity(raw: string): BrevoSender | null {
+  const value = String(raw ?? "").trim();
+  if (!value) return null;
+
+  const withName = /^(?:"?([^"]*)"?\s)?<([^<>@\s]+@[^<>@\s]+\.[^<>@\s]+)>$/.exec(value);
+  if (withName) {
+    const email = withName[2]?.trim();
+    const name = withName[1]?.trim();
+    return {
+      email,
+      ...(name ? { name } : {}),
+    };
+  }
+
+  if (/^[^<>\s@]+@[^<>\s@]+\.[^<>\s@]+$/.test(value)) {
+    return { email: value };
+  }
+
+  return null;
+}
+
+function resolveSender() {
+  const parsed = parseEmailIdentity(process.env.EMAIL_FROM || "");
+  if (!parsed) return null;
+
+  const envName = String(process.env.EMAIL_FROM_NAME || "").trim();
+  return {
+    ...parsed,
+    ...(envName ? { name: envName } : {}),
+  };
+}
+
+function safeJsonParse(text: string) {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
+}
+
+function pickBrevoError(payload: any, fallback: string) {
   return (
+    payload?.message ||
+    payload?.code ||
+    payload?.error ||
+    (typeof payload === "string" ? payload : null) ||
+    fallback
+  );
+}
+
+function looksRateLimitError(payload: any, status?: number) {
+  const msg = String(pickBrevoError(payload, "")).toLowerCase();
+  const code = String(payload?.code ?? "").toLowerCase();
+
+  return (
+    status === 429 ||
+    code.includes("rate") ||
+    code.includes("too_many") ||
     msg.includes("too many requests") ||
-    msg.includes("rate limit") ||
-    e?.statusCode === 429 ||
-    e?.status === 429
+    msg.includes("rate limit")
+  );
+}
+
+function looksDuplicateIdempotency(payload: any, status?: number) {
+  const msg = String(pickBrevoError(payload, "")).toLowerCase();
+  const code = String(payload?.code ?? "").toLowerCase();
+
+  return (
+    status === 409 ||
+    code === "duplicate_parameter" ||
+    msg.includes("duplicate_parameter") ||
+    (msg.includes("idempotency") && msg.includes("duplicate"))
   );
 }
 
@@ -51,11 +126,10 @@ async function fetchPdfAsBase64(url: string) {
     url,
     {
       headers: {
-        // Resend/Cloudinary normalmente no lo requiere, pero ayuda a “servir” como pdf
         Accept: "application/pdf,*/*",
       },
     },
-    25000
+    25_000
   );
 
   if (!r.ok) {
@@ -79,15 +153,127 @@ function safeFilename(name: any) {
   return clean.toLowerCase().endsWith(".pdf") ? clean : `${clean}.pdf`;
 }
 
+function buildEmailText(params: {
+  name?: string | null;
+  orderNumber: string;
+  invoiceNumber?: string | null;
+  invoicePdfUrl?: string | null;
+  shippingAddress?: any;
+  phone?: string | null;
+  items?: any[];
+  total?: number;
+}) {
+  const {
+    name,
+    orderNumber,
+    invoiceNumber,
+    invoicePdfUrl,
+    shippingAddress,
+    phone,
+    items,
+    total,
+  } = params;
+
+  const addressText =
+    shippingAddress?.text ||
+    shippingAddress?.address ||
+    (shippingAddress ? JSON.stringify(shippingAddress) : "-");
+
+  const itemsText = Array.isArray(items) && items.length
+    ? items
+        .map((it: any) => {
+          const qty = Number(it?.qty ?? 1);
+          const title = String(it?.title ?? "Item").trim() || "Item";
+          const unit = Number(it?.unit_price ?? it?.price ?? 0);
+          return `- ${qty} x ${title} - ${formatARS(unit)}`;
+        })
+        .join("\n")
+    : "-";
+
+  const invoiceLines = [
+    invoiceNumber ? `Factura: ${invoiceNumber}` : "",
+    invoicePdfUrl ? `PDF: ${invoicePdfUrl}` : "",
+  ].filter(Boolean);
+
+  return [
+    `Gracias por tu compra${name ? `, ${String(name).trim()}` : ""}.`,
+    `Confirmamos tu pedido ${orderNumber}.`,
+    invoiceLines.length ? invoiceLines.join("\n") : "",
+    `Direccion de envio: ${addressText || "-"}.`,
+    `Telefono: ${String(phone ?? "-").trim() || "-"}.`,
+    `Items:\n${itemsText}`,
+    `Total: ${formatARS(Number(total ?? 0))}.`,
+    "Si tenes dudas, responde este email.",
+  ]
+    .filter(Boolean)
+    .join("\n\n");
+}
+
+async function sendBrevoEmail(params: {
+  apiKey: string;
+  sender: BrevoSender;
+  to: string;
+  toName?: string | null;
+  subject: string;
+  html: string;
+  text: string;
+  idempotencyKey: string;
+  attachments?: BrevoAttachment[];
+}) {
+  const { apiKey, sender, to, toName, subject, html, text, idempotencyKey, attachments } = params;
+
+  const payload = {
+    sender,
+    to: [
+      {
+        email: to,
+        ...(toName ? { name: String(toName).trim() } : {}),
+      },
+    ],
+    subject,
+    htmlContent: html,
+    textContent: text,
+    headers: {
+      idempotencyKey,
+    },
+    ...(attachments?.length ? { attachment: attachments } : {}),
+  };
+
+  const response = await fetch(BREVO_SEND_EMAIL_URL, {
+    method: "POST",
+    headers: {
+      Accept: "application/json",
+      "Content-Type": "application/json",
+      "api-key": apiKey,
+    },
+    body: JSON.stringify(payload),
+    cache: "no-store",
+  });
+
+  const rawText = await response.text().catch(() => "");
+  const json = safeJsonParse(rawText);
+
+  return {
+    response,
+    payload: json ?? rawText,
+  };
+}
+
 export async function POST(req: Request) {
   try {
-    if (!process.env.RESEND_API_KEY) {
-      return NextResponse.json({ error: "Falta RESEND_API_KEY" }, { status: 500 });
+    if (!process.env.BREVO_API_KEY) {
+      return NextResponse.json({ error: "Falta BREVO_API_KEY" }, { status: 500 });
     }
 
-    const from = process.env.EMAIL_FROM;
-    if (!from) {
-      return NextResponse.json({ error: "Falta EMAIL_FROM" }, { status: 500 });
+    const sender = resolveSender();
+    if (!sender) {
+      return NextResponse.json(
+        {
+          error:
+            "EMAIL_FROM invalido. Usa 'correo@dominio.com' o 'Nombre <correo@dominio.com>'.",
+        },
+        { status: 500 }
+      );
     }
 
     const body = await req.json().catch(() => null);
@@ -99,10 +285,7 @@ export async function POST(req: Request) {
       items,
       phone,
       shippingAddress,
-      // opcional: si lo mandás desde el webhook, mejor aún:
       mpPaymentId,
-
-      // ✅ NUEVO: viene del webhook (si lo implementaste como te pasé)
       invoiceNumber,
       invoicePdfUrl,
       invoiceFilename,
@@ -112,12 +295,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Faltan email u orderNumber" }, { status: 400 });
     }
 
-    // ✅ idempotency key: un mail por pedido (o por pedido+payment)
     const idempotencyKey = `order-confirmation/${String(orderNumber)}${
       mpPaymentId ? `/${String(mpPaymentId)}` : ""
     }`;
 
-    // ✅ dedupe best-effort local
     const now = Date.now();
     const last = recentSends.get(idempotencyKey);
     if (last && now - last < DEDUPE_WINDOW_MS) {
@@ -136,12 +317,11 @@ export async function POST(req: Request) {
             const qty = Number(it?.qty ?? 1);
             const title = escapeHtml(it?.title ?? "Item");
             const unit = Number(it?.unit_price ?? it?.price ?? 0);
-            return `<li>${qty} x ${title} — ${escapeHtml(formatARS(unit))}</li>`;
+            return `<li>${qty} x ${title} - ${escapeHtml(formatARS(unit))}</li>`;
           })
           .join("")
       : "";
 
-    // ✅ armamos HTML y, si no se puede adjuntar, al menos incluimos el link
     const invoiceLine =
       invoiceNumber || invoicePdfUrl
         ? `
@@ -178,10 +358,21 @@ export async function POST(req: Request) {
       </div>
     `;
 
-    // ✅ Modo testing (sin dominio): fuerza destinatario a tu email verificado
+    const text = buildEmailText({
+      name,
+      orderNumber: String(orderNumber),
+      invoiceNumber,
+      invoicePdfUrl,
+      shippingAddress,
+      phone,
+      items,
+      total: Number(total ?? 0),
+    });
+
     const to = process.env.TEST_EMAIL_TO || String(email);
 
     console.log("[email] sending confirmation", {
+      provider: "brevo",
       orderNumber,
       to,
       forced: Boolean(process.env.TEST_EMAIL_TO),
@@ -189,73 +380,74 @@ export async function POST(req: Request) {
       hasInvoicePdfUrl: Boolean(invoicePdfUrl),
     });
 
-    // ✅ Intento de adjuntar PDF (si viene invoicePdfUrl)
-    let attachments: Array<{ filename: string; content: string }> | undefined;
+    let attachments: BrevoAttachment[] | undefined;
 
     if (invoicePdfUrl && typeof invoicePdfUrl === "string") {
       try {
         const base64 = await fetchPdfAsBase64(invoicePdfUrl);
         attachments = [
           {
-            filename: safeFilename(invoiceFilename || invoiceNumber || "factura.pdf"),
-            content: base64, // Resend espera base64
+            name: safeFilename(invoiceFilename || invoiceNumber || "factura.pdf"),
+            content: base64,
           },
         ];
       } catch (e: any) {
-        // No cortamos el email si falla el adjunto; dejamos link en el body
         console.error("[email] failed to attach pdf, sending without attachment:", e?.message || e);
       }
     }
 
-    // ✅ Resend idempotency (Node SDK)
-    const result = await resend.emails.send(
-      {
-        from,
-        to,
-        subject: `Confirmación de pedido ${String(orderNumber)}`,
-        html,
-        ...(attachments ? { attachments } : {}),
-      },
-      { idempotencyKey }
-    );
+    const result = await sendBrevoEmail({
+      apiKey: process.env.BREVO_API_KEY,
+      sender,
+      to,
+      toName: name,
+      subject: `Confirmación de pedido ${String(orderNumber)}`,
+      html,
+      text,
+      idempotencyKey,
+      attachments,
+    });
 
-    // SDK puede devolver { error } en vez de throw
-    if ((result as any)?.error) {
-      const err = (result as any).error;
-      const msg = err?.message || "Resend error";
-
-      // Si es rate limit, devolvemos 202 (no “romper” el flujo del webhook)
-      if (looksRateLimitError(err) || String(msg).toLowerCase().includes("too many requests")) {
+    if (!result.response.ok) {
+      if (looksDuplicateIdempotency(result.payload, result.response.status)) {
         return NextResponse.json(
-          { ok: false, queued: false, error: msg, rateLimited: true, to },
+          { ok: true, deduped: true, provider: "brevo", to },
+          { status: 200 }
+        );
+      }
+
+      const message = pickBrevoError(result.payload, "Brevo error");
+
+      if (looksRateLimitError(result.payload, result.response.status)) {
+        return NextResponse.json(
+          { ok: false, queued: false, error: message, rateLimited: true, to },
           { status: 202 }
         );
       }
 
-      return NextResponse.json({ error: msg }, { status: 502 });
+      return NextResponse.json(
+        {
+          error: message,
+          provider: "brevo",
+        },
+        { status: 502 }
+      );
     }
 
     return NextResponse.json({
       ok: true,
+      provider: "brevo",
       to,
       idempotencyKey,
       attachedPdf: Boolean(attachments?.length),
+      messageId:
+        typeof (result.payload as any)?.messageId === "string"
+          ? (result.payload as any).messageId
+          : null,
     });
   } catch (e: any) {
-    // Si Resend throwea por rate limit u otro error
-    if (looksRateLimitError(e)) {
-      return NextResponse.json(
-        {
-          ok: false,
-          error: e?.message || "Too many requests",
-          rateLimited: true,
-        },
-        { status: 202 }
-      );
-    }
-
     return NextResponse.json(
-      { error: e?.message || "Error enviando email" },
+      { error: e?.message || "Error enviando email con Brevo" },
       { status: 500 }
     );
   }
