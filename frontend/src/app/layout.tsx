@@ -11,6 +11,11 @@ export const metadata: Metadata = {
     default: "Tienda de Chocolates Artesanales",
     template: "%s | Tienda de Chocolates",
   },
+  icons: {
+    icon: "/brand/favicon.svg",
+    shortcut: "/brand/favicon.svg",
+    apple: "/brand/favicon.svg",
+  },
   description: "Descubrí los mejores chocolates y bombones artesanales. Calidad premium y envíos a todo el país.",
   keywords: ["chocolate", "bombones", "artesanal", "regalos", "dulces"],
   authors: [{ name: "Manus Next.js Expert" }],
