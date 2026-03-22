@@ -111,7 +111,7 @@ export function Footer() {
             <div className="mt-4 space-y-3 text-sm text-red-100">
               <div className="flex items-start gap-3 lg:justify-end">
                 <Mail className="h-5 w-5 flex-shrink-0 text-white" />
-                <span>contacto@amargoydulce.com</span>
+                <span>amargoydulce.contacto@gmail.com</span>
               </div>
 
               <div className="flex items-center gap-3 lg:justify-end">

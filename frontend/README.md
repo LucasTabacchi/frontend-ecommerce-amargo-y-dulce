@@ -11,6 +11,12 @@ npm install
 ```
 
 ## Variables de entorno
+Copiá `.env.example` a `.env.local` y completá los valores:
+
+```bash
+cp .env.example .env.local
+```
+
 Para el envío de emails transaccionales con Brevo, definí al menos:
 
 ```bash
