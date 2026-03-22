@@ -1,6 +1,8 @@
 // src/app/api/mp/webhook/route.ts
 import { NextResponse } from "next/server";
 
+import { sendOrderConfirmationEmail } from "@/lib/server/order-confirmation-email";
+
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
 
@@ -238,38 +240,6 @@ async function updateOrderInStrapi(params: {
 
 /* ======================= STOCK (tu código igual) ======================= */
 /* ... todo tu bloque de stock queda igual ... */
-
-/* ======================= EMAIL ======================= */
-
-async function sendOrderConfirmationEmail(params: {
-  siteUrl: string;
-  email: string;
-  name?: string | null;
-  orderNumber?: string | null;
-  total?: number | null;
-  items?: any;
-  phone?: string | null;
-  shippingAddress?: any;
-  mpPaymentId?: string | null;
-
-  invoiceNumber?: string | null;
-  invoicePdfUrl?: string | null;
-  invoiceFilename?: string | null;
-}) {
-  const { siteUrl, ...payload } = params;
-
-  const res = await fetch(`${siteUrl}/api/email/order-confirmation`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-    cache: "no-store",
-  });
-
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Email send failed (${res.status}) ${t || "(no body)"}`);
-  }
-}
 
 /* ======================= INVOICE ======================= */
 
@@ -620,8 +590,7 @@ export async function POST(req: Request) {
           : null;
 
         try {
-          await sendOrderConfirmationEmail({
-            siteUrl,
+          const emailResult = await sendOrderConfirmationEmail({
             email: to, // ✅ usa override test o email real del comprador
             name: order.name,
             orderNumber: order.orderNumber ?? undefined,
@@ -635,6 +604,12 @@ export async function POST(req: Request) {
             invoicePdfUrl,
             invoiceFilename,
           });
+
+          if (emailResult.status < 200 || emailResult.status >= 300) {
+            throw new Error(
+              `Email send failed (${emailResult.status}) ${JSON.stringify(emailResult.body)}`
+            );
+          }
 
           console.log("[Webhook] Email de confirmación enviado:", {
             to,
