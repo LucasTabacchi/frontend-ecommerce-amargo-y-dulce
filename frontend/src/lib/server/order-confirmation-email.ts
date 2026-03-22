@@ -1,4 +1,5 @@
 import "server-only";
+import crypto from "crypto";
 
 const BREVO_SEND_EMAIL_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -37,6 +38,10 @@ export type OrderConfirmationEmailResult = {
   status: number;
   body: Record<string, any>;
 };
+
+function makeBrevoIdempotencyKey(input: string) {
+  return crypto.createHash("sha256").update(input).digest("hex").slice(0, 32);
+}
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -312,16 +317,22 @@ export async function sendOrderConfirmationEmail(
       return { status: 400, body: { error: "Faltan email u orderNumber" } };
     }
 
-    const idempotencyKey = `order-confirmation/${String(orderNumber)}${
+    const rawIdempotencyKey = `order-confirmation/${String(orderNumber)}${
       mpPaymentId ? `/${String(mpPaymentId)}` : ""
     }`;
+    const idempotencyKey = makeBrevoIdempotencyKey(rawIdempotencyKey);
 
     const now = Date.now();
     const last = recentSends.get(idempotencyKey);
     if (last && now - last < DEDUPE_WINDOW_MS) {
       return {
         status: 200,
-        body: { ok: true, deduped: true, to: process.env.TEST_EMAIL_TO || email },
+        body: {
+          ok: true,
+          deduped: true,
+          to: process.env.TEST_EMAIL_TO || email,
+          idempotencyKey,
+        },
       };
     }
     recentSends.set(idempotencyKey, now);
@@ -397,6 +408,7 @@ export async function sendOrderConfirmationEmail(
       to,
       forced: Boolean(process.env.TEST_EMAIL_TO),
       idempotencyKey,
+      rawIdempotencyKey,
       hasInvoicePdfUrl: Boolean(invoicePdfUrl),
     });
 
