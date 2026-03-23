@@ -15,7 +15,7 @@ Ecommerce de chocolates artesanales construido con **Next.js 14**, **TypeScript*
 | Nombre | Amargo y Dulce |
 | Tipo | Fullstack web app |
 | Estado | MVP en evolución / uso productivo |
-| Autor | Lucas |
+| Autor | Lucas Tabacchi |
 | Demo | [https://amargo-y-dulce.vercel.app](https://amargo-y-dulce.vercel.app) |
 
 ## 👀 Demo o preview
