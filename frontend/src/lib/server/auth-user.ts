@@ -68,6 +68,14 @@ export function getServerUserJwt() {
   return cookies().get("strapi_jwt")?.value ?? null;
 }
 
+function getServerAuthTimeoutMs() {
+  const parsed = Number(process.env.SERVER_AUTH_TIMEOUT_MS);
+  if (Number.isFinite(parsed) && parsed >= 1000) {
+    return Math.floor(parsed);
+  }
+  return 5000;
+}
+
 export const getServerAuthUser = cache(async function getServerAuthUser() {
   const jwt = getServerUserJwt();
   if (!jwt) return null;
@@ -75,7 +83,7 @@ export const getServerAuthUser = cache(async function getServerAuthUser() {
   const STRAPI = getStrapiBase();
   if (!STRAPI) return null;
 
-  const timeoutMs = 1200;
+  const timeoutMs = getServerAuthTimeoutMs();
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
 
