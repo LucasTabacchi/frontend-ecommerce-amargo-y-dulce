@@ -89,12 +89,13 @@ export function ProfilePanel({
   onClose,
   onLogout,
   initialUser,
-  initialAddresses = [],
+  initialAddresses,
 }: ProfilePanelProps) {
   const router = useRouter();
   const setAuthState = useAuthStore((s) => s.setAuthState);
   const hasInitialUser = initialUser !== undefined;
-  const skipInitialAddressesLoadRef = useRef(hasInitialUser);
+  const hasInitialAddresses = initialAddresses !== undefined;
+  const skipInitialAddressesLoadRef = useRef(hasInitialUser && hasInitialAddresses);
 
   const [loading, setLoading] = useState(!hasInitialUser);
   const [me, setMe] = useState<MeResponse>(() => ({
@@ -105,7 +106,7 @@ export function ProfilePanel({
 
   const [addrLoading, setAddrLoading] = useState(false);
   const [addrError, setAddrError] = useState<string | null>(null);
-  const [addresses, setAddresses] = useState<Address[]>(initialAddresses);
+  const [addresses, setAddresses] = useState<Address[]>(initialAddresses ?? []);
 
   const [editingId, setEditingId] = useState<number | string | null>(null);
   const [form, setForm] = useState<AddressPayload>(EMPTY_FORM);

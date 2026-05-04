@@ -35,10 +35,6 @@ function authHeaders() {
   return jwt ? { Authorization: `Bearer ${jwt}` } : {};
 }
 
-function readUserJwtFromCookies() {
-  return cookies().get("strapi_jwt")?.value || null;
-}
-
 function isStoreAdmin(user: any) {
   return (
     user?.isStoreAdmin === true ||
@@ -90,12 +86,6 @@ function normalizeAddress(x: any) {
  */
 export async function GET() {
   try {
-    const base = normalizeStrapiBase(
-      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || ""
-    );
-    const guard = await ensureNotStoreAdmin(base, readUserJwtFromCookies());
-    if (!guard.ok) return guard.response;
-
     const res = await fetch(
       getStrapiUrl(
         "/addresses?pagination[pageSize]=100&sort=isDefault:desc,createdAt:desc"
@@ -140,7 +130,8 @@ export async function POST(req: Request) {
     const base = normalizeStrapiBase(
       process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || ""
     );
-    const guard = await ensureNotStoreAdmin(base, readUserJwtFromCookies());
+    const jwt = cookies().get("strapi_jwt")?.value || null;
+    const guard = await ensureNotStoreAdmin(base, jwt);
     if (!guard.ok) return guard.response;
 
     const body = await req.json().catch(() => ({}));

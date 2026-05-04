@@ -562,6 +562,7 @@ export function Header() {
                           variant="dropdown"
                           onClose={() => setProfileOpen(false)}
                           onLogout={logout}
+                          initialUser={me}
                         />
                       </div>
                     </>
