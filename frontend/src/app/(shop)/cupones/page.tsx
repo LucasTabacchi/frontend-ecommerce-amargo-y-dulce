@@ -99,7 +99,14 @@ export default async function CuponesPage() {
   let serverIsStoreAdmin = false;
   const serverClaimedCoupons = new Set<string>();
 
-  if (jwt) {
+  const promotionsPromise = fetcher<{ data?: CouponRow[] }>("/promotions/available", {
+    method: "GET",
+    next: { revalidate: 300 },
+  });
+
+  const authPromise = (async () => {
+    if (!jwt) return null;
+
     const strapiBase = normalizeStrapiBase(
       process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
     );
@@ -110,27 +117,27 @@ export default async function CuponesPage() {
         cache: "no-store",
       });
       const meJson = await meRes.json().catch(() => null);
-      if (meRes.ok) {
-        serverAuthResolved = true;
-        serverIsLoggedIn = Boolean(meJson?.id);
-        serverIsStoreAdmin = isStoreAdmin(meJson);
-
-        if (serverIsStoreAdmin) {
-          redirect("/admin/pedidos");
-        }
-
-        const claimed = sanitizeClaimedCouponValues(meJson?.claimedCoupons);
-        for (const value of claimed) serverClaimedCoupons.add(value);
-      }
+      return meRes.ok ? meJson : null;
     } catch {
-      // Si falla auth check, continuamos sin redirigir.
+      return null;
     }
+  })();
+
+  const [meJson, res] = await Promise.all([authPromise, promotionsPromise]);
+
+  if (jwt && meJson) {
+    serverAuthResolved = true;
+    serverIsLoggedIn = Boolean(meJson?.id);
+    serverIsStoreAdmin = isStoreAdmin(meJson);
+
+    if (serverIsStoreAdmin) {
+      redirect("/admin/pedidos");
+    }
+
+    const claimed = sanitizeClaimedCouponValues(meJson?.claimedCoupons);
+    for (const value of claimed) serverClaimedCoupons.add(value);
   }
 
-  const res = await fetcher<{ data?: CouponRow[] }>("/promotions/available", {
-    method: "GET",
-    cache: "no-store",
-  });
   const allRows = Array.isArray(res?.data) ? res.data : [];
   const rows = allRows.filter((x) => Boolean(x.requiresCoupon && x.code) && isCouponActiveNow(x));
 

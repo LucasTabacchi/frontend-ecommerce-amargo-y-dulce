@@ -125,7 +125,9 @@ export function ApplyCouponButton({
     }
 
     syncFromStorage();
-    void refreshMe();
+    if (!initialAuthResolved) {
+      void refreshMe();
+    }
     window.addEventListener("amg-auth-changed", refreshMe);
     window.addEventListener("storage", syncFromStorage);
 
