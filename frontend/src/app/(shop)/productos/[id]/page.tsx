@@ -8,7 +8,6 @@ import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
-import { getServerProductReviews } from "@/lib/server/shop-data";
 
 export const revalidate = 3600;
 
@@ -82,6 +81,20 @@ function pickImage(rowOrAttr: any) {
   return strapiMediaUrl(url);
 }
 
+function buildProductDetailParams() {
+  const sp = new URLSearchParams();
+  sp.set("populate[images][fields][0]", "url");
+  sp.set("populate[images][fields][1]", "formats");
+  sp.set("fields[0]", "title");
+  sp.set("fields[1]", "slug");
+  sp.set("fields[2]", "description");
+  sp.set("fields[3]", "price");
+  sp.set("fields[4]", "stock");
+  sp.set("fields[5]", "category");
+  sp.set("fields[6]", "off");
+  return sp;
+}
+
 const getProduct = cache(async function getProduct(pid: string) {
   const clean = String(pid || "").trim();
   if (!clean) return null;
@@ -91,7 +104,8 @@ const getProduct = cache(async function getProduct(pid: string) {
   try {
     // ✅ Si llega un ID numérico, resolvemos con findOne y redirigimos
     if (isNumeric) {
-      const res = await fetcher<any>(`/products/${clean}?populate=*`, {
+      const sp = buildProductDetailParams();
+      const res = await fetcher<any>(`/products/${clean}?${sp.toString()}`, {
         next: { revalidate: 3600 },
       });
 
@@ -109,8 +123,7 @@ const getProduct = cache(async function getProduct(pid: string) {
     }
 
     // ✅ Si llega documentId o slug
-    const sp = new URLSearchParams();
-    sp.set("populate", "*");
+    const sp = buildProductDetailParams();
     sp.set("pagination[pageSize]", "1");
     sp.set("status", "published");
     sp.set("filters[$or][0][documentId][$eq]", clean);
@@ -181,10 +194,6 @@ export default async function ProductDetailPage({ params }: Props) {
   const outOfStock = stock != null && stock <= 0;
 
   const imageUrl = pickImage(row);
-  const initialReviews = await getServerProductReviews({
-    productDocumentId: documentId ?? undefined,
-    productId: id,
-  });
 
   return (
     <main>
@@ -310,7 +319,6 @@ export default async function ProductDetailPage({ params }: Props) {
           <ProductReviews
             productDocumentId={documentId ?? undefined}
             productId={id}
-            initialReviews={initialReviews}
           />
         </div>
       </Container>
