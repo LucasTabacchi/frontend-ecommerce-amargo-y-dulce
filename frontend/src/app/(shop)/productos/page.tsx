@@ -5,8 +5,8 @@ import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { toCardItem } from "@/lib/strapi-mappers";
 
-// ✅ Revalidar cada hora (ISR)
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Productos | Chocolates Artesanales",
@@ -63,7 +63,7 @@ export default async function ProductosPage({
       // Si tu fetcher usa auth=true para pegarle a Strapi con token, dejalo.
       // Pero para storefront público, esto debería ser false.
       auth: false,
-      next: { revalidate: q ? 0 : 3600 },
+      cache: "no-store",
     });
 
     const raw = Array.isArray(res?.data) ? res.data : [];

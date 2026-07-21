@@ -101,7 +101,7 @@ export default async function CuponesPage() {
 
   const promotionsPromise = fetcher<{ data?: CouponRow[] }>("/promotions/available", {
     method: "GET",
-    next: { revalidate: 300 },
+    cache: "no-store",
   });
 
   const authPromise = (async () => {

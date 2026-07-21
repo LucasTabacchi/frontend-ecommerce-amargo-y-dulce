@@ -7,7 +7,8 @@ import { HeroCarousel } from "@/components/home/HeroCarousel";
 import { Metadata } from "next";
 import { Suspense } from "react";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 export const metadata: Metadata = {
   title: "Inicio | Chocolates Artesanales",
@@ -44,7 +45,7 @@ async function getBestSellers() {
   for (const query of queries) {
     try {
       const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(query, {
-        next: { revalidate: 300 },
+        cache: "no-store",
       });
 
       const home = (res?.data?.attributes ?? res?.data) as

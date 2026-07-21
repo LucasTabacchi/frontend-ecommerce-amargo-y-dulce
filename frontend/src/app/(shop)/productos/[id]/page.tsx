@@ -9,7 +9,8 @@ import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 interface Props {
   params: { id: string };
@@ -106,7 +107,7 @@ const getProduct = cache(async function getProduct(pid: string) {
     if (isNumeric) {
       const sp = buildProductDetailParams();
       const res = await fetcher<any>(`/products/${clean}?${sp.toString()}`, {
-        next: { revalidate: 3600 },
+        cache: "no-store",
       });
 
       const row = res?.data ?? null;
@@ -130,7 +131,7 @@ const getProduct = cache(async function getProduct(pid: string) {
     sp.set("filters[$or][1][slug][$eq]", clean);
 
     const list = await fetcher<any>(`/products?${sp.toString()}`, {
-      next: { revalidate: 3600 },
+      cache: "no-store",
     });
 
     return list?.data?.[0] ?? null;
