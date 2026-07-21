@@ -10,6 +10,7 @@ import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 export const revalidate = 0;
 
 interface Props {

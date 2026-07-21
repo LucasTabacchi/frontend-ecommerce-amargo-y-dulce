@@ -10,6 +10,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
+export const fetchCache = "force-no-store";
 
 function normalizeStrapiBase(url: string) {
   let u = String(url ?? "").trim();
