@@ -238,8 +238,221 @@ async function updateOrderInStrapi(params: {
   return json;
 }
 
-/* ======================= STOCK (tu código igual) ======================= */
-/* ... todo tu bloque de stock queda igual ... */
+/* ======================= STOCK ======================= */
+
+function pickAttr(row: any) {
+  return row?.attributes ?? row ?? {};
+}
+
+function pickProductDocumentId(row: any): string | null {
+  const attr = pickAttr(row);
+  const raw =
+    row?.documentId ??
+    row?.attributes?.documentId ??
+    row?.attributes?.document_id ??
+    attr?.documentId ??
+    attr?.document_id ??
+    null;
+
+  const s = raw != null ? String(raw).trim() : "";
+  return s || null;
+}
+
+function pickProductTitle(row: any): string {
+  const attr = pickAttr(row);
+  return String(attr?.title ?? row?.title ?? "Producto");
+}
+
+function pickProductStock(row: any): number | null {
+  const attr = pickAttr(row);
+  const raw = attr?.stock ?? row?.stock ?? null;
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function pickItemProductDocumentId(item: any): string | null {
+  const raw =
+    item?.productDocumentId ??
+    item?.product_documentId ??
+    item?.documentId ??
+    item?.product?.documentId ??
+    item?.product?.data?.documentId ??
+    item?.product?.data?.attributes?.documentId ??
+    null;
+
+  const s = raw != null ? String(raw).trim() : "";
+  return s || null;
+}
+
+function pickItemTitle(item: any): string {
+  return String(item?.title ?? item?.name ?? item?.product?.title ?? "Producto");
+}
+
+function pickItemQty(item: any): number {
+  const n = Number(item?.qty ?? item?.quantity ?? 0);
+  return Number.isFinite(n) ? Math.max(0, Math.floor(n)) : 0;
+}
+
+function buildStockNeeds(items: any[]) {
+  const needs = new Map<string, { requested: number; title: string }>();
+
+  for (const item of Array.isArray(items) ? items : []) {
+    const documentId = pickItemProductDocumentId(item);
+    const qty = pickItemQty(item);
+    if (!documentId || qty <= 0) continue;
+
+    const prev = needs.get(documentId);
+    needs.set(documentId, {
+      requested: (prev?.requested ?? 0) + qty,
+      title: prev?.title ?? pickItemTitle(item),
+    });
+  }
+
+  return needs;
+}
+
+async function fetchProductsByDocumentId(params: {
+  strapiBase: string;
+  token: string;
+  documentIds: string[];
+}) {
+  const { strapiBase, token, documentIds } = params;
+
+  const sp = new URLSearchParams();
+  sp.set("pagination[pageSize]", String(Math.min(documentIds.length, 100)));
+  sp.set("populate", "*");
+  sp.append("fields[0]", "title");
+  sp.append("fields[1]", "stock");
+  sp.append("fields[2]", "documentId");
+  documentIds.forEach((documentId, i) => {
+    sp.set(`filters[$or][${i}][documentId][$eq]`, documentId);
+  });
+
+  const url = `${strapiBase}/api/products?${sp.toString()}`;
+  const { r, json } = await fetchStrapiJson(url, token);
+
+  if (!r.ok) {
+    throw new Error(
+      `Strapi products fetch failed (${r.status}) ${JSON.stringify(json)}`
+    );
+  }
+
+  const rows = Array.isArray(json?.data) ? json.data : [];
+  const byDoc = new Map<string, any>();
+
+  for (const row of rows) {
+    const documentId = pickProductDocumentId(row);
+    if (documentId) byDoc.set(documentId, row);
+  }
+
+  return byDoc;
+}
+
+async function updateProductStockInStrapi(params: {
+  strapiBase: string;
+  token: string;
+  productDocumentId: string;
+  stock: number;
+}) {
+  const { strapiBase, token, productDocumentId, stock } = params;
+
+  const updateUrl = `${strapiBase}/api/products/${encodeURIComponent(
+    productDocumentId
+  )}`;
+
+  const updateRes = await fetch(updateUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ data: { stock } }),
+    cache: "no-store",
+  });
+
+  if (!updateRes.ok) {
+    const text = await updateRes.text().catch(() => "");
+    throw new Error(
+      `Strapi product stock update failed (${updateRes.status}) ${
+        text || "(no body)"
+      }`
+    );
+  }
+}
+
+async function adjustStockForPaidOrder(params: {
+  strapiBase: string;
+  token: string;
+  orderDocumentId: string;
+  items: any[];
+}) {
+  const { strapiBase, token, orderDocumentId, items } = params;
+
+  const needs = buildStockNeeds(items);
+  const documentIds = Array.from(needs.keys());
+  if (!documentIds.length) {
+    console.warn("[Webhook] Orden paid sin items con productDocumentId para stock", {
+      orderDocumentId,
+    });
+    return { adjusted: 0, skipped: "no_stock_items" };
+  }
+
+  const productsByDoc = await fetchProductsByDocumentId({
+    strapiBase,
+    token,
+    documentIds,
+  });
+
+  let adjusted = 0;
+
+  for (const documentId of documentIds) {
+    const need = needs.get(documentId)!;
+    const product = productsByDoc.get(documentId);
+
+    if (!product) {
+      throw new Error(
+        `Producto no encontrado para ajustar stock: ${documentId} (${need.title})`
+      );
+    }
+
+    const currentStock = pickProductStock(product);
+    if (currentStock === null) continue;
+
+    if (currentStock < need.requested) {
+      throw new Error(
+        `Stock insuficiente al confirmar pago: ${pickProductTitle(product)} (${documentId}). Disponible ${currentStock}, solicitado ${need.requested}`
+      );
+    }
+
+    const nextStock = Math.max(0, currentStock - need.requested);
+    await updateProductStockInStrapi({
+      strapiBase,
+      token,
+      productDocumentId: documentId,
+      stock: nextStock,
+    });
+
+    adjusted++;
+    console.log("[Webhook] Stock actualizado:", {
+      productDocumentId: documentId,
+      title: pickProductTitle(product),
+      previous: currentStock,
+      sold: need.requested,
+      next: nextStock,
+      orderDocumentId,
+    });
+  }
+
+  await updateOrderInStrapi({
+    strapiBase,
+    token,
+    orderDocumentId,
+    payload: { data: { stockAdjusted: true } },
+  });
+
+  return { adjusted };
+}
 
 /* ======================= INVOICE ======================= */
 
@@ -538,6 +751,24 @@ export async function POST(req: Request) {
     }
 
     const becamePaid = prevStatus !== "paid" && nextStatus === "paid";
+
+    if (becamePaid && !order.stockAdjusted) {
+      try {
+        const stockResult = await adjustStockForPaidOrder({
+          strapiBase,
+          token,
+          orderDocumentId: order.documentId,
+          items: Array.isArray(order.items) ? order.items : [],
+        });
+
+        console.log("[Webhook] Ajuste de stock finalizado:", {
+          orderDocumentId: order.documentId,
+          ...stockResult,
+        });
+      } catch (e: any) {
+        console.error("[Webhook] Error ajustando stock:", e?.message || e);
+      }
+    }
 
     const siteUrl =
       process.env.SITE_URL ||
