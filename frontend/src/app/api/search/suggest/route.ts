@@ -1,6 +1,10 @@
 // src/app/api/search/suggest/route.ts
 import { NextResponse } from "next/server";
 import { fetcher } from "@/lib/fetcher";
+import {
+  applyPublicProductVisibilityFilter,
+  filterPubliclyVisibleProducts,
+} from "@/lib/product-visibility";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -39,6 +43,8 @@ export async function GET(req: Request) {
   sp.set("fields[0]", "title");
   sp.set("fields[1]", "price");
   sp.set("fields[2]", "slug");
+  sp.set("fields[3]", "stock");
+  applyPublicProductVisibilityFilter(sp);
 
   // ✅ Búsqueda por varios campos (igual que en /productos)
   sp.set("filters[$or][0][title][$containsi]", q);
@@ -54,7 +60,7 @@ export async function GET(req: Request) {
       { cache: "no-store" }
     );
 
-    const data = Array.isArray(res?.data) ? res.data : [];
+    const data = filterPubliclyVisibleProducts(Array.isArray(res?.data) ? res.data : []);
 
     const results = data
       .map((item: any) => ({

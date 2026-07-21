@@ -6,6 +6,7 @@ import { toCardItem } from "@/lib/strapi-mappers";
 import { HeroCarousel } from "@/components/home/HeroCarousel";
 import { Metadata } from "next";
 import { Suspense } from "react";
+import { isPubliclyVisibleProduct } from "@/lib/product-visibility";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -55,7 +56,7 @@ async function getBestSellers() {
       const raw = extractRelationArray(home?.bestSellers);
 
       if (raw.length > 0) {
-        return raw.map(toCardItem);
+        return raw.map(toCardItem).filter(isPubliclyVisibleProduct);
       }
     } catch (error) {
       console.error(`Error fetching best sellers with query "${query}":`, error);

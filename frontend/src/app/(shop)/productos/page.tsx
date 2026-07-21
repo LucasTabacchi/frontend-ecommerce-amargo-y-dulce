@@ -4,6 +4,10 @@ import { Metadata } from "next";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { toCardItem } from "@/lib/strapi-mappers";
+import {
+  applyPublicProductVisibilityFilter,
+  filterPubliclyVisibleProducts,
+} from "@/lib/product-visibility";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -43,6 +47,7 @@ export default async function ProductosPage({
     sp.set("populate", "*");
     sp.set("pagination[pageSize]", "100");
     sp.set("sort[0]", "createdAt:desc");
+    applyPublicProductVisibilityFilter(sp);
 
     // ✅ IMPORTANTE:
     // En Strapi v5, el "published" se maneja con status=published.
@@ -67,7 +72,7 @@ export default async function ProductosPage({
       cache: "no-store",
     });
 
-    const raw = Array.isArray(res?.data) ? res.data : [];
+    const raw = filterPubliclyVisibleProducts(Array.isArray(res?.data) ? res.data : []);
 
     // ✅ Aseguramos que cada card tenga documentId disponible (si tu mapper no lo preserva)
     products = raw.map((item: any) => {
