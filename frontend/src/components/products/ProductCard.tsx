@@ -1,6 +1,7 @@
 // src/components/products/ProductCard.tsx
 import Link from "next/link";
 import Image from "next/image";
+import { getLowStockLabel } from "@/lib/stock-labels";
 
 /**
  * Tipo simple para un producto.
@@ -27,6 +28,7 @@ export type ProductCardItem = {
 export function ProductCard({ item }: { item: ProductCardItem }) {
   const hasOff = typeof item.off === "number" && item.off > 0;
   const finalPrice = hasOff ? Math.round(item.price * (1 - item.off! / 100)) : item.price;
+  const lowStockLabel = getLowStockLabel(item.stock);
 
   const href = item.documentId ? `/productos/${encodeURIComponent(item.documentId)}` : `/productos/${item.id}`;
 
@@ -42,6 +44,12 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
           {hasOff && (
             <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white @[400px]:text-xs">
               {item.off}% OFF
+            </span>
+          )}
+
+          {lowStockLabel && (
+            <span className="absolute bottom-2 left-2 z-10 rounded-sm bg-orange-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-normal text-orange-700 @[400px]:text-xs">
+              {lowStockLabel}
             </span>
           )}
 

@@ -8,6 +8,7 @@ import {
   applyPublicProductVisibilityFilter,
   filterPubliclyVisibleProducts,
 } from "@/lib/product-visibility";
+import { getLowStockLabel } from "@/lib/stock-labels";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -141,6 +142,7 @@ export default async function ProductosPage({
                   basePrice != null && hasOff
                     ? Math.round(basePrice * (1 - p.off / 100))
                     : basePrice;
+                const lowStockLabel = getLowStockLabel(p.stock);
 
                 // ✅ URL estable: documentId (Strapi v5). Fallback: id numérico.
                 const href = `/productos/${p.documentId || p.id}`;
@@ -168,6 +170,11 @@ export default async function ProductosPage({
                       {hasOff && (
                         <span className="absolute right-3 top-3 rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
                           -{p.off}%
+                        </span>
+                      )}
+                      {lowStockLabel && (
+                        <span className="absolute bottom-3 left-3 rounded-sm bg-orange-100 px-2 py-1 text-xs font-semibold uppercase tracking-normal text-orange-700">
+                          {lowStockLabel}
                         </span>
                       )}
                     </div>
