@@ -27,6 +27,7 @@ function loadTsModule(relativePath) {
 }
 
 const {
+  getDetailAvailabilityLabel,
   getQuantityOptions,
   getDetailStockLine,
   getLowStockLabel,
@@ -46,9 +47,10 @@ test("does not show a low stock warning for unavailable or plentiful stock", () 
 });
 
 test("formats detail stock like Mercado Libre without exposing a raw stock label", () => {
-  assert.equal(getDetailStockLine(1), "Cantidad: 1 unidad");
-  assert.equal(getDetailStockLine(2), "Cantidad: 1 unidad (+1 disponible)");
-  assert.equal(getDetailStockLine(8), "Cantidad: 1 unidad (+7 disponibles)");
+  assert.equal(getDetailAvailabilityLabel(1), "+10 disponibles");
+  assert.equal(getDetailAvailabilityLabel(8), "+10 disponibles");
+  assert.equal(getDetailStockLine(1), "Cantidad: 1 unidad (+10 disponibles)");
+  assert.equal(getDetailStockLine(8), "Cantidad: 1 unidad (+10 disponibles)");
   assert.equal(getDetailStockLine(0), null);
   assert.equal(getDetailStockLine(null), null);
 });

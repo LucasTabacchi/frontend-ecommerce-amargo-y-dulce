@@ -4,7 +4,10 @@ import { useMemo, useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import type { ProductCardItem } from "@/components/products/ProductCard";
-import { getQuantityOptions } from "@/lib/stock-labels";
+import {
+  getDetailAvailabilityLabel,
+  getQuantityOptions,
+} from "@/lib/stock-labels";
 
 function quantityLabel(qty: number) {
   return `${qty} unidad${qty === 1 ? "" : "es"}`;
@@ -26,7 +29,7 @@ export function ProductPurchaseBox({
   }
 
   const selected = options.includes(quantity) ? quantity : 1;
-  const extra = typeof stock === "number" ? Math.max(0, stock - selected) : 0;
+  const availabilityLabel = getDetailAvailabilityLabel(stock);
 
   return (
     <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
@@ -47,10 +50,8 @@ export function ProductPurchaseBox({
               open ? "rotate-180" : "",
             ].join(" ")}
           />
-          {extra > 0 ? (
-            <span className="text-neutral-500">
-              (+{extra} disponible{extra === 1 ? "" : "s"})
-            </span>
+          {availabilityLabel ? (
+            <span className="text-neutral-500">({availabilityLabel})</span>
           ) : null}
         </button>
 
