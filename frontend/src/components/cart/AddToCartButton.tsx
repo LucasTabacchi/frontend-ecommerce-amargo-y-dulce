@@ -22,7 +22,13 @@ function getKey(p: any) {
   return "unknown";
 }
 
-export function AddToCartButton({ item }: { item: ProductCardItem }) {
+export function AddToCartButton({
+  item,
+  quantity = 1,
+}: {
+  item: ProductCardItem;
+  quantity?: number;
+}) {
   const addItem = useCartStore((s) => s.addItem);
   const items = useCartStore((s) => s.items);
   const authResolved = useAuthStore((s) => s.resolved);
@@ -44,6 +50,9 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
   const blockedForStoreUser = authResolved && isStoreAdmin;
   const limitReached = stock !== null && currentQty >= stock;
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
+  const requestedQty = Math.max(1, Math.trunc(Number(quantity) || 1));
+  const exceedsRemaining = remaining !== null && requestedQty > remaining;
+  const isDisabled = blockedForStoreUser || out || limitReached || exceedsRemaining;
 
   function showTemp(text: string) {
     setMsg(text);
@@ -61,7 +70,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
     <div>
       <button
         type="button"
-        disabled={blockedForStoreUser || out || limitReached}
+        disabled={isDisabled}
         onClick={() => {
           if (blockedForStoreUser) {
             showTemp("La cuenta tienda no puede comprar.");
@@ -76,10 +85,14 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
             showTemp("No hay más unidades disponibles para este producto.");
             return;
           }
+          if (remaining !== null && requestedQty > remaining) {
+            showTemp("No hay suficientes unidades disponibles para esa cantidad.");
+            return;
+          }
 
           const before = currentQty;
 
-          addItem(item, 1);
+          addItem(item, requestedQty);
 
           // ✅ post-check: si no aumentó, probablemente quedó clamped
           const after = (() => {
@@ -113,7 +126,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
         }}
         className={[
           "w-full rounded-full px-5 py-3 text-sm font-semibold transition",
-          blockedForStoreUser || out || limitReached
+          isDisabled
             ? "bg-neutral-200 text-neutral-500 cursor-not-allowed"
             : "bg-red-600 text-white hover:bg-red-700",
         ].join(" ")}
@@ -122,7 +135,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
           ? "No disponible"
           : out
           ? "Publicación pausada"
-          : limitReached
+          : limitReached || exceedsRemaining
           ? "Cantidad máxima seleccionada"
           : remaining !== null
           ? "Agregar al carrito"

@@ -19,3 +19,12 @@ export function getDetailStockLine(stock: unknown) {
   const extra = available - 1;
   return `Cantidad: 1 unidad (+${extra} disponible${extra === 1 ? "" : "s"})`;
 }
+
+export function getQuantityOptions(stock: unknown, maxOptions = 6) {
+  const n = Number(stock);
+  if (!Number.isFinite(n)) return [];
+
+  const available = Math.max(0, Math.trunc(n));
+  const limit = Math.min(available, Math.max(1, Math.trunc(maxOptions)));
+  return Array.from({ length: limit }, (_, index) => index + 1);
+}

@@ -27,6 +27,7 @@ function loadTsModule(relativePath) {
 }
 
 const {
+  getQuantityOptions,
   getDetailStockLine,
   getLowStockLabel,
 } = loadTsModule("src/lib/stock-labels.ts");
@@ -50,4 +51,12 @@ test("formats detail stock like Mercado Libre without exposing a raw stock label
   assert.equal(getDetailStockLine(8), "Cantidad: 1 unidad (+7 disponibles)");
   assert.equal(getDetailStockLine(0), null);
   assert.equal(getDetailStockLine(null), null);
+});
+
+test("builds quantity options capped by available stock", () => {
+  assert.deepEqual(getQuantityOptions(1), [1]);
+  assert.deepEqual(getQuantityOptions(3), [1, 2, 3]);
+  assert.deepEqual(getQuantityOptions(10), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(getQuantityOptions(0), []);
+  assert.deepEqual(getQuantityOptions(null), []);
 });
