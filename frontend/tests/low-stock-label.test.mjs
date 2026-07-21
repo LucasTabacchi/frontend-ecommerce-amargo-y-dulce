@@ -30,6 +30,7 @@ const {
   getDetailAvailabilityLabel,
   getQuantityOptions,
   getDetailStockLine,
+  getStockExceededMessage,
   getLowStockLabel,
 } = loadTsModule("src/lib/stock-labels.ts");
 
@@ -55,10 +56,17 @@ test("formats detail stock like Mercado Libre without exposing a raw stock label
   assert.equal(getDetailStockLine(null), null);
 });
 
-test("builds quantity options capped by available stock", () => {
-  assert.deepEqual(getQuantityOptions(1), [1]);
-  assert.deepEqual(getQuantityOptions(3), [1, 2, 3]);
-  assert.deepEqual(getQuantityOptions(10), [1, 2, 3, 4, 5, 6]);
+test("builds generic quantity options up to ten when a product has stock", () => {
+  assert.deepEqual(getQuantityOptions(1), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(getQuantityOptions(3), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+  assert.deepEqual(getQuantityOptions(10), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
   assert.deepEqual(getQuantityOptions(0), []);
   assert.deepEqual(getQuantityOptions(null), []);
+});
+
+test("returns Sin stock when the selected quantity exceeds real stock", () => {
+  assert.equal(getStockExceededMessage(3, 4), "Sin stock");
+  assert.equal(getStockExceededMessage(3, 3), null);
+  assert.equal(getStockExceededMessage(10, 10), null);
+  assert.equal(getStockExceededMessage(null, 10), null);
 });

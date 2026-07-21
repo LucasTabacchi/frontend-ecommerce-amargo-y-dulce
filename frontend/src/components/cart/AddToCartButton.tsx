@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import type { ProductCardItem } from "@/components/products/ProductCard";
 import { useAuthStore } from "@/store/auth.store";
+import { getStockExceededMessage } from "@/lib/stock-labels";
 
 function toIntStock(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -51,8 +52,10 @@ export function AddToCartButton({
   const limitReached = stock !== null && currentQty >= stock;
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
   const requestedQty = Math.max(1, Math.trunc(Number(quantity) || 1));
-  const exceedsRemaining = remaining !== null && requestedQty > remaining;
-  const isDisabled = blockedForStoreUser || out || limitReached || exceedsRemaining;
+  const stockExceededMessage = !out
+    ? getStockExceededMessage(stock, requestedQty, currentQty)
+    : null;
+  const isDisabled = blockedForStoreUser || out || limitReached || Boolean(stockExceededMessage);
 
   function showTemp(text: string) {
     setMsg(text);
@@ -85,8 +88,8 @@ export function AddToCartButton({
             showTemp("No hay más unidades disponibles para este producto.");
             return;
           }
-          if (remaining !== null && requestedQty > remaining) {
-            showTemp("No hay suficientes unidades disponibles para esa cantidad.");
+          if (stockExceededMessage) {
+            showTemp(stockExceededMessage);
             return;
           }
 
@@ -135,8 +138,8 @@ export function AddToCartButton({
           ? "No disponible"
           : out
           ? "Publicación pausada"
-          : limitReached || exceedsRemaining
-          ? "Cantidad máxima seleccionada"
+          : stockExceededMessage || limitReached
+          ? "Sin stock"
           : remaining !== null
           ? "Agregar al carrito"
           : "Agregar al carrito"}

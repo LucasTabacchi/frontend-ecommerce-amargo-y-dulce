@@ -24,11 +24,33 @@ export function getDetailAvailabilityLabel(stock: unknown) {
   return "+10 disponibles";
 }
 
-export function getQuantityOptions(stock: unknown, maxOptions = 6) {
+export function getQuantityOptions(stock: unknown, maxOptions = 10) {
   const n = Number(stock);
   if (!Number.isFinite(n)) return [];
 
   const available = Math.max(0, Math.trunc(n));
-  const limit = Math.min(available, Math.max(1, Math.trunc(maxOptions)));
+  if (available <= 0) return [];
+
+  const limit = Math.max(1, Math.trunc(maxOptions));
   return Array.from({ length: limit }, (_, index) => index + 1);
+}
+
+export function getStockExceededMessage(
+  stock: unknown,
+  requestedQuantity: unknown,
+  currentQuantity = 0,
+) {
+  if (stock === null || stock === undefined || stock === "") return null;
+
+  const available = Number(stock);
+  if (!Number.isFinite(available)) return null;
+
+  const requested = Number(requestedQuantity);
+  if (!Number.isFinite(requested)) return null;
+
+  const current = Number(currentQuantity);
+  const inCart = Number.isFinite(current) ? Math.max(0, Math.trunc(current)) : 0;
+  const remaining = Math.max(0, Math.trunc(available) - inCart);
+
+  return Math.trunc(requested) > remaining ? "Sin stock" : null;
 }
