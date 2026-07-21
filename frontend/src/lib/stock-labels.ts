@@ -36,7 +36,9 @@ export function getDetailStockWarning(stock: unknown) {
 
   const available = Math.trunc(n);
   if (available <= 0 || available > 10) return null;
-  return "Últimas unidades disponibles.";
+  return available === 1
+    ? "¡Últimas unidades! — Queda 1 disponible"
+    : `¡Últimas unidades! — Quedan ${available} disponibles`;
 }
 
 export function getQuantityOptions(stock: unknown, maxOptions = 6) {

@@ -26,9 +26,11 @@ function getKey(p: any) {
 export function AddToCartButton({
   item,
   quantity = 1,
+  showLowStockHint = true,
 }: {
   item: ProductCardItem;
   quantity?: number;
+  showLowStockHint?: boolean;
 }) {
   const addItem = useCartStore((s) => s.addItem);
   const items = useCartStore((s) => s.items);
@@ -151,6 +153,7 @@ export function AddToCartButton({
       {/* Hint permanente si queda poco */}
       {!blockedForStoreUser &&
       !out &&
+      showLowStockHint &&
       stock !== null &&
       remaining !== null &&
       remaining > 0 &&

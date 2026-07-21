@@ -117,7 +117,11 @@ export function ProductPurchaseBox({
       ) : null}
 
       <div className="mt-4">
-        <AddToCartButton item={item} quantity={selected} />
+        <AddToCartButton
+          item={item}
+          quantity={selected}
+          showLowStockHint={false}
+        />
       </div>
     </div>
   );

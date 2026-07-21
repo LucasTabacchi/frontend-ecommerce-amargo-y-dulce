@@ -51,8 +51,9 @@ test("does not show a low stock warning for unavailable or plentiful stock", () 
 test("formats detail stock like Mercado Libre without exposing a raw stock label", () => {
   assert.equal(getDetailAvailabilityLabel(10), null);
   assert.equal(getDetailAvailabilityLabel(11), "+10 disponibles");
-  assert.equal(getDetailStockWarning(1), "Últimas unidades disponibles.");
-  assert.equal(getDetailStockWarning(10), "Últimas unidades disponibles.");
+  assert.equal(getDetailStockWarning(1), "¡Últimas unidades! — Queda 1 disponible");
+  assert.equal(getDetailStockWarning(2), "¡Últimas unidades! — Quedan 2 disponibles");
+  assert.equal(getDetailStockWarning(10), "¡Últimas unidades! — Quedan 10 disponibles");
   assert.equal(getDetailStockWarning(11), null);
   assert.equal(getDetailStockLine(10), "Cantidad: 1 unidad");
   assert.equal(getDetailStockLine(11), "Cantidad: 1 unidad (+10 disponibles)");
