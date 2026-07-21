@@ -26,7 +26,10 @@ function loadTsModule(relativePath) {
   return module.exports;
 }
 
-const { getLowStockLabel } = loadTsModule("src/lib/stock-labels.ts");
+const {
+  getDetailStockLine,
+  getLowStockLabel,
+} = loadTsModule("src/lib/stock-labels.ts");
 
 test("shows a Mercado Libre style warning for low stock", () => {
   assert.equal(getLowStockLabel(1), "ULTIMA UNIDAD");
@@ -39,4 +42,12 @@ test("does not show a low stock warning for unavailable or plentiful stock", () 
   assert.equal(getLowStockLabel(4), null);
   assert.equal(getLowStockLabel(null), null);
   assert.equal(getLowStockLabel(undefined), null);
+});
+
+test("formats detail stock like Mercado Libre without exposing a raw stock label", () => {
+  assert.equal(getDetailStockLine(1), "Cantidad: 1 unidad");
+  assert.equal(getDetailStockLine(2), "Cantidad: 1 unidad (+1 disponible)");
+  assert.equal(getDetailStockLine(8), "Cantidad: 1 unidad (+7 disponibles)");
+  assert.equal(getDetailStockLine(0), null);
+  assert.equal(getDetailStockLine(null), null);
 });

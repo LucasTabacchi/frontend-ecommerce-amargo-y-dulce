@@ -8,6 +8,7 @@ import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { ProductReviews } from "@/components/products/ProductReviews";
+import { getDetailStockLine } from "@/lib/stock-labels";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -194,6 +195,7 @@ export default async function ProductDetailPage({ params }: Props) {
   const stock = attr?.stock != null ? asNum(attr?.stock, 0) : null;
   const slug = String(attr?.slug ?? "").trim() || String(id);
   const outOfStock = stock != null && stock <= 0;
+  const detailStockLine = getDetailStockLine(stock);
 
   const imageUrl = pickImage(row);
 
@@ -266,15 +268,9 @@ export default async function ProductDetailPage({ params }: Props) {
                 )}
               </div>
 
-              {stock != null && (
-                <div
-                  className={`rounded-full px-3 py-1 text-xs font-bold ${
-                    stock > 0
-                      ? "bg-emerald-50 text-emerald-700"
-                      : "bg-red-50 text-red-700"
-                  }`}
-                >
-                  {stock > 0 ? `Stock: ${stock}` : "Sin stock"}
+              {stock != null && stock <= 0 && (
+                <div className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-bold text-neutral-700">
+                  Publicación pausada
                 </div>
               )}
             </div>
@@ -291,6 +287,24 @@ export default async function ProductDetailPage({ params }: Props) {
             )}
 
             <div className="mt-6">
+              {detailStockLine && (
+                <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                  <div className="text-sm font-extrabold text-neutral-900">
+                    Stock disponible
+                  </div>
+                  <div className="mt-2 text-sm text-neutral-700">
+                    <span>Cantidad: </span>
+                    <span className="font-bold text-neutral-900">1 unidad</span>
+                    {stock != null && stock > 1 ? (
+                      <span className="text-neutral-500">
+                        {" "}
+                        (+{stock - 1} disponible{stock - 1 === 1 ? "" : "s"})
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              )}
+
               <AddToCartButton
                 item={{
                   id,
@@ -305,8 +319,8 @@ export default async function ProductDetailPage({ params }: Props) {
               />
 
               {outOfStock ? (
-                <p className="mt-3 text-center text-xs font-semibold text-red-700">
-                  Este producto no tiene stock disponible.
+                <p className="mt-3 text-center text-xs font-semibold text-neutral-600">
+                  Esta publicación se encuentra pausada por el momento.
                 </p>
               ) : (
                 <p className="mt-3 text-center text-xs text-neutral-500">

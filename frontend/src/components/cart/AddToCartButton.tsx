@@ -69,11 +69,11 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
           }
           // ✅ pre-check (no depende de que el store devuelva {ok})
           if (stock !== null && stock <= 0) {
-            showTemp("Sin stock disponible.");
+            showTemp("Publicación pausada.");
             return;
           }
           if (stock !== null && currentQty >= stock) {
-            showTemp(`Solo queda${stock === 1 ? "" : "n"} ${stock} en stock.`);
+            showTemp("No hay más unidades disponibles para este producto.");
             return;
           }
 
@@ -91,22 +91,22 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
           })();
 
           if (stock !== null && after >= stock && before >= stock) {
-            showTemp(`Solo queda${stock === 1 ? "" : "n"} ${stock} en stock.`);
+            showTemp("No hay más unidades disponibles para este producto.");
             return;
           }
 
           if (after === before) {
             // no cambió (por algún clamp o estado)
-            if (stock !== null) showTemp(`Solo queda${stock === 1 ? "" : "n"} ${stock} en stock.`);
+            if (stock !== null) showTemp("No hay más unidades disponibles para este producto.");
             else showTemp("No se pudo agregar.");
             return;
           }
 
           // ✅ ok
           if (stock !== null && after >= stock) {
-            showTemp(`Agregado ✅ (llegaste al máximo: ${stock})`);
+            showTemp("Agregado ✅");
           } else if (stock !== null && remaining !== null && remaining <= 2) {
-            showTemp(`Agregado ✅ (quedan ${Math.max(0, stock - after)})`);
+            showTemp("Agregado ✅");
           } else {
             showTemp("Agregado al carrito ✅");
           }
@@ -121,13 +121,11 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
         {blockedForStoreUser
           ? "No disponible"
           : out
-          ? "Sin stock"
+          ? "Publicación pausada"
           : limitReached
-          ? stock !== null
-            ? `Máximo ${stock} en carrito`
-            : "Máximo alcanzado"
+          ? "Cantidad máxima seleccionada"
           : remaining !== null
-          ? `Agregar al carrito (quedan ${remaining})`
+          ? "Agregar al carrito"
           : "Agregar al carrito"}
       </button>
 
@@ -142,9 +140,7 @@ export function AddToCartButton({ item }: { item: ProductCardItem }) {
       remaining > 0 &&
       remaining <= 3 &&
       !msg && (
-        <div className="mt-2 text-xs text-amber-700">
-          Atención: solo queda{remaining === 1 ? "" : "n"} {remaining}.
-        </div>
+        <div className="mt-2 text-xs text-amber-700">Últimas unidades disponibles.</div>
       )}
     </div>
   );
