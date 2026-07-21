@@ -9,8 +9,14 @@ export function getLowStockLabel(stock: unknown, threshold = 3) {
 }
 
 export function getDetailStockLine(stock: unknown) {
+  const n = Number(stock);
+  if (!Number.isFinite(n)) return null;
+
+  const available = Math.trunc(n);
+  if (available <= 0) return null;
+
   const availabilityLabel = getDetailAvailabilityLabel(stock);
-  if (!availabilityLabel) return null;
+  if (!availabilityLabel) return "Cantidad: 1 unidad";
 
   return `Cantidad: 1 unidad (${availabilityLabel})`;
 }
@@ -20,11 +26,20 @@ export function getDetailAvailabilityLabel(stock: unknown) {
   if (!Number.isFinite(n)) return null;
 
   const available = Math.trunc(n);
-  if (available <= 0) return null;
+  if (available <= 0 || available <= 10) return null;
   return "+10 disponibles";
 }
 
-export function getQuantityOptions(stock: unknown, maxOptions = 10) {
+export function getDetailStockWarning(stock: unknown) {
+  const n = Number(stock);
+  if (!Number.isFinite(n)) return null;
+
+  const available = Math.trunc(n);
+  if (available <= 0 || available > 10) return null;
+  return "Últimas unidades disponibles.";
+}
+
+export function getQuantityOptions(stock: unknown, maxOptions = 6) {
   const n = Number(stock);
   if (!Number.isFinite(n)) return [];
 

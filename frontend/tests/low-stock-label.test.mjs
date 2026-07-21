@@ -28,6 +28,7 @@ function loadTsModule(relativePath) {
 
 const {
   getDetailAvailabilityLabel,
+  getDetailStockWarning,
   getQuantityOptions,
   getDetailStockLine,
   getStockExceededMessage,
@@ -48,18 +49,21 @@ test("does not show a low stock warning for unavailable or plentiful stock", () 
 });
 
 test("formats detail stock like Mercado Libre without exposing a raw stock label", () => {
-  assert.equal(getDetailAvailabilityLabel(1), "+10 disponibles");
-  assert.equal(getDetailAvailabilityLabel(8), "+10 disponibles");
-  assert.equal(getDetailStockLine(1), "Cantidad: 1 unidad (+10 disponibles)");
-  assert.equal(getDetailStockLine(8), "Cantidad: 1 unidad (+10 disponibles)");
+  assert.equal(getDetailAvailabilityLabel(10), null);
+  assert.equal(getDetailAvailabilityLabel(11), "+10 disponibles");
+  assert.equal(getDetailStockWarning(1), "Últimas unidades disponibles.");
+  assert.equal(getDetailStockWarning(10), "Últimas unidades disponibles.");
+  assert.equal(getDetailStockWarning(11), null);
+  assert.equal(getDetailStockLine(10), "Cantidad: 1 unidad");
+  assert.equal(getDetailStockLine(11), "Cantidad: 1 unidad (+10 disponibles)");
   assert.equal(getDetailStockLine(0), null);
   assert.equal(getDetailStockLine(null), null);
 });
 
-test("builds generic quantity options up to ten when a product has stock", () => {
-  assert.deepEqual(getQuantityOptions(1), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.deepEqual(getQuantityOptions(3), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-  assert.deepEqual(getQuantityOptions(10), [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+test("builds quick quantity options up to six when a product has stock", () => {
+  assert.deepEqual(getQuantityOptions(1), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(getQuantityOptions(3), [1, 2, 3, 4, 5, 6]);
+  assert.deepEqual(getQuantityOptions(10), [1, 2, 3, 4, 5, 6]);
   assert.deepEqual(getQuantityOptions(0), []);
   assert.deepEqual(getQuantityOptions(null), []);
 });

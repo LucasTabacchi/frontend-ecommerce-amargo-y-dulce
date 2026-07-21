@@ -6,6 +6,7 @@ import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import type { ProductCardItem } from "@/components/products/ProductCard";
 import {
   getDetailAvailabilityLabel,
+  getDetailStockWarning,
   getQuantityOptions,
 } from "@/lib/stock-labels";
 
@@ -22,14 +23,18 @@ export function ProductPurchaseBox({
 }) {
   const options = useMemo(() => getQuantityOptions(stock), [stock]);
   const [quantity, setQuantity] = useState(1);
+  const [manualQuantity, setManualQuantity] = useState("7");
+  const [manualMode, setManualMode] = useState(false);
   const [open, setOpen] = useState(false);
 
   if (!options.length) {
     return <AddToCartButton item={item} quantity={1} />;
   }
 
-  const selected = options.includes(quantity) ? quantity : 1;
+  const manualValue = Math.max(7, Math.trunc(Number(manualQuantity) || 7));
+  const selected = manualMode ? manualValue : options.includes(quantity) ? quantity : 1;
   const availabilityLabel = getDetailAvailabilityLabel(stock);
+  const stockWarning = getDetailStockWarning(stock);
 
   return (
     <div className="mb-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
@@ -63,6 +68,7 @@ export function ProductPurchaseBox({
                 type="button"
                 onClick={() => {
                   setQuantity(option);
+                  setManualMode(false);
                   setOpen(false);
                 }}
                 className={[
@@ -75,9 +81,40 @@ export function ProductPurchaseBox({
                 {quantityLabel(option)}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => {
+                setManualMode(true);
+                setManualQuantity(String(Math.max(7, manualValue)));
+                setOpen(false);
+              }}
+              className="block w-full border-l-4 border-transparent px-5 py-3 text-left text-sm font-semibold text-neutral-800 hover:bg-blue-50"
+            >
+              Más de 6 unidades
+            </button>
           </div>
         )}
       </div>
+
+      {stockWarning ? (
+        <div className="mt-2 text-xs font-semibold text-amber-700">
+          {stockWarning}
+        </div>
+      ) : null}
+
+      {manualMode ? (
+        <label className="mt-3 block text-xs font-semibold text-neutral-700">
+          Cantidad personalizada
+          <input
+            type="number"
+            min={7}
+            step={1}
+            value={manualQuantity}
+            onChange={(event) => setManualQuantity(event.target.value)}
+            className="mt-1 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none focus:border-red-500"
+          />
+        </label>
+      ) : null}
 
       <div className="mt-4">
         <AddToCartButton item={item} quantity={selected} />
