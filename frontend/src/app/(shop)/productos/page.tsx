@@ -103,7 +103,7 @@ export default async function ProductosPage({
   }
 
   return (
-    <main>
+    <main className="min-h-screen bg-[linear-gradient(180deg,#FAF8F5_0%,#F1EAE2_100%)]">
       <Container>
         <div className="py-10">
           <h1 className="text-3xl font-extrabold text-neutral-900">Productos</h1>
