@@ -4,6 +4,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import type { ProductCardItem } from "@/components/products/ProductCard";
 import { useAuthStore } from "@/store/auth.store";
+import { LoginModal } from "@/components/auth/LoginModal";
+import { getAddToCartAuthDecision } from "@/lib/cart-auth-guard";
 import {
   getCartLimitReachedMessage,
   getOutOfStockDetailCopy,
@@ -39,13 +41,15 @@ export function AddToCartButton({
   const addItem = useCartStore((s) => s.addItem);
   const items = useCartStore((s) => s.items);
   const authResolved = useAuthStore((s) => s.resolved);
-  const isStoreAdmin = useAuthStore((s) => Boolean(s.user?.isStoreAdmin));
+  const user = useAuthStore((s) => s.user);
 
   const [msg, setMsg] = useState<string | null>(null);
+  const [loginOpen, setLoginOpen] = useState(false);
   const timerRef = useRef<any>(null);
 
   const stock = useMemo(() => toIntStock((item as any)?.stock), [item]);
   const key = useMemo(() => getKey(item), [item]);
+  const authDecision = getAddToCartAuthDecision({ authResolved, user });
 
   const currentQty = useMemo(() => {
     const found = items.find((it: any) => getKey(it) === key);
@@ -55,7 +59,9 @@ export function AddToCartButton({
 
   const out = stock !== null && stock <= 0;
   const outOfStockCopy = getOutOfStockDetailCopy(stock);
-  const blockedForStoreUser = authResolved && isStoreAdmin;
+  const authLoading = authDecision === "auth-loading";
+  const loginRequired = authDecision === "login-required";
+  const blockedForStoreUser = authDecision === "store-admin-blocked";
   const limitReached = stock !== null && currentQty >= stock;
   const limitReachedMessage = getCartLimitReachedMessage(stock, currentQty);
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
@@ -63,7 +69,8 @@ export function AddToCartButton({
   const stockExceededMessage = !out && !limitReachedMessage
     ? getStockExceededMessage(stock, requestedQty, currentQty)
     : null;
-  const isDisabled = blockedForStoreUser || out || limitReached || Boolean(stockExceededMessage);
+  const isDisabled =
+    authLoading || blockedForStoreUser || out || limitReached || Boolean(stockExceededMessage);
 
   function showTemp(text: string) {
     setMsg(text);
@@ -83,6 +90,14 @@ export function AddToCartButton({
         type="button"
         disabled={isDisabled}
         onClick={() => {
+          if (authLoading) {
+            showTemp("Verificando sesión...");
+            return;
+          }
+          if (loginRequired) {
+            setLoginOpen(true);
+            return;
+          }
           if (blockedForStoreUser) {
             showTemp("La cuenta tienda no puede comprar.");
             return;
@@ -142,7 +157,9 @@ export function AddToCartButton({
             : "bg-red-600 text-white hover:bg-red-700",
         ].join(" ")}
       >
-        {blockedForStoreUser
+        {authLoading
+          ? "Verificando..."
+          : blockedForStoreUser
           ? "No disponible"
           : out
           ? outOfStockCopy?.actionLabel ?? "No hay stock"
@@ -169,6 +186,12 @@ export function AddToCartButton({
       !msg && (
         <div className="mt-2 text-xs text-amber-700">Últimas unidades disponibles.</div>
       )}
+
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onSuccess={() => setLoginOpen(false)}
+      />
     </div>
   );
 }
