@@ -3,47 +3,21 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import Image from "next/image";
 import { ChevronLeft, ChevronRight } from "lucide-react";
-
-type StrapiImage = {
-  url?: string;
-  alternativeText?: string | null;
-  formats?: {
-    thumbnail?: { url?: string };
-    small?: { url?: string };
-    medium?: { url?: string };
-    large?: { url?: string };
-  };
-};
-
-const STRAPI_URL =
-  process.env.NEXT_PUBLIC_STRAPI_URL ?? "http://localhost:1337";
-
-function absUrl(url?: string) {
-  if (!url) return undefined;
-  return url.startsWith("http") ? url : `${STRAPI_URL}${url}`;
-}
+import type { ProductGalleryImage } from "@/lib/product-images";
 
 export function Gallery({
   images,
   title,
 }: {
-  images: StrapiImage[];
+  images: ProductGalleryImage[];
   title: string;
 }) {
   const normalized = useMemo(() => {
     return (images ?? [])
       .map((img) => {
-        const main =
-          img.formats?.large?.url ||
-          img.formats?.medium?.url ||
-          img.formats?.small?.url ||
-          img.url;
-
-        const thumb = img.formats?.thumbnail?.url || img.url;
-
         return {
-          main: absUrl(main),
-          thumb: absUrl(thumb),
+          main: img.url,
+          thumb: img.thumbUrl || img.url,
           alt: img.alternativeText || title,
         };
       })

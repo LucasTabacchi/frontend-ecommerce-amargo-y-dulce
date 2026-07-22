@@ -1,6 +1,5 @@
 // src/app/(shop)/productos/[id]/page.tsx
 import { notFound, redirect } from "next/navigation";
-import Image from "next/image";
 import Link from "next/link";
 import { Metadata } from "next";
 import { cache } from "react";
@@ -8,6 +7,8 @@ import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { ProductReviews } from "@/components/products/ProductReviews";
 import { ProductPurchaseBox } from "./ProductPurchaseBox";
+import { Gallery } from "./Gallery";
+import { getFirstProductImageUrl, getProductGalleryImages } from "@/lib/product-images";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -19,13 +20,6 @@ interface Props {
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
-}
-
-function strapiMediaUrl(path?: string) {
-  if (!path) return "";
-  if (path.startsWith("http")) return path;
-  const base = (process.env.NEXT_PUBLIC_STRAPI_URL ?? "http://localhost:1337").replace(/\/$/, "");
-  return `${base}${path.startsWith("/") ? "" : "/"}${path}`;
 }
 
 function pickAttr(row: any) {
@@ -60,33 +54,11 @@ function richTextToPlainText(v: any) {
   return String(v);
 }
 
-function pickImage(rowOrAttr: any) {
-  const attr = pickAttr(rowOrAttr);
-
-  const v5first = Array.isArray(attr?.images)
-    ? attr.images?.[0]
-    : Array.isArray(attr?.images?.data)
-    ? attr.images.data?.[0]
-    : attr?.images;
-
-  const img = v5first?.attributes ?? v5first;
-  if (!img) return "";
-
-  const f = img?.formats;
-  const url =
-    f?.medium?.url ||
-    f?.small?.url ||
-    f?.thumbnail?.url ||
-    img?.url ||
-    "";
-
-  return strapiMediaUrl(url);
-}
-
 function buildProductDetailParams() {
   const sp = new URLSearchParams();
   sp.set("populate[images][fields][0]", "url");
   sp.set("populate[images][fields][1]", "formats");
+  sp.set("populate[images][fields][2]", "alternativeText");
   sp.set("fields[0]", "title");
   sp.set("fields[1]", "slug");
   sp.set("fields[2]", "description");
@@ -153,7 +125,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     richTextToPlainText(attr?.description) ||
     `Comprá ${title} en nuestra tienda online.`;
 
-  const img = pickImage(product);
+  const img = getFirstProductImageUrl(product);
 
   return {
     title,
@@ -195,7 +167,8 @@ export default async function ProductDetailPage({ params }: Props) {
   const slug = String(attr?.slug ?? "").trim() || String(id);
   const outOfStock = stock != null && stock <= 0;
 
-  const imageUrl = pickImage(row);
+  const galleryImages = getProductGalleryImages(row);
+  const imageUrl = galleryImages[0]?.url ?? "";
   const purchaseItem = {
     id,
     documentId: documentId ?? undefined,
@@ -229,29 +202,13 @@ export default async function ProductDetailPage({ params }: Props) {
         </div>
 
         <div className="grid gap-8 pb-14 lg:grid-cols-2">
-          <section className="overflow-hidden rounded-2xl border bg-white">
-            <div className="relative aspect-[4/3] w-full bg-neutral-100">
-              {imageUrl ? (
-                <Image
-                  src={imageUrl}
-                  alt={title}
-                  fill
-                  className="object-cover"
-                  sizes="(max-width: 1024px) 100vw, 50vw"
-                  priority
-                />
-              ) : (
-                <div className="flex h-full items-center justify-center text-sm text-neutral-500">
-                  Sin imagen
-                </div>
-              )}
-
+          <section className="relative rounded-2xl border bg-white p-3">
+            <Gallery images={galleryImages} title={title} />
               {hasOff && (
                 <span className="absolute right-4 top-4 rounded-full bg-red-600 px-3 py-1 text-xs font-extrabold text-white shadow-sm">
                   -{off}%
                 </span>
               )}
-            </div>
           </section>
 
           <aside className="h-fit rounded-2xl border bg-white p-6 lg:p-7">
