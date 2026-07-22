@@ -32,6 +32,7 @@ const {
   getQuantityOptions,
   getDetailStockLine,
   getStockExceededMessage,
+  getCartLimitReachedMessage,
   getLowStockLabel,
   getCartLowStockBadgeLabel,
   getOutOfStockDetailCopy,
@@ -84,6 +85,15 @@ test("returns Sin stock when the selected quantity exceeds real stock", () => {
   assert.equal(getStockExceededMessage(3, 3), null);
   assert.equal(getStockExceededMessage(10, 10), null);
   assert.equal(getStockExceededMessage(null, 10), null);
+});
+
+test("does not call a product out of stock when the current cart already holds all available units", () => {
+  assert.equal(
+    getCartLimitReachedMessage(3, 3),
+    "Ya tenés todas las unidades disponibles en el carrito"
+  );
+  assert.equal(getCartLimitReachedMessage(3, 2), null);
+  assert.equal(getCartLimitReachedMessage(0, 0), null);
 });
 
 test("shows a single no-stock message in product detail when stock is exhausted", () => {

@@ -82,6 +82,20 @@ export function getStockExceededMessage(
   return Math.trunc(requested) > remaining ? "Sin stock" : null;
 }
 
+export function getCartLimitReachedMessage(stock: unknown, currentQuantity: unknown) {
+  if (stock === null || stock === undefined || stock === "") return null;
+
+  const available = Number(stock);
+  if (!Number.isFinite(available) || available <= 0) return null;
+
+  const current = Number(currentQuantity);
+  if (!Number.isFinite(current)) return null;
+
+  return Math.trunc(current) >= Math.trunc(available)
+    ? "Ya tenés todas las unidades disponibles en el carrito"
+    : null;
+}
+
 export function getOutOfStockDetailCopy(stock: unknown) {
   if (stock === null || stock === undefined || stock === "") return null;
 

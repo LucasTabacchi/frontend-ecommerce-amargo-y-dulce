@@ -4,7 +4,11 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import type { ProductCardItem } from "@/components/products/ProductCard";
 import { useAuthStore } from "@/store/auth.store";
-import { getOutOfStockDetailCopy, getStockExceededMessage } from "@/lib/stock-labels";
+import {
+  getCartLimitReachedMessage,
+  getOutOfStockDetailCopy,
+  getStockExceededMessage,
+} from "@/lib/stock-labels";
 
 function toIntStock(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -53,9 +57,10 @@ export function AddToCartButton({
   const outOfStockCopy = getOutOfStockDetailCopy(stock);
   const blockedForStoreUser = authResolved && isStoreAdmin;
   const limitReached = stock !== null && currentQty >= stock;
+  const limitReachedMessage = getCartLimitReachedMessage(stock, currentQty);
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
   const requestedQty = Math.max(1, Math.trunc(Number(quantity) || 1));
-  const stockExceededMessage = !out
+  const stockExceededMessage = !out && !limitReachedMessage
     ? getStockExceededMessage(stock, requestedQty, currentQty)
     : null;
   const isDisabled = blockedForStoreUser || out || limitReached || Boolean(stockExceededMessage);
@@ -88,7 +93,7 @@ export function AddToCartButton({
             return;
           }
           if (stock !== null && currentQty >= stock) {
-            showTemp("No hay más unidades disponibles para este producto.");
+            showTemp(limitReachedMessage ?? "No hay más unidades disponibles para este producto.");
             return;
           }
           if (stockExceededMessage) {
@@ -110,7 +115,7 @@ export function AddToCartButton({
           })();
 
           if (stock !== null && after >= stock && before >= stock) {
-            showTemp("No hay más unidades disponibles para este producto.");
+            showTemp(limitReachedMessage ?? "No hay más unidades disponibles para este producto.");
             return;
           }
 
@@ -141,6 +146,8 @@ export function AddToCartButton({
           ? "No disponible"
           : out
           ? outOfStockCopy?.actionLabel ?? "No hay stock"
+          : limitReachedMessage
+          ? "Máximo en carrito"
           : stockExceededMessage || limitReached
           ? "Sin stock"
           : remaining !== null
