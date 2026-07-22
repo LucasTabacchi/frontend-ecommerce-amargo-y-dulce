@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState, type FormEvent } from "react";
+import { getEmptyReviewsMessage } from "@/lib/review-permissions";
 import { useAuthStore } from "@/store/auth.store";
 
 type ReviewItem = {
@@ -335,7 +336,7 @@ export function ProductReviews({
       {/* ✅ LIST */}
       {!loading && count === 0 ? (
         <div className="mt-6 rounded-xl bg-white p-4 text-sm text-neutral-700 border">
-          Sé el primero en dejar una reseña.
+          {getEmptyReviewsMessage(reviewPermission)}
         </div>
       ) : (
         <div className="mt-6 divide-y">

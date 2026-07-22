@@ -28,6 +28,7 @@ function loadTsModule(relativePath) {
 
 const {
   buildReviewPermission,
+  getEmptyReviewsMessage,
   hasExistingUserReview,
   hasPurchasedProduct,
 } = loadTsModule("src/lib/review-permissions.ts");
@@ -78,4 +79,15 @@ test("builds review permission from purchase and duplicate state", () => {
     canReview: true,
     reason: null,
   });
+});
+
+test("uses empty review copy based on review permission", () => {
+  assert.equal(
+    getEmptyReviewsMessage({ canReview: true, reason: null }),
+    "Sé el primero en dejar una reseña."
+  );
+  assert.equal(
+    getEmptyReviewsMessage({ canReview: false, reason: "not_purchased" }),
+    "Todavía no hay opiniones de compradores."
+  );
 });

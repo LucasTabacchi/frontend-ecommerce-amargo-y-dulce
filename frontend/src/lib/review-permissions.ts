@@ -95,3 +95,9 @@ export function buildReviewPermission(
   if (alreadyReviewed) return { canReview: false, reason: "already_reviewed" };
   return { canReview: true, reason: null };
 }
+
+export function getEmptyReviewsMessage(permission?: { canReview?: boolean } | null) {
+  return permission?.canReview
+    ? "Sé el primero en dejar una reseña."
+    : "Todavía no hay opiniones de compradores.";
+}
