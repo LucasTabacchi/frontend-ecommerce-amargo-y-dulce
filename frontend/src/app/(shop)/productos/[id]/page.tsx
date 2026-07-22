@@ -276,11 +276,6 @@ export default async function ProductDetailPage({ params }: Props) {
                 )}
               </div>
 
-              {stock != null && stock <= 0 && (
-                <div className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-bold text-neutral-700">
-                  Publicación pausada
-                </div>
-              )}
             </div>
 
             {description && (
@@ -297,15 +292,11 @@ export default async function ProductDetailPage({ params }: Props) {
             <div className="mt-6">
               <ProductPurchaseBox item={purchaseItem} stock={stock} />
 
-              {outOfStock ? (
-                <p className="mt-3 text-center text-xs font-semibold text-neutral-600">
-                  Esta publicación se encuentra pausada por el momento.
-                </p>
-              ) : (
+              {!outOfStock ? (
                 <p className="mt-3 text-center text-xs text-neutral-500">
                   Podés revisar tu carrito antes de pagar.
                 </p>
-              )}
+              ) : null}
             </div>
           </aside>
         </div>

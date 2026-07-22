@@ -71,3 +71,19 @@ export function getStockExceededMessage(
 
   return Math.trunc(requested) > remaining ? "Sin stock" : null;
 }
+
+export function getOutOfStockDetailCopy(stock: unknown) {
+  if (stock === null || stock === undefined || stock === "") return null;
+
+  const n = Number(stock);
+  if (!Number.isFinite(n)) return null;
+
+  const available = Math.trunc(n);
+  if (available > 0) return null;
+
+  return {
+    actionLabel: "No hay stock",
+    badgeLabel: null,
+    helperText: null,
+  };
+}

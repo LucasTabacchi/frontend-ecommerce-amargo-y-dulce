@@ -33,6 +33,7 @@ const {
   getDetailStockLine,
   getStockExceededMessage,
   getLowStockLabel,
+  getOutOfStockDetailCopy,
 } = loadTsModule("src/lib/stock-labels.ts");
 
 test("shows a Mercado Libre style warning for low stock", () => {
@@ -74,4 +75,14 @@ test("returns Sin stock when the selected quantity exceeds real stock", () => {
   assert.equal(getStockExceededMessage(3, 3), null);
   assert.equal(getStockExceededMessage(10, 10), null);
   assert.equal(getStockExceededMessage(null, 10), null);
+});
+
+test("shows a single no-stock message in product detail when stock is exhausted", () => {
+  assert.deepEqual(getOutOfStockDetailCopy(0), {
+    actionLabel: "No hay stock",
+    badgeLabel: null,
+    helperText: null,
+  });
+  assert.equal(getOutOfStockDetailCopy(1), null);
+  assert.equal(getOutOfStockDetailCopy(null), null);
 });

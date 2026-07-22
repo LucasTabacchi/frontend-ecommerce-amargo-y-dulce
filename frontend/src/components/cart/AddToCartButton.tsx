@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useCartStore } from "@/store/cart.store";
 import type { ProductCardItem } from "@/components/products/ProductCard";
 import { useAuthStore } from "@/store/auth.store";
-import { getStockExceededMessage } from "@/lib/stock-labels";
+import { getOutOfStockDetailCopy, getStockExceededMessage } from "@/lib/stock-labels";
 
 function toIntStock(v: any): number | null {
   if (v === null || v === undefined || v === "") return null;
@@ -50,6 +50,7 @@ export function AddToCartButton({
   }, [items, key]);
 
   const out = stock !== null && stock <= 0;
+  const outOfStockCopy = getOutOfStockDetailCopy(stock);
   const blockedForStoreUser = authResolved && isStoreAdmin;
   const limitReached = stock !== null && currentQty >= stock;
   const remaining = stock !== null ? Math.max(0, stock - currentQty) : null;
@@ -83,7 +84,7 @@ export function AddToCartButton({
           }
           // ✅ pre-check (no depende de que el store devuelva {ok})
           if (stock !== null && stock <= 0) {
-            showTemp("Publicación pausada.");
+            showTemp(outOfStockCopy?.actionLabel ?? "No hay stock");
             return;
           }
           if (stock !== null && currentQty >= stock) {
@@ -139,7 +140,7 @@ export function AddToCartButton({
         {blockedForStoreUser
           ? "No disponible"
           : out
-          ? "Publicación pausada"
+          ? outOfStockCopy?.actionLabel ?? "No hay stock"
           : stockExceededMessage || limitReached
           ? "Sin stock"
           : remaining !== null
