@@ -42,12 +42,13 @@ function NavLink({
       href={href}
       onClick={onClick}
       className="
-        text-[15px] font-medium
+        relative inline-flex text-[15px] font-medium
         text-neutral-700
-        hover:text-neutral-900
-        hover:underline
-        underline-offset-4
         transition-colors
+        after:absolute after:-bottom-1 after:left-0 after:h-[2px] after:w-full
+        after:origin-left after:scale-x-0 after:bg-black after:transition-transform after:duration-200
+        hover:text-black hover:after:scale-x-100
+        focus-visible:text-black focus-visible:outline-none focus-visible:after:scale-x-100
       "
     >
       {children}
