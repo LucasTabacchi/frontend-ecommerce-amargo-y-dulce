@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+  buildReviewPermission,
+  hasExistingUserReview,
+  hasPurchasedProduct,
+} from "@/lib/review-permissions";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -72,6 +77,112 @@ async function resolveProductNumericId(params: {
   return Number.isFinite(idNum) && idNum > 0 ? idNum : null;
 }
 
+function getUserReviewKey(user: any) {
+  return (
+    String(user?.email ?? "").trim().toLowerCase() ||
+    String(user?.documentId ?? "").trim() ||
+    (user?.id != null ? String(user.id).trim() : "")
+  );
+}
+
+async function fetchAuthenticatedUser(strapiBase: string, jwt: string) {
+  const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+  });
+  const meJson = await meRes.json().catch(() => null);
+  return { ok: meRes.ok && Boolean(meJson), status: meRes.status, user: meJson };
+}
+
+async function fetchUserOrders(params: {
+  strapiBase: string;
+  jwt: string;
+  user: any;
+}) {
+  const { strapiBase, jwt, user } = params;
+  const sp = new URLSearchParams();
+  sp.set("pagination[pageSize]", "100");
+  sp.set("sort[0]", "createdAt:desc");
+  sp.set("populate", "*");
+
+  const userDocumentId = String(user?.documentId ?? "").trim();
+  const userId = Number(user?.id);
+  if (userDocumentId) {
+    sp.set("filters[user][documentId][$eq]", userDocumentId);
+  } else if (Number.isFinite(userId) && userId > 0) {
+    sp.set("filters[user][id][$eq]", String(userId));
+  } else {
+    return [];
+  }
+
+  const res = await fetchWithTimeout(`${strapiBase}/api/orders?${sp.toString()}`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) return [];
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function fetchExistingUserReviews(params: {
+  strapiBase: string;
+  token: string;
+  userKey: string;
+  productDocumentId: string;
+  productId: number | null;
+}) {
+  const { strapiBase, token, userKey, productDocumentId, productId } = params;
+  if (!userKey) return [];
+
+  const sp = new URLSearchParams();
+  sp.set("pagination[pageSize]", "10");
+  sp.set("populate", "product");
+  sp.set("filters[name][$eqi]", userKey);
+
+  let orIndex = 0;
+  if (productDocumentId) {
+    sp.set(`filters[$or][${orIndex}][product][documentId][$eq]`, productDocumentId);
+    orIndex++;
+  }
+  if (productId) {
+    sp.set(`filters[$or][${orIndex}][product][id][$eq]`, String(productId));
+    orIndex++;
+  }
+
+  if (orIndex === 0) return [];
+
+  const res = await fetchWithTimeout(`${strapiBase}/api/reviews?${sp.toString()}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  const json = await res.json().catch(() => null);
+  if (!res.ok) return [];
+  return Array.isArray(json?.data) ? json.data : [];
+}
+
+async function resolveReviewPermission(params: {
+  strapiBase: string;
+  token: string;
+  jwt: string | null;
+  productDocumentId: string;
+  productId: number | null;
+}) {
+  const { strapiBase, token, jwt, productDocumentId, productId } = params;
+  if (!jwt) return { canReview: false, reason: "not_authenticated" };
+
+  const me = await fetchAuthenticatedUser(strapiBase, jwt);
+  if (!me.ok) return { canReview: false, reason: "not_authenticated" };
+  if (isStoreAdmin(me.user)) return { canReview: false, reason: "store_admin" };
+
+  const userKey = getUserReviewKey(me.user);
+  const target = { productDocumentId, productId };
+  const [orders, existingReviews] = await Promise.all([
+    fetchUserOrders({ strapiBase, jwt, user: me.user }),
+    fetchExistingUserReviews({ strapiBase, token, userKey, productDocumentId, productId }),
+  ]);
+
+  const purchased = hasPurchasedProduct(orders, target);
+  const alreadyReviewed = hasExistingUserReview(existingReviews, userKey, target);
+  return buildReviewPermission(purchased, alreadyReviewed);
+}
+
 /* ===================== GET ===================== */
 
 export async function GET(req: Request) {
@@ -101,6 +212,15 @@ export async function GET(req: Request) {
       productId = await resolveProductNumericId({ strapiBase, token, productDocumentId });
     } catch {}
   }
+
+  const jwt = readUserJwtFromCookies();
+  const permissionPromise = resolveReviewPermission({
+    strapiBase,
+    token,
+    jwt,
+    productDocumentId,
+    productId,
+  }).catch(() => ({ canReview: false, reason: "unknown" }));
 
   // ✅ filtro robusto: OR entre product.documentId y product.id
   const sp = new URLSearchParams();
@@ -150,7 +270,8 @@ export async function GET(req: Request) {
       };
     });
 
-    return NextResponse.json({ data }, { status: 200 });
+    const permission = await permissionPromise;
+    return NextResponse.json({ data, permission }, { status: 200 });
   } catch (e: any) {
     const msg =
       e?.name === "AbortError"
@@ -178,18 +299,18 @@ export async function POST(req: Request) {
     );
   }
 
+  let meJson: any = null;
   try {
-    const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
-      headers: { Authorization: `Bearer ${jwt}` },
-    });
-    const meJson = await meRes.json().catch(() => null);
+    const me = await fetchAuthenticatedUser(strapiBase, jwt);
 
-    if (!meRes.ok || !meJson) {
+    if (!me.ok) {
       return NextResponse.json(
         { error: "No se pudo validar la sesión." },
         { status: 401 }
       );
     }
+
+    meJson = me.user;
 
     if (isStoreAdmin(meJson)) {
       return NextResponse.json(
@@ -236,12 +357,33 @@ export async function POST(req: Request) {
     );
   }
 
+  const userKey = getUserReviewKey(meJson);
+  const target = { productDocumentId, productId };
+  const [orders, existingReviews] = await Promise.all([
+    fetchUserOrders({ strapiBase, jwt, user: meJson }),
+    fetchExistingUserReviews({ strapiBase, token, userKey, productDocumentId, productId }),
+  ]);
+
+  if (!hasPurchasedProduct(orders, target)) {
+    return NextResponse.json(
+      { error: "Solo podés reseñar productos que hayas comprado." },
+      { status: 403 }
+    );
+  }
+
+  if (hasExistingUserReview(existingReviews, userKey, target)) {
+    return NextResponse.json(
+      { error: "Ya realizaste una reseña para este producto." },
+      { status: 409 }
+    );
+  }
+
   // ✅ candidatos: primero por documentId (más estable en v5), luego por id
   const baseData = {
     rating,
     comment,
-    name,
-    verified: false,
+    name: userKey || name || "cliente",
+    verified: true,
   };
 
   const candidates: any[] = [];

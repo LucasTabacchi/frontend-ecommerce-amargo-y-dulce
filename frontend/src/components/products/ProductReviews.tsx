@@ -12,6 +12,11 @@ type ReviewItem = {
   createdAt?: string;
 };
 
+type ReviewPermission = {
+  canReview: boolean;
+  reason?: string | null;
+};
+
 function toStars(n: number) {
   const v = Math.max(0, Math.min(5, Math.round(n)));
   return "★★★★★☆☆☆☆☆".slice(5 - v, 10 - v);
@@ -102,6 +107,7 @@ export function ProductReviews({
 
   const [loading, setLoading] = useState(!hasInitialReviews);
   const [reviews, setReviews] = useState<ReviewItem[]>(() => initialReviews ?? []);
+  const [reviewPermission, setReviewPermission] = useState<ReviewPermission | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   // form
@@ -136,8 +142,17 @@ export function ProductReviews({
 
       const list = Array.isArray(json?.data) ? json.data : [];
       setReviews(list.map(normalizeReviewRow));
+      setReviewPermission(
+        typeof json?.permission?.canReview === "boolean"
+          ? {
+              canReview: json.permission.canReview,
+              reason: json.permission.reason ?? null,
+            }
+          : { canReview: false, reason: "unknown" }
+      );
     } catch (e: any) {
       setReviews([]);
+      setReviewPermission({ canReview: false, reason: "error" });
       setError(e?.message || "No se pudieron cargar las reseñas.");
     } finally {
       setLoading(false);
@@ -207,6 +222,7 @@ export function ProductReviews({
       setText("");
       setRating(5);
       setFormMsg("¡Reseña enviada!");
+      setReviewPermission({ canReview: false, reason: "already_reviewed" });
       await load();
     } catch (e: any) {
       setFormMsg(e?.message || "No se pudo enviar la reseña.");
@@ -254,15 +270,7 @@ export function ProductReviews({
       )}
 
       {/* ✅ FORM */}
-      {!authChecked ? (
-        <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
-          Cargando permisos para reseñas...
-        </div>
-      ) : isStoreAdmin ? (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-          Esta cuenta no puede publicar reseñas.
-        </div>
-      ) : (
+      {authChecked && !isStoreAdmin && reviewPermission?.canReview ? (
         <form onSubmit={submitReview} className="mt-6 rounded-2xl bg-neutral-50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-extrabold text-neutral-900">
@@ -322,7 +330,7 @@ export function ProductReviews({
             {formMsg && <div className="text-sm text-neutral-700">{formMsg}</div>}
           </div>
         </form>
-      )}
+      ) : null}
 
       {/* ✅ LIST */}
       {!loading && count === 0 ? (
