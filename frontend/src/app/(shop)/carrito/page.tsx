@@ -12,6 +12,7 @@ import {
   getCartAvailabilitySummary,
   getCurrentCartItemSnapshot,
 } from "@/lib/cart-availability";
+import { buildCartQuoteItems } from "@/lib/cart-quote-items";
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -321,16 +322,13 @@ export default function CarritoPage() {
   });
   const [isQuoting, setIsQuoting] = useState(false);
 
-  // Enviamos SOLO id + qty (el backend trae precios reales y calcula promos)
+  // El backend trae precios reales y calcula promociones desde id, documentId o slug.
   const payloadItems = useMemo(() => {
-    return cartAvailability.rows
-      .filter((row) => row.availability.purchasable)
-      .map((row) => row.item as any)
-      .map((it) => ({
-        id: Number(it.id),
-        qty: Math.max(1, normalizeQty(it.qty) || 1),
-      }))
-      .filter((x) => Number.isFinite(x.id) && x.id > 0);
+    return buildCartQuoteItems(
+      cartAvailability.rows
+        .filter((row) => row.availability.purchasable)
+        .map((row) => row.item as any)
+    );
   }, [cartAvailability.rows]);
 
   useEffect(() => {

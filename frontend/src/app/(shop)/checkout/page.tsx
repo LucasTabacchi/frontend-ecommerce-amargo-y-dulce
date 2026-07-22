@@ -14,6 +14,7 @@ import {
   normalizeCouponCode,
   sanitizeClaimedCouponValues,
 } from "@/lib/coupon-claims";
+import { buildCartQuoteItems } from "@/lib/cart-quote-items";
 
 /* ================= helpers ================= */
 
@@ -678,19 +679,7 @@ function CheckoutPageContent() {
   }, [cartItems]);
 
   const payloadItems = useMemo(() => {
-    return (cartItems as any[])
-      .map((it) => ({
-        id: Number(it.id),
-        documentId: String(it?.documentId ?? it?.productDocumentId ?? "").trim() || null,
-        slug: String(it?.slug ?? "").trim() || null,
-        qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
-      }))
-      .filter(
-        (x) =>
-          ((Number.isFinite(x.id) && x.id > 0) || Boolean(x.documentId) || Boolean(x.slug)) &&
-          Number.isFinite(x.qty) &&
-          x.qty > 0
-      );
+    return buildCartQuoteItems(cartItems as any[]);
   }, [cartItems]);
 
   /* ================= quote PRO ================= */
