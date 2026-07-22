@@ -3,14 +3,7 @@
 import { useEffect, useState } from "react";
 import { Container } from "@/components/layout/Container";
 import { useRouter } from "next/navigation";
-
-const MOTIVOS = [
-  "Agradecimiento",
-  "Queja",
-  "Reclamo",
-  "Sugerencia",
-  "Arrepentimiento de compra",
-];
+import { COMPLAINT_MOTIVES } from "@/lib/complaint-motives";
 
 const inputClass =
   "w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-neutral-500";
@@ -124,7 +117,7 @@ export default function LibroDeQuejasPage() {
                   Motivo <span className="text-red-600">*</span>
                 </label>
                 <select name="motivo" required className={inputClass}>
-                  {MOTIVOS.map((m) => (
+                  {COMPLAINT_MOTIVES.map((m) => (
                     <option key={m} value={m}>
                       {m}
                     </option>
