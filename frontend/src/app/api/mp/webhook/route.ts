@@ -1,6 +1,7 @@
 // src/app/api/mp/webhook/route.ts
 import { NextResponse } from "next/server";
 
+import { shouldAdjustStockForPaidOrder } from "@/lib/payment-stock";
 import { sendOrderConfirmationEmail } from "@/lib/server/order-confirmation-email";
 
 export const dynamic = "force-dynamic";
@@ -751,8 +752,13 @@ export async function POST(req: Request) {
     }
 
     const becamePaid = prevStatus !== "paid" && nextStatus === "paid";
+    const shouldAdjustStock = shouldAdjustStockForPaidOrder({
+      previousStatus: prevStatus,
+      nextStatus,
+      stockAdjusted: order.stockAdjusted,
+    });
 
-    if (becamePaid && !order.stockAdjusted) {
+    if (shouldAdjustStock) {
       try {
         const stockResult = await adjustStockForPaidOrder({
           strapiBase,
