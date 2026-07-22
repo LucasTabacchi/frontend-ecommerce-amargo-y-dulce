@@ -201,6 +201,7 @@ export function UserStateSync() {
   const items = useCartStore((s) => s.items);
   const hasHydrated = useCartStore((s) => s.hasHydrated);
   const setItems = useCartStore((s) => s.setItems);
+  const clearLocalSessionCart = useCartStore((s) => s.clearLocalSessionCart);
   const setAuthState = useAuthStore((s) => s.setAuthState);
 
   const [userId, setUserId] = useState<number | null>(null);
@@ -359,6 +360,7 @@ export function UserStateSync() {
           bootstrappedUserIdRef.current = null;
           lastCartSigRef.current = "";
           lastCouponSigRef.current = "";
+          clearLocalSessionCart();
           writeLocalClaimedCoupons([]);
           writeStoreAdminFlag(null);
           setAuthState({ user: null, resolved: true, loading: false, error: null });
@@ -542,7 +544,7 @@ export function UserStateSync() {
       window.removeEventListener("focus", onFocus);
       window.removeEventListener("amg-auth-changed", onAuthChanged);
     };
-  }, [hasHydrated, setItems]);
+  }, [clearLocalSessionCart, hasHydrated, setItems]);
 
   useEffect(() => {
     if (!userId || !initialSyncDone || !hasHydrated) return;

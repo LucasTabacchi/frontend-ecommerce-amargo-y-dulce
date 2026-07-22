@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { useCartStore } from "@/store/cart.store";
 
 type MeResponse = { user: any | null };
 
@@ -64,6 +65,7 @@ export const useAuthStore = create<AuthState>((set) => ({
         credentials: "include",
       });
     } finally {
+      useCartStore.getState().clearLocalSessionCart();
       set({ user: null, loading: false, resolved: true });
       if (typeof window !== "undefined") {
         window.dispatchEvent(new Event("amg-auth-changed"));

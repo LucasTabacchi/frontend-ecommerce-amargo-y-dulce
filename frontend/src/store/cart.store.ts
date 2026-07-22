@@ -26,6 +26,7 @@ type CartState = {
   inc: (slug: string) => void;
   dec: (slug: string) => void;
   clear: () => void;
+  clearLocalSessionCart: () => void;
 
   totalItems: () => number;
   totalPrice: () => number;
@@ -292,6 +293,16 @@ export const useCartStore = create<CartState>()(
       clear: () => {
         markCartDirtyClient();
         writeLocalCartSnapshotClient([]);
+        set({ items: [] });
+      },
+
+      clearLocalSessionCart: () => {
+        if (typeof window !== "undefined") {
+          try {
+            localStorage.removeItem(CART_DIRTY_AT_KEY);
+            localStorage.removeItem(CART_LOCAL_SNAPSHOT_KEY);
+          } catch {}
+        }
         set({ items: [] });
       },
 
