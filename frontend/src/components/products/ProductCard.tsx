@@ -78,15 +78,8 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
             <p className="mt-1 text-fluid-xs text-neutral-400">—</p>
           )}
 
-          {/* Stock (opcional) */}
-          {typeof item.stock === "number" && (
-            <div className="mt-auto pt-2 text-fluid-xs text-neutral-600">
-              Stock: <span className="font-semibold">{item.stock}</span>
-            </div>
-          )}
-
           {/* Precio */}
-          <div className="mt-2">
+          <div className="mt-auto pt-2">
             {hasOff ? (
               <div className="flex items-baseline gap-2">
                 <span className="text-fluid-xs font-semibold text-neutral-400 line-through">

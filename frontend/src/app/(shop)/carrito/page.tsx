@@ -595,9 +595,7 @@ export default function CarritoPage() {
                                   <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
                                     Quedan {stock}
                                   </span>
-                                ) : (
-                                  <span className="text-neutral-500">Stock: {stock}</span>
-                                )}
+                                ) : null}
                               </div>
                             )}
                           </div>
