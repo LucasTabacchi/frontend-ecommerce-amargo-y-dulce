@@ -6,13 +6,14 @@ import Link from "next/link";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
-import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
+import { Flame, Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
 import { useCartStore } from "@/store/cart.store";
 import {
   getCartAvailabilitySummary,
   getCurrentCartItemSnapshot,
 } from "@/lib/cart-availability";
 import { buildCartQuoteItems } from "@/lib/cart-quote-items";
+import { getCartLowStockBadgeLabel } from "@/lib/stock-labels";
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -511,6 +512,7 @@ export default function CarritoPage() {
                 const stockInsufficient = availability.status === "insufficient";
                 const blocked = !availability.purchasable;
                 const reachedLimit = hasStock && stock > 0 && qty >= stock;
+                const lowStockBadge = hasStock && !paused ? getCartLowStockBadgeLabel(stock) : null;
 
                 return (
                   <div
@@ -542,6 +544,13 @@ export default function CarritoPage() {
                           <div className="flex h-full w-full items-center justify-center text-[10px] text-neutral-500">
                             Sin imagen
                           </div>
+                        )}
+
+                        {lowStockBadge && (
+                          <span className="absolute bottom-0 left-0 z-10 inline-flex max-w-full items-center gap-1 rounded-tr-md bg-orange-100 px-1.5 py-1 text-[10px] font-extrabold uppercase leading-none tracking-normal text-orange-700 shadow-sm">
+                            <Flame className="h-3 w-3 fill-orange-600 text-orange-600" aria-hidden="true" />
+                            <span className="truncate">{lowStockBadge}</span>
+                          </span>
                         )}
                       </div>
 
@@ -578,22 +587,12 @@ export default function CarritoPage() {
                               </div>
                             ) : null}
 
-                            {/* ✅ stock badge + hint */}
-                            {hasStock && !paused && (
+                            {/* ✅ stock hint solo para bloqueos por cantidad */}
+                            {hasStock && !paused && stockInsufficient && (
                               <div className="mt-2 text-xs">
-                                {stockInsufficient ? (
-                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
-                                    Solo quedan {stock}
-                                  </span>
-                                ) : reachedLimit ? (
-                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
-                                    Solo queda {stock}
-                                  </span>
-                                ) : stock <= 3 ? (
-                                  <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
-                                    Quedan {stock}
-                                  </span>
-                                ) : null}
+                                <span className="rounded-full bg-amber-50 px-2 py-1 font-semibold text-amber-800">
+                                  Solo quedan {stock}
+                                </span>
                               </div>
                             )}
                           </div>

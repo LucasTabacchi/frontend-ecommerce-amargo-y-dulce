@@ -33,6 +33,7 @@ const {
   getDetailStockLine,
   getStockExceededMessage,
   getLowStockLabel,
+  getCartLowStockBadgeLabel,
   getOutOfStockDetailCopy,
 } = loadTsModule("src/lib/stock-labels.ts");
 
@@ -40,6 +41,14 @@ test("shows a Mercado Libre style warning for low stock", () => {
   assert.equal(getLowStockLabel(1), "ULTIMA UNIDAD");
   assert.equal(getLowStockLabel(2), "ULTIMAS 2");
   assert.equal(getLowStockLabel(3), "ULTIMAS 3");
+});
+
+test("formats cart low stock badges like Mercado Libre", () => {
+  assert.equal(getCartLowStockBadgeLabel(1), "¡ÚLTIMA!");
+  assert.equal(getCartLowStockBadgeLabel(2), "ÚLTIMAS 2");
+  assert.equal(getCartLowStockBadgeLabel(10), "ÚLTIMAS 10");
+  assert.equal(getCartLowStockBadgeLabel(11), null);
+  assert.equal(getCartLowStockBadgeLabel(0), null);
 });
 
 test("does not show a low stock warning for unavailable or plentiful stock", () => {
