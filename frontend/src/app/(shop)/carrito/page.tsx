@@ -547,9 +547,9 @@ export default function CarritoPage() {
                         )}
 
                         {lowStockBadge && (
-                          <span className="absolute bottom-0 left-0 z-10 inline-flex max-w-full items-center gap-1 rounded-tr-md bg-orange-100 px-1.5 py-1 text-[10px] font-extrabold uppercase leading-none tracking-normal text-orange-700 shadow-sm">
-                            <Flame className="h-3 w-3 fill-orange-600 text-orange-600" aria-hidden="true" />
-                            <span className="truncate">{lowStockBadge}</span>
+                          <span className="absolute bottom-0 left-0 right-0 z-10 inline-flex items-center justify-center gap-0.5 bg-orange-100 px-1 py-1 text-[9px] font-extrabold uppercase leading-none tracking-normal text-orange-700 shadow-sm">
+                            <Flame className="h-2.5 w-2.5 shrink-0 fill-orange-600 text-orange-600" aria-hidden="true" />
+                            <span className="whitespace-nowrap">{lowStockBadge}</span>
                           </span>
                         )}
                       </div>
