@@ -15,6 +15,7 @@ import {
   sanitizeClaimedCouponValues,
 } from "@/lib/coupon-claims";
 import { buildCartQuoteItems } from "@/lib/cart-quote-items";
+import { buildCheckoutDisplaySummary } from "@/lib/checkout-summary";
 
 /* ================= helpers ================= */
 
@@ -780,6 +781,16 @@ function CheckoutPageContent() {
   const effectiveTotal = payloadItems.length
     ? quote.total || Math.max(0, effectiveSubtotal - effectiveDiscount)
     : 0;
+  const displaySummary = useMemo(
+    () =>
+      buildCheckoutDisplaySummary({
+        items: cartItems as any[],
+        effectiveSubtotal,
+        effectiveDiscount,
+        effectiveTotal,
+      }),
+    [cartItems, effectiveSubtotal, effectiveDiscount, effectiveTotal]
+  );
 
   // ✅ Envío y total final (usamos effectiveTotal como base)
   const shippingCost = useMemo(
@@ -1435,12 +1446,12 @@ function CheckoutPageContent() {
             <div className="rounded border p-3 text-sm">
               <div className="flex items-center justify-between">
                 <span>Subtotal</span>
-                <span className="whitespace-nowrap">{formatARS(effectiveSubtotal)}</span>
+                <span className="whitespace-nowrap">{formatARS(displaySummary.subtotal)}</span>
               </div>
 
               <div className="mt-2 flex items-center justify-between">
                 <span>Descuento</span>
-                <span className="whitespace-nowrap">-{formatARS(effectiveDiscount)}</span>
+                <span className="whitespace-nowrap">-{formatARS(displaySummary.discount)}</span>
               </div>
 
               <div className="mt-2 flex items-center justify-between">
