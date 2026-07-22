@@ -8,7 +8,10 @@ import { useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { Minus, Plus, Trash2, ShoppingCart } from "lucide-react";
 import { useCartStore } from "@/store/cart.store";
-import { getCartAvailabilitySummary } from "@/lib/cart-availability";
+import {
+  getCartAvailabilitySummary,
+  getCurrentCartItemSnapshot,
+} from "@/lib/cart-availability";
 
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
@@ -38,6 +41,8 @@ type ProductAvailabilityRow = {
   slug?: string | null;
   stock?: number | null;
   isActive?: boolean | null;
+  price?: number | null;
+  off?: number | null;
 };
 
 function normalizeQty(v: any) {
@@ -53,6 +58,20 @@ function normStock(v: any): number | null {
   return Math.max(0, Math.trunc(n));
 }
 
+function normPrice(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, n);
+}
+
+function normOff(v: any): number | null {
+  if (v === null || v === undefined || v === "") return null;
+  const n = Number(v);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(0, Math.min(100, Math.trunc(n)));
+}
+
 function cartItemKey(it: any) {
   return String(it?.documentId || it?.slug || "").trim();
 }
@@ -66,6 +85,8 @@ function toProductAvailability(row: any): ProductAvailabilityRow | null {
   const documentId = String(row?.documentId ?? attr?.documentId ?? attr?.document_id ?? "").trim();
   const slug = String(attr?.slug ?? row?.slug ?? "").trim();
   const stock = normStock(attr?.stock ?? row?.stock);
+  const price = normPrice(attr?.price ?? row?.price);
+  const off = normOff(attr?.off ?? row?.off);
 
   if (!documentId && !slug) return null;
 
@@ -73,6 +94,8 @@ function toProductAvailability(row: any): ProductAvailabilityRow | null {
     documentId: documentId || null,
     slug: slug || null,
     stock,
+    price,
+    off,
     isActive: true,
   };
 }
@@ -84,6 +107,7 @@ export default function CarritoPage() {
   const inc = useCartStore((s) => s.inc);
   const dec = useCartStore((s) => s.dec);
   const removeItem = useCartStore((s) => s.removeItem);
+  const setItems = useCartStore((s) => s.setItems);
 
   // ✅ auth (para bloquear checkout)
   const [meLoading, setMeLoading] = useState(true);
@@ -155,6 +179,8 @@ export default function CarritoPage() {
         sp.set("fields[0]", "title");
         sp.set("fields[1]", "stock");
         sp.set("fields[2]", "slug");
+        sp.set("fields[3]", "price");
+        sp.set("fields[4]", "off");
         docIds.forEach((doc, i) => {
           sp.set(`filters[$or][${i}][documentId][$eq]`, doc);
         });
@@ -185,6 +211,34 @@ export default function CarritoPage() {
           });
         }
 
+        let cartChanged = false;
+        const refreshedItems = (items as any[]).map((it) => {
+          const docKey = String(it?.documentId ?? "").trim();
+          const slugKey = String(it?.slug ?? "").trim();
+          const product =
+            (docKey ? next.get(docKey) : null) ??
+            (slugKey ? next.get(slugKey) : null) ??
+            null;
+
+          if (!product) return it;
+
+          const current = getCurrentCartItemSnapshot(it, product) as any;
+          const previousOff = it.off == null ? null : it.off;
+          const previousStock = it.stock == null ? null : it.stock;
+          if (
+            !Object.is(current.price, it.price) ||
+            !Object.is(current.off ?? null, previousOff) ||
+            !Object.is(current.stock ?? null, previousStock)
+          ) {
+            cartChanged = true;
+          }
+          return current;
+        });
+
+        if (cartChanged) {
+          setItems(refreshedItems as any);
+        }
+
         setAvailabilityByKey(next);
         setAvailabilityReady(true);
       } catch {
@@ -210,7 +264,7 @@ export default function CarritoPage() {
     return () => {
       alive = false;
     };
-  }, [items]);
+  }, [items, setItems]);
 
   // ✅ obtener sesión
   useEffect(() => {

@@ -74,3 +74,14 @@ test("summary excludes unavailable items and flags checkout as blocked", () => {
   assert.equal(summary.purchasableSubtotal, 1000);
   assert.equal(summary.blockedCount, 1);
 });
+
+test("summary uses the current product price instead of the stale cart price", () => {
+  const summary = getCartAvailabilitySummary(
+    [{ documentId: "p1", slug: "uno", qty: 2, price: 1000, off: 10 }],
+    new Map([["p1", { documentId: "p1", stock: 5, isActive: true, price: 1500, off: null }]])
+  );
+
+  assert.equal(summary.purchasableSubtotal, 3000);
+  assert.equal(summary.rows[0].item.price, 1500);
+  assert.equal(summary.rows[0].item.off, null);
+});
