@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { GOOGLE_PROFILE_COOKIE } from "@/lib/auth/google-profile-name";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -35,6 +36,7 @@ export async function POST(req: Request) {
   const res = NextResponse.json({ ok: true });
   expireCookieEverywhere(res, "strapi_jwt", secure);
   expireCookieEverywhere(res, "auth_return_to", secure);
+  expireCookieEverywhere(res, GOOGLE_PROFILE_COOKIE, secure);
   res.headers.set("Cache-Control", "no-store");
   return res;
 }

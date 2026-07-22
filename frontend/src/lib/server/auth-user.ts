@@ -3,6 +3,11 @@ import { cookies } from "next/headers";
 import { cache } from "react";
 import { redirect } from "next/navigation";
 import { sanitizeClaimedCouponValues } from "@/lib/coupon-claims";
+import {
+  GOOGLE_PROFILE_COOKIE,
+  decodeGoogleProfileName,
+  mergeGoogleProfileName,
+} from "@/lib/auth/google-profile-name";
 
 export type ServerAuthUser = {
   id: number;
@@ -97,7 +102,9 @@ export const getServerAuthUser = cache(async function getServerAuthUser() {
     if (!res || !res.ok) return null;
 
     const payload = await res.json().catch(() => null);
-    return normalizeUser(payload);
+    const user = normalizeUser(payload);
+    const googleProfile = decodeGoogleProfileName(cookies().get(GOOGLE_PROFILE_COOKIE)?.value);
+    return mergeGoogleProfileName(user, googleProfile);
   } catch {
     return null;
   } finally {

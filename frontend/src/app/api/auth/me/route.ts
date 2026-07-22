@@ -2,6 +2,11 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { sanitizeClaimedCouponValues } from "@/lib/coupon-claims";
+import {
+  GOOGLE_PROFILE_COOKIE,
+  decodeGoogleProfileName,
+  mergeGoogleProfileName,
+} from "@/lib/auth/google-profile-name";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -122,10 +127,11 @@ export async function GET() {
   if (!r.ok) return NextResponse.json({ user: null }, { status: 200 });
 
   const user = await r.json().catch(() => null);
+  const googleProfile = decodeGoogleProfileName(cookies().get(GOOGLE_PROFILE_COOKIE)?.value);
   const normalizedUser =
     user && typeof user === "object"
       ? {
-          ...user,
+          ...mergeGoogleProfileName(user, googleProfile),
           isStoreAdmin: Boolean((user as any)?.isStoreAdmin),
           claimedCoupons: sanitizeClaimedCouponValues((user as any)?.claimedCoupons),
           cartItems: sanitizeCartItems((user as any)?.cartItems),

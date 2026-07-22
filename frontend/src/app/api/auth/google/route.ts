@@ -1,6 +1,13 @@
 // src/app/api/auth/google/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+  GOOGLE_PROFILE_COOKIE,
+  encodeGoogleProfileName,
+  mergeGoogleProfileName,
+  normalizeGoogleProfileName,
+  type GoogleProfileName,
+} from "@/lib/auth/google-profile-name";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -52,6 +59,36 @@ async function exchangeAccessTokenForJwt(strapiBase: string, access_token: strin
   }
 
   return { ok: true as const, status: 200, jwt, user };
+}
+
+async function fetchGoogleProfileName(accessToken: string): Promise<GoogleProfileName | null> {
+  try {
+    const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    return normalizeGoogleProfileName(await res.json().catch(() => null));
+  } catch {
+    return null;
+  }
+}
+
+function setGoogleProfileCookie(
+  res: NextResponse,
+  profile: GoogleProfileName | null,
+  secure: boolean
+) {
+  const value = encodeGoogleProfileName(profile);
+  if (!value) return;
+
+  res.cookies.set(GOOGLE_PROFILE_COOKIE, value, {
+    httpOnly: true,
+    secure,
+    sameSite: "lax",
+    path: "/",
+    maxAge: 60 * 60 * 24 * 7,
+  });
 }
 
 /**
@@ -123,6 +160,7 @@ export async function GET(req: Request) {
   }
 
   const ex = await exchangeAccessTokenForJwt(STRAPI, access_token);
+  const googleProfile = await fetchGoogleProfileName(access_token);
 
   const returnTo = safeInternalPath(readCookie(req, "auth_return_to") || "/");
   const back = new URL(returnTo, u.origin);
@@ -142,6 +180,7 @@ export async function GET(req: Request) {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
+  setGoogleProfileCookie(res, googleProfile, isHttps(req));
 
   res.cookies.set("auth_return_to", "", {
     httpOnly: true,
@@ -176,6 +215,7 @@ export async function POST(req: Request) {
 
   // Evita doble intercambio de access_token si la sesión ya está activa.
   const existingJwt = cookies().get("strapi_jwt")?.value || null;
+  const googleProfile = await fetchGoogleProfileName(access_token);
   if (existingJwt) {
     const meRes = await fetch(`${STRAPI}/api/users/me`, {
       headers: { Authorization: `Bearer ${existingJwt}` },
@@ -183,7 +223,12 @@ export async function POST(req: Request) {
     });
     const meJson = await meRes.json().catch(() => null);
     if (meRes.ok && meJson) {
-      return NextResponse.json({ user: meJson, reusedSession: true }, { status: 200 });
+      const res = NextResponse.json(
+        { user: mergeGoogleProfileName(meJson, googleProfile), reusedSession: true },
+        { status: 200 }
+      );
+      setGoogleProfileCookie(res, googleProfile, isHttps(req));
+      return res;
     }
   }
 
@@ -198,7 +243,7 @@ export async function POST(req: Request) {
 
   const isHttpsReq = req.headers.get("x-forwarded-proto")?.includes("https") ?? false;
 
-  const res = NextResponse.json({ user: ex.user });
+  const res = NextResponse.json({ user: mergeGoogleProfileName(ex.user, googleProfile) });
   res.cookies.set("strapi_jwt", ex.jwt, {
     httpOnly: true,
     secure: isHttpsReq,
@@ -206,6 +251,7 @@ export async function POST(req: Request) {
     path: "/",
     maxAge: 60 * 60 * 24 * 7,
   });
+  setGoogleProfileCookie(res, googleProfile, isHttpsReq);
 
   return res;
 }
