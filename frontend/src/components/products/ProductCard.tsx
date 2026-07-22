@@ -1,6 +1,7 @@
 // src/components/products/ProductCard.tsx
 import Link from "next/link";
 import Image from "next/image";
+import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { getLowStockLabel } from "@/lib/stock-labels";
 
 /**
@@ -34,43 +35,41 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
 
   return (
     <div className="@container h-full">
-      <Link
-        href={href}
-        className="group flex flex-col h-full rounded-lg border border-neutral-200 bg-white p-4 transition hover:shadow-sm @[400px]:flex-row @[400px]:gap-4"
-      >
-        {/* Imagen / Placeholder */}
-        <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md bg-neutral-100 @[400px]:w-1/3 @[400px]:aspect-square">
-          {/* Badge descuento */}
-          {hasOff && (
-            <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white @[400px]:text-xs">
-              {item.off}% OFF
-            </span>
-          )}
+      <article className="group flex h-full flex-col rounded-lg border border-neutral-200 bg-white p-4 transition hover:shadow-sm @[400px]:flex-row @[400px]:gap-4">
+        <Link href={href} className="block @[400px]:w-1/3" aria-label={`Ver detalle de ${item.title}`}>
+          <div className="relative flex aspect-[4/3] w-full items-center justify-center overflow-hidden rounded-md bg-neutral-100 @[400px]:aspect-square">
+            {hasOff && (
+              <span className="absolute left-2 top-2 z-10 rounded-full bg-red-600 px-2 py-1 text-[10px] font-bold text-white @[400px]:text-xs">
+                {item.off}% OFF
+              </span>
+            )}
 
-          {lowStockLabel && (
-            <span className="absolute bottom-2 left-2 z-10 rounded-sm bg-orange-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-normal text-orange-700 @[400px]:text-xs">
-              {lowStockLabel}
-            </span>
-          )}
+            {lowStockLabel && (
+              <span className="absolute bottom-2 left-2 z-10 rounded-sm bg-orange-100 px-2 py-1 text-[10px] font-semibold uppercase tracking-normal text-orange-700 @[400px]:text-xs">
+                {lowStockLabel}
+              </span>
+            )}
 
-          {item.imageUrl ? (
-            <Image
-              src={item.imageUrl}
-              alt={item.title}
-              fill
-              sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-              className="object-cover transition group-hover:scale-105"
-            />
-          ) : (
-            <div className="text-xs text-neutral-500">Imagen próximamente</div>
-          )}
-        </div>
+            {item.imageUrl ? (
+              <Image
+                src={item.imageUrl}
+                alt={item.title}
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                className="object-cover transition group-hover:scale-105"
+              />
+            ) : (
+              <div className="text-xs text-neutral-500">Imagen próximamente</div>
+            )}
+          </div>
+        </Link>
 
-        {/* Texto */}
-        <div className="mt-3 flex flex-col flex-1 @[400px]:mt-0">
-          <h3 className="text-fluid-sm font-semibold text-neutral-900 group-hover:underline @[400px]:text-fluid-base">
-            {item.title}
-          </h3>
+        <div className="mt-3 flex flex-1 flex-col @[400px]:mt-0">
+          <Link href={href} className="block">
+            <h3 className="text-fluid-sm font-semibold text-neutral-900 group-hover:underline @[400px]:text-fluid-base">
+              {item.title}
+            </h3>
+          </Link>
           <div className="mt-1 text-[11px] font-extrabold uppercase tracking-normal text-red-600">
             CONTIENE 12 UNIDADES
           </div>
@@ -81,7 +80,6 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
             <p className="mt-1 text-fluid-xs text-neutral-400">—</p>
           )}
 
-          {/* Precio */}
           <div className="mt-auto pt-2">
             {hasOff ? (
               <div className="flex items-baseline gap-2">
@@ -98,8 +96,12 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
               </div>
             )}
           </div>
+
+          <div className="mt-3">
+            <AddToCartButton item={item} showLowStockHint={false} />
+          </div>
         </div>
-      </Link>
+      </article>
     </div>
   );
 }

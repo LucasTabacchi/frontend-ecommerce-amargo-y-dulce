@@ -42,6 +42,16 @@ function loadTsModule(relativePath) {
     if (id === "@/lib/stock-labels") {
       return loadTsModule("src/lib/stock-labels.ts");
     }
+    if (id === "@/components/cart/AddToCartButton") {
+      return {
+        AddToCartButton: ({ item }) =>
+          React.createElement(
+            "button",
+            { type: "button", "data-product-slug": item?.slug },
+            "Agregar al carrito"
+          ),
+      };
+    }
     return require(id);
   };
 
@@ -84,4 +94,22 @@ test("product cards show the package unit description", () => {
   );
 
   assert.equal(html.includes("CONTIENE 12 UNIDADES"), true);
+});
+
+test("product cards expose an add-to-cart action outside the product link", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(ProductCard, {
+      item: {
+        id: 1,
+        slug: "brownie-clasico",
+        title: "Brownie Clasico",
+        description: "Bombon relleno de brownie",
+        price: 154,
+        stock: 22,
+      },
+    })
+  );
+
+  assert.equal(html.includes("Agregar al carrito"), true);
+  assert.equal(html.includes('data-product-slug="brownie-clasico"'), true);
 });

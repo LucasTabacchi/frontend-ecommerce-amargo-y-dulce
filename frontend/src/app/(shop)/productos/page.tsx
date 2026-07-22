@@ -2,6 +2,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Metadata } from "next";
 import { unstable_noStore as noStore } from "next/cache";
+import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { toCardItem } from "@/lib/strapi-mappers";
@@ -154,41 +155,44 @@ export default async function ProductosPage({
                 const href = `/productos/${p.documentId || p.id}`;
 
                 return (
-                  <Link
+                  <article
                     key={String(p.documentId || p.id)}
-                    href={href}
-                    className="group overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
+                    className="group flex h-full flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition hover:shadow-md"
                   >
-                    <div className="relative aspect-[4/3] w-full bg-neutral-100">
-                      {p.imageUrl ? (
-                        <Image
-                          src={p.imageUrl}
-                          alt={p.title ?? "Producto"}
-                          fill
-                          className="object-cover transition group-hover:scale-105"
-                          sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, (max-width: 1280px) 30vw, 22vw"
-                        />
-                      ) : (
-                        <div className="flex h-full w-full items-center justify-center text-xs text-neutral-500">
-                          Sin imagen
-                        </div>
-                      )}
-                      {hasOff && (
-                        <span className="absolute right-3 top-3 rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
-                          -{p.off}%
-                        </span>
-                      )}
-                      {lowStockLabel && (
-                        <span className="absolute bottom-3 left-3 rounded-sm bg-orange-100 px-2 py-1 text-xs font-semibold uppercase tracking-normal text-orange-700">
-                          {lowStockLabel}
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="p-5">
-                      <div className="truncate text-base font-extrabold text-neutral-900">
-                        {p.title ?? "Producto"}
+                    <Link href={href} className="block" aria-label={`Ver detalle de ${p.title ?? "Producto"}`}>
+                      <div className="relative aspect-[4/3] w-full bg-neutral-100">
+                        {p.imageUrl ? (
+                          <Image
+                            src={p.imageUrl}
+                            alt={p.title ?? "Producto"}
+                            fill
+                            className="object-cover transition group-hover:scale-105"
+                            sizes="(max-width: 640px) 92vw, (max-width: 1024px) 45vw, (max-width: 1280px) 30vw, 22vw"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center text-xs text-neutral-500">
+                            Sin imagen
+                          </div>
+                        )}
+                        {hasOff && (
+                          <span className="absolute right-3 top-3 rounded-full bg-red-600 px-2 py-1 text-xs font-bold text-white">
+                            -{p.off}%
+                          </span>
+                        )}
+                        {lowStockLabel && (
+                          <span className="absolute bottom-3 left-3 rounded-sm bg-orange-100 px-2 py-1 text-xs font-semibold uppercase tracking-normal text-orange-700">
+                            {lowStockLabel}
+                          </span>
+                        )}
                       </div>
+                    </Link>
+
+                    <div className="flex flex-1 flex-col p-5">
+                      <Link href={href} className="block">
+                        <div className="truncate text-base font-extrabold text-neutral-900 group-hover:underline">
+                          {p.title ?? "Producto"}
+                        </div>
+                      </Link>
                       <div className="mt-1 text-[11px] font-extrabold uppercase tracking-normal text-red-600">
                         CONTIENE 12 UNIDADES
                       </div>
@@ -208,8 +212,11 @@ export default async function ProductosPage({
                           <div className="text-sm text-neutral-600">Precio no disponible</div>
                         )}
                       </div>
+                      <div className="mt-auto pt-4">
+                        <AddToCartButton item={p} showLowStockHint={false} />
+                      </div>
                     </div>
-                  </Link>
+                  </article>
                 );
               })}
             </div>
