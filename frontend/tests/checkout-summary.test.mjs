@@ -72,3 +72,21 @@ test("keeps a valid zero total when discounts cover the full subtotal", () => {
     totalBeforeShipping: 0,
   });
 });
+
+test("ignores out-of-stock cart items in the final checkout summary", () => {
+  const summary = buildCheckoutDisplaySummary({
+    items: [
+      { price: 7000, qty: 1, stock: 0 },
+      { price: 4900, qty: 2, stock: 5 },
+    ],
+    effectiveSubtotal: 9800,
+    effectiveDiscount: 0,
+    effectiveTotal: 9800,
+  });
+
+  assert.deepEqual(summary, {
+    subtotal: 9800,
+    discount: 0,
+    totalBeforeShipping: 9800,
+  });
+});

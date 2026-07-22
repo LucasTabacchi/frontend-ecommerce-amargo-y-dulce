@@ -438,9 +438,13 @@ export default function CarritoPage() {
       return;
     }
 
-    if (cartAvailability.hasBlockedItems) {
+    if (cartAvailability.checkoutBlocked) {
       e.preventDefault();
-      showAlert("Hay productos no disponibles en el carrito. Eliminá o ajustá esos items para continuar.");
+      if (cartAvailability.insufficientCount > 0) {
+        showAlert("Hay productos con cantidad mayor al stock disponible. Ajustá esos items para continuar.");
+      } else {
+        showAlert("No hay productos con stock disponible para finalizar la compra.");
+      }
     }
   }
 
@@ -674,7 +678,7 @@ export default function CarritoPage() {
 
                         {paused && (
                           <p className="mt-3 text-xs text-neutral-600">
-                            Este producto ya no está disponible. Eliminá el item para continuar.
+                            Este producto no se incluirá en el resumen final de la compra.
                           </p>
                         )}
                       </div>
@@ -728,10 +732,21 @@ export default function CarritoPage() {
 
               {cartAvailability.hasBlockedItems ? (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                  Hay {cartAvailability.blockedCount} producto
-                  {cartAvailability.blockedCount === 1 ? "" : "s"} no disponible
-                  {cartAvailability.blockedCount === 1 ? "" : "s"} en el carrito. Eliminá o ajustá esos
-                  items para poder finalizar la compra.
+                  {cartAvailability.insufficientCount > 0 ? (
+                    <>
+                      Hay {cartAvailability.insufficientCount} producto
+                      {cartAvailability.insufficientCount === 1 ? "" : "s"} con cantidad mayor al stock
+                      disponible. Ajustá esos items para poder finalizar la compra.
+                    </>
+                  ) : cartAvailability.hasPurchasableItems ? (
+                    <>
+                      Hay {cartAvailability.pausedCount} producto
+                      {cartAvailability.pausedCount === 1 ? "" : "s"} sin stock en el carrito. Se
+                      ignorará{cartAvailability.pausedCount === 1 ? "" : "n"} en el resumen final.
+                    </>
+                  ) : (
+                    "No hay productos con stock disponible para finalizar la compra."
+                  )}
                 </div>
               ) : null}
             </div>
@@ -744,7 +759,7 @@ export default function CarritoPage() {
                 meLoading ||
                 isStoreAdmin ||
                 availabilityLoading ||
-                cartAvailability.hasBlockedItems
+                cartAvailability.checkoutBlocked
               }
               className={[
                 "mt-6 block w-full rounded-full bg-red-600 py-3 text-center text-sm font-semibold text-white hover:bg-red-700",
@@ -752,15 +767,17 @@ export default function CarritoPage() {
                 meLoading ||
                 isStoreAdmin ||
                 availabilityLoading ||
-                cartAvailability.hasBlockedItems
+                cartAvailability.checkoutBlocked
                   ? "pointer-events-none opacity-50"
                   : "",
               ].join(" ")}
             >
               {isStoreAdmin
                 ? "No disponible"
-                : cartAvailability.hasBlockedItems
-                ? "Corregí el carrito"
+                : cartAvailability.checkoutBlocked
+                ? cartAvailability.insufficientCount > 0
+                  ? "Corregí el carrito"
+                  : "Sin stock"
                 : availabilityLoading
                 ? "Verificando stock..."
                 : "Finalizar compra"}

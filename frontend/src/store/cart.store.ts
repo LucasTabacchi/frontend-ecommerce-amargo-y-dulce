@@ -146,7 +146,6 @@ function normalizeCartItems(items: any[]): CartItem[] {
 
     const existing = map.get(key);
     if (!existing) {
-      if (typeof normalized.stock === "number" && normalized.stock <= 0) continue;
       const firstQty = Math.max(1, clampQty(normalized.qty, normalized.stock ?? null));
       map.set(key, { ...normalized, qty: firstQty });
       continue;

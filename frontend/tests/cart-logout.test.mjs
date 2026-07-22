@@ -61,3 +61,38 @@ test("clears local cart state when the user logs out", () => {
   assert.deepEqual(useCartStore.getState().items, []);
   assert.equal(useCartStore.getState().totalItems(), 0);
 });
+
+test("keeps an existing cart item when a stock refresh marks it as exhausted", () => {
+  const store = useCartStore.getState();
+
+  store.clearLocalSessionCart();
+  store.setItems([
+    {
+      id: 1,
+      documentId: "doc-bombon",
+      slug: "bombon",
+      title: "Bombón",
+      price: 1000,
+      stock: 2,
+      qty: 1,
+    },
+  ]);
+
+  store.setItems([
+    {
+      id: 1,
+      documentId: "doc-bombon",
+      slug: "bombon",
+      title: "Bombón",
+      price: 1000,
+      stock: 0,
+      qty: 1,
+    },
+  ]);
+
+  const items = useCartStore.getState().items;
+  assert.equal(items.length, 1);
+  assert.equal(items[0].slug, "bombon");
+  assert.equal(items[0].stock, 0);
+  assert.equal(items[0].qty, 1);
+});

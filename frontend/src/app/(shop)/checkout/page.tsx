@@ -63,6 +63,14 @@ function hasCartDiscount(items: any[]) {
   });
 }
 
+function isCheckoutPurchasableItem(item: any) {
+  const stockRaw = item?.stock;
+  if (stockRaw === null || stockRaw === undefined || stockRaw === "") return true;
+  const stock = Number(stockRaw);
+  if (!Number.isFinite(stock)) return true;
+  return Math.trunc(stock) > 0;
+}
+
 type ShippingMethod = "delivery" | "pickup";
 
 function calcShippingARS(baseTotal: number, method: ShippingMethod) {
@@ -316,8 +324,13 @@ function CheckoutPageContent() {
   const redirectedStatus = sp.get("status") || "";
   const redirectedOrderId = sp.get("orderId") || "";
 
-  // ✅ Si el carrito tiene items con descuento, no permitimos cupón
-  const cartHasDiscount = useMemo(() => hasCartDiscount(cartItems as any[]), [cartItems]);
+  const checkoutItems = useMemo(
+    () => (cartItems as any[]).filter(isCheckoutPurchasableItem),
+    [cartItems]
+  );
+
+  // ✅ Si el carrito comprable tiene items con descuento, no permitimos cupón
+  const cartHasDiscount = useMemo(() => hasCartDiscount(checkoutItems as any[]), [checkoutItems]);
 
   // Redirigir si vuelve con query
   useEffect(() => {
@@ -672,16 +685,16 @@ function CheckoutPageContent() {
   /* ================== subtotal UI (igual que carrito) ================== */
 
   const uiSubtotal = useMemo(() => {
-    return cartItems.reduce((acc, it: any) => {
+    return checkoutItems.reduce((acc, it: any) => {
       const unit = priceWithOff(Number(it.price) || 0, it.off);
       const qty = Math.max(1, Math.floor(Number(it.qty) || 1));
       return acc + unit * qty;
     }, 0);
-  }, [cartItems]);
+  }, [checkoutItems]);
 
   const payloadItems = useMemo(() => {
-    return buildCartQuoteItems(cartItems as any[]);
-  }, [cartItems]);
+    return buildCartQuoteItems(checkoutItems as any[]);
+  }, [checkoutItems]);
 
   /* ================= quote PRO ================= */
 
@@ -784,12 +797,12 @@ function CheckoutPageContent() {
   const displaySummary = useMemo(
     () =>
       buildCheckoutDisplaySummary({
-        items: cartItems as any[],
+        items: checkoutItems as any[],
         effectiveSubtotal,
         effectiveDiscount,
         effectiveTotal,
       }),
-    [cartItems, effectiveSubtotal, effectiveDiscount, effectiveTotal]
+    [checkoutItems, effectiveSubtotal, effectiveDiscount, effectiveTotal]
   );
 
   // ✅ Envío y total final (usamos effectiveTotal como base)
@@ -907,6 +920,9 @@ function CheckoutPageContent() {
     } catch {}
 
     if (!cartItems.length) return setError("Tu carrito está vacío.");
+    if (!payloadItems.length) {
+      return setError("No hay productos con stock disponible para finalizar la compra.");
+    }
     if (trimmedName.length < 2) return setError("Ingresá un nombre válido.");
     if (!trimmedEmail.includes("@")) return setError("Ingresá un email válido.");
 
@@ -996,7 +1012,7 @@ function CheckoutPageContent() {
 
           mpExternalReference,
 
-          items: cartItems.map((it: any) => ({
+          items: checkoutItems.map((it: any) => ({
             productId: Number(it.id),
             productDocumentId: it?.documentId ?? it?.productDocumentId ?? null,
             slug: String(it.slug || "").trim(),
@@ -1026,7 +1042,7 @@ function CheckoutPageContent() {
       const orderNumber = makeOrderNumber(orderNumericId || orderId);
 
       /* 2️⃣ Preferencia MP */
-      const mpItems = cartItems
+      const mpItems = checkoutItems
         .map((it: any) => ({
           title: it.title,
           qty: Math.max(1, Math.floor(Number(it.qty) || 1)),

@@ -44,7 +44,7 @@ test("marks a cart item as paused when product is missing or stock is zero", () 
 
   assert.equal(paused.status, "paused");
   assert.equal(paused.purchasable, false);
-  assert.equal(paused.message, "Publicación pausada");
+  assert.equal(paused.message, "Sin stock");
 });
 
 test("marks a cart item as insufficient when requested quantity exceeds available stock", () => {
@@ -58,7 +58,7 @@ test("marks a cart item as insufficient when requested quantity exceeds availabl
   assert.equal(availability.message, "Stock insuficiente");
 });
 
-test("summary excludes unavailable items and flags checkout as blocked", () => {
+test("summary excludes out-of-stock items and allows checkout when another item is purchasable", () => {
   const summary = getCartAvailabilitySummary(
     [
       { documentId: "p1", slug: "uno", qty: 1, price: 1000 },
@@ -71,8 +71,40 @@ test("summary excludes unavailable items and flags checkout as blocked", () => {
   );
 
   assert.equal(summary.hasBlockedItems, true);
+  assert.equal(summary.hasPurchasableItems, true);
+  assert.equal(summary.checkoutBlocked, false);
   assert.equal(summary.purchasableSubtotal, 1000);
   assert.equal(summary.blockedCount, 1);
+  assert.equal(summary.pausedCount, 1);
+  assert.equal(summary.insufficientCount, 0);
+});
+
+test("summary blocks checkout when every cart item is out of stock", () => {
+  const summary = getCartAvailabilitySummary(
+    [{ documentId: "p1", slug: "uno", qty: 1, price: 1000 }],
+    new Map([["p1", { documentId: "p1", stock: 0, isActive: true }]])
+  );
+
+  assert.equal(summary.hasPurchasableItems, false);
+  assert.equal(summary.checkoutBlocked, true);
+  assert.equal(summary.purchasableSubtotal, 0);
+});
+
+test("summary still blocks checkout when a requested quantity exceeds stock", () => {
+  const summary = getCartAvailabilitySummary(
+    [
+      { documentId: "p1", slug: "uno", qty: 3, price: 1000 },
+      { documentId: "p2", slug: "dos", qty: 1, price: 500 },
+    ],
+    new Map([
+      ["p1", { documentId: "p1", stock: 2, isActive: true }],
+      ["p2", { documentId: "p2", stock: 5, isActive: true }],
+    ])
+  );
+
+  assert.equal(summary.hasPurchasableItems, true);
+  assert.equal(summary.checkoutBlocked, true);
+  assert.equal(summary.insufficientCount, 1);
 });
 
 test("summary uses the current product price instead of the stale cart price", () => {

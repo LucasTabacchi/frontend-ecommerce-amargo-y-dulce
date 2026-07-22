@@ -85,7 +85,16 @@ export function getCartItemAvailability(
   const isActive = product ? product.isActive !== false : false;
   const qty = normalizeQty(item?.qty);
 
-  if (!product || !isActive || stock === 0) {
+  if (stock === 0) {
+    return {
+      status: "paused",
+      purchasable: false,
+      message: "Sin stock",
+      availableStock: stock,
+    };
+  }
+
+  if (!product || !isActive) {
     return {
       status: "paused",
       purchasable: false,
@@ -117,6 +126,8 @@ export function getCartAvailabilitySummary(
 ) {
   let purchasableSubtotal = 0;
   let blockedCount = 0;
+  let pausedCount = 0;
+  let insufficientCount = 0;
 
   const rows = (Array.isArray(items) ? items : []).map((item) => {
     const key = String(item?.documentId || item?.slug || "").trim();
@@ -129,15 +140,24 @@ export function getCartAvailabilitySummary(
         priceWithOff(currentItem?.price, currentItem?.off) * normalizeQty(currentItem?.qty);
     } else {
       blockedCount += 1;
+      if (availability.status === "paused") pausedCount += 1;
+      if (availability.status === "insufficient") insufficientCount += 1;
     }
 
     return { key, item: currentItem, product, availability };
   });
 
+  const purchasableCount = rows.length - blockedCount;
+
   return {
     rows,
     blockedCount,
     hasBlockedItems: blockedCount > 0,
+    pausedCount,
+    insufficientCount,
+    purchasableCount,
+    hasPurchasableItems: purchasableCount > 0,
+    checkoutBlocked: insufficientCount > 0 || purchasableCount === 0,
     purchasableSubtotal,
   };
 }

@@ -2,6 +2,7 @@ export type CheckoutSummaryItem = {
   price?: unknown;
   off?: unknown;
   qty?: unknown;
+  stock?: unknown;
 };
 
 export type CheckoutDisplaySummaryInput = {
@@ -31,6 +32,7 @@ function normalizeQty(value: unknown) {
 
 function originalItemsSubtotal(items: CheckoutSummaryItem[]) {
   return (Array.isArray(items) ? items : []).reduce((acc, item) => {
+    if (Number(item?.stock) <= 0) return acc;
     return acc + normalizeMoney(item?.price) * normalizeQty(item?.qty);
   }, 0);
 }
