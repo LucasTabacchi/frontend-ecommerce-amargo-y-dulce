@@ -1,11 +1,13 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Metadata } from "next";
+import { unstable_noStore as noStore } from "next/cache";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { toCardItem } from "@/lib/strapi-mappers";
 import {
   applyPublicProductVisibilityFilter,
+  filterPublicProductCards,
   filterPubliclyVisibleProducts,
 } from "@/lib/product-visibility";
 import { getLowStockLabel } from "@/lib/stock-labels";
@@ -38,6 +40,8 @@ export default async function ProductosPage({
 }: {
   searchParams?: { q?: string };
 }) {
+  noStore();
+
   const q = (searchParams?.q || "").trim();
 
   let products: any[] = [];
@@ -76,21 +80,23 @@ export default async function ProductosPage({
     const raw = filterPubliclyVisibleProducts(Array.isArray(res?.data) ? res.data : []);
 
     // ✅ Aseguramos que cada card tenga documentId disponible (si tu mapper no lo preserva)
-    products = raw.map((item: any) => {
-      const card = toCardItem(item);
+    products = filterPublicProductCards(
+      raw.map((item: any) => {
+        const card = toCardItem(item);
 
-      const documentId =
-        toStrOrNull(item?.documentId) ||
-        toStrOrNull(item?.attributes?.documentId) ||
-        toStrOrNull(card?.documentId);
+        const documentId =
+          toStrOrNull(item?.documentId) ||
+          toStrOrNull(item?.attributes?.documentId) ||
+          toStrOrNull(card?.documentId);
 
-      return {
-        ...card,
-        // guardamos también el numérico por si querés usarlo para keys / fallback
-        id: card?.id ?? item?.id,
-        documentId,
-      };
-    });
+        return {
+          ...card,
+          // guardamos también el numérico por si querés usarlo para keys / fallback
+          id: card?.id ?? item?.id,
+          documentId,
+        };
+      })
+    );
   } catch (err: any) {
     errorMsg = err?.message || "No se pudieron cargar los productos.";
   }
@@ -182,6 +188,9 @@ export default async function ProductosPage({
                     <div className="p-5">
                       <div className="truncate text-base font-extrabold text-neutral-900">
                         {p.title ?? "Producto"}
+                      </div>
+                      <div className="mt-1 text-[11px] font-extrabold uppercase tracking-normal text-red-600">
+                        CONTIENE 12 UNIDADES
                       </div>
                       <div className="mt-4">
                         {finalPrice != null ? (

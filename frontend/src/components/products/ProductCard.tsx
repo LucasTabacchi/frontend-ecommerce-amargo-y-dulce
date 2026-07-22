@@ -71,6 +71,9 @@ export function ProductCard({ item }: { item: ProductCardItem }) {
           <h3 className="text-fluid-sm font-semibold text-neutral-900 group-hover:underline @[400px]:text-fluid-base">
             {item.title}
           </h3>
+          <div className="mt-1 text-[11px] font-extrabold uppercase tracking-normal text-red-600">
+            CONTIENE 12 UNIDADES
+          </div>
 
           {item.description ? (
             <p className="mt-1 line-clamp-2 text-fluid-xs text-neutral-600">{item.description}</p>

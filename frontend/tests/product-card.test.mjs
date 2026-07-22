@@ -68,3 +68,20 @@ test("product cards do not expose raw stock quantities to customers", () => {
 
   assert.equal(html.includes("Stock:"), false);
 });
+
+test("product cards show the package unit description", () => {
+  const html = renderToStaticMarkup(
+    React.createElement(ProductCard, {
+      item: {
+        id: 1,
+        slug: "brownie-clasico",
+        title: "Brownie Clasico",
+        description: "Bombon relleno de brownie",
+        price: 154,
+        stock: 22,
+      },
+    })
+  );
+
+  assert.equal(html.includes("CONTIENE 12 UNIDADES"), true);
+});

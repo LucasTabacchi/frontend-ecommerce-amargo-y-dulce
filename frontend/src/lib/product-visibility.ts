@@ -24,3 +24,7 @@ export function isPubliclyVisibleProduct(product: any) {
 export function filterPubliclyVisibleProducts<T>(products: T[]): T[] {
   return (Array.isArray(products) ? products : []).filter(isPubliclyVisibleProduct);
 }
+
+export function filterPublicProductCards<T extends { stock?: unknown }>(products: T[]): T[] {
+  return (Array.isArray(products) ? products : []).filter(isPubliclyVisibleProduct);
+}

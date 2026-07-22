@@ -28,6 +28,7 @@ function loadTsModule(relativePath) {
 
 const {
   applyPublicProductVisibilityFilter,
+  filterPublicProductCards,
   filterPubliclyVisibleProducts,
   isPubliclyVisibleProduct,
 } = loadTsModule("src/lib/product-visibility.ts");
@@ -49,4 +50,11 @@ test("keeps only products with stock greater than zero in public lists", () => {
   assert.equal(isPubliclyVisibleProduct(hidden), false);
   assert.equal(isPubliclyVisibleProduct(unknown), false);
   assert.deepEqual(filterPubliclyVisibleProducts([visible, hidden, unknown]), [visible]);
+});
+
+test("keeps only mapped product cards with stock greater than zero", () => {
+  const visible = { title: "Caja clasica", stock: 1 };
+  const hidden = { title: "Caja agotada", stock: 0 };
+
+  assert.deepEqual(filterPublicProductCards([visible, hidden]), [visible]);
 });
