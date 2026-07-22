@@ -1,5 +1,6 @@
 // src/app/api/promotions/quote/route.ts
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { fetcher } from "@/lib/fetcher";
 
 export const dynamic = "force-dynamic";
@@ -11,6 +12,17 @@ type QuoteBody = {
   shipping?: number;
   [k: string]: any;
 };
+
+function readUserJwtFromCookies() {
+  const jar = cookies();
+  return (
+    jar.get("strapi_jwt")?.value ||
+    jar.get("jwt")?.value ||
+    jar.get("token")?.value ||
+    jar.get("access_token")?.value ||
+    null
+  );
+}
 
 export async function POST(req: Request) {
   let body: QuoteBody | null = null;
@@ -48,11 +60,15 @@ export async function POST(req: Request) {
       coupon: String(body?.coupon ?? "").trim() || null,
       shipping: Number.isFinite(Number(body?.shipping)) ? Number(body?.shipping) : 0,
     };
+    const jwt = readUserJwtFromCookies();
 
     // Proxy al endpoint real de Strapi
     const data = await fetcher<any>("/promotions/quote", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        ...(jwt ? { Authorization: `Bearer ${jwt}` } : {}),
+      },
       body: JSON.stringify(payload),
       cache: "no-store",
     });

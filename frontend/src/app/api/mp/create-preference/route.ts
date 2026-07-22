@@ -331,7 +331,10 @@ export async function POST(req: Request) {
   const coupon = String(order?.coupon ?? "").trim() || null;
   const quoteRes = await fetch(`${strapiBase}/api/promotions/quote`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${jwt}`,
+    },
     body: JSON.stringify({ items: quoteItems, coupon, shipping: 0 }),
     cache: "no-store",
   });
