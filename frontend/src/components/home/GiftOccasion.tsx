@@ -5,7 +5,7 @@ import { Gift, HeartHandshake } from "lucide-react";
 export function GiftOccasion() {
   return (
     <section className="py-fluid-lg" aria-labelledby="gift-occasion-title">
-      <div className="overflow-hidden rounded-lg border border-red-100 bg-[#2a120d] shadow-sm">
+      <div className="overflow-hidden rounded-2xl border border-red-100 bg-[#2a120d] shadow-sm">
         <div className="grid min-h-[360px] lg:grid-cols-[1.05fr_0.95fr]">
           <div className="flex flex-col justify-center px-fluid-md py-fluid-lg text-white lg:px-fluid-lg">
             <div className="inline-flex w-fit items-center gap-2 rounded-full border border-white/20 bg-white/10 px-3 py-1 text-[11px] font-extrabold uppercase tracking-[0.18em] text-red-50">
