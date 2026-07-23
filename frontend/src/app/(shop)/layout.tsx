@@ -13,7 +13,7 @@ export default function ShopLayout({
   children: React.ReactNode;
 }) {
   return (
-    <div className="min-h-screen min-h-[100dvh] bg-[#FAF6F6] flex flex-col">
+    <div className="flex min-h-screen min-h-[100dvh] flex-col bg-[linear-gradient(180deg,#FAF8F5_0%,#F1EAE2_100%)]">
       <UserStateSync />
       <Suspense fallback={<HeaderFallback />}>
         <Header />
