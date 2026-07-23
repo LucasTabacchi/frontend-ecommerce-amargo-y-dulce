@@ -32,6 +32,30 @@ function isStoreAdmin(user: any) {
   );
 }
 
+async function fetchCouponRows(jwt: string | null) {
+  if (jwt) {
+    const strapiBase = normalizeStrapiBase(
+      process.env.STRAPI_URL || process.env.NEXT_PUBLIC_STRAPI_URL || "http://localhost:1337"
+    );
+
+    try {
+      const filteredRes = await fetch(`${strapiBase}/api/promotions/my-coupons`, {
+        headers: { Authorization: `Bearer ${jwt}` },
+        cache: "no-store",
+      });
+      const filteredJson = await filteredRes.json().catch(() => null);
+      if (filteredRes.ok) return filteredJson as { data?: CouponRow[] };
+    } catch {
+      // Si la sesión local quedó inválida, dejamos que la página caiga al listado público.
+    }
+  }
+
+  return fetcher<{ data?: CouponRow[] }>("/promotions/available", {
+    method: "GET",
+    cache: "no-store",
+  });
+}
+
 type CouponRow = {
   id: number;
   documentId?: string | null;
@@ -91,10 +115,7 @@ export default async function CuponesPage() {
   const jwt = readUserJwtFromCookies();
   let serverIsStoreAdmin = false;
 
-  const promotionsPromise = fetcher<{ data?: CouponRow[] }>("/promotions/available", {
-    method: "GET",
-    cache: "no-store",
-  });
+  const promotionsPromise = fetchCouponRows(jwt);
 
   const authPromise = (async () => {
     if (!jwt) return null;

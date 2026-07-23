@@ -69,16 +69,13 @@ export async function GET() {
       return NextResponse.json(json, { status: 200 });
     }
 
-    // Fallback: si backend responde forbidden/not allowed, usamos listado público.
-    if (r.status !== 401 && r.status !== 403) {
-      return NextResponse.json(
-        {
-          error: pickApiErrorMessage(json, "No se pudieron cargar tus cupones."),
-          details: json,
-        },
-        { status: r.status || 500 }
-      );
-    }
+    return NextResponse.json(
+      {
+        error: pickApiErrorMessage(json, "No se pudieron cargar tus cupones."),
+        details: json,
+      },
+      { status: r.status || 500 }
+    );
   }
 
   const availableRes = await fetch(`${strapiBase}/api/promotions/available`, {
