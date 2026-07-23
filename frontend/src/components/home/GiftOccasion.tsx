@@ -52,7 +52,7 @@ export function GiftOccasion() {
 
           <div className="relative min-h-[300px] overflow-hidden lg:min-h-full">
             <Image
-              src="/home/hero-2.jpg"
+              src="/home/gift-occasion.png"
               alt="Caja de bombones artesanales para regalar"
               fill
               sizes="(max-width: 1024px) 100vw, 50vw"
