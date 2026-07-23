@@ -136,14 +136,14 @@ export default function HomePage() {
         </div>
       </Container>
       <Container>
-        <GiftOccasion />
-      </Container>
-      <Container>
-        <div className="pb-16">
+        <div className="pb-10">
           <Suspense fallback={<HomeBestSellersFallback />}>
             <HomeBestSellersSection />
           </Suspense>
         </div>
+      </Container>
+      <Container>
+        <GiftOccasion />
       </Container>
       <Container>
         <BrandDifferentials />
