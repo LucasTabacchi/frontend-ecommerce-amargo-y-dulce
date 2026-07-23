@@ -1,11 +1,5 @@
-import Link from "next/link";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
-import { ApplyCouponButton } from "@/components/coupons/ApplyCouponButton";
-import {
-  isCouponClaimed,
-  sanitizeClaimedCouponValues,
-} from "@/lib/coupon-claims";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
@@ -95,10 +89,7 @@ function isCouponActiveNow(c: CouponRow) {
 
 export default async function CuponesPage() {
   const jwt = readUserJwtFromCookies();
-  let serverAuthResolved = !jwt;
-  let serverIsLoggedIn = false;
   let serverIsStoreAdmin = false;
-  const serverClaimedCoupons = new Set<string>();
 
   const promotionsPromise = fetcher<{ data?: CouponRow[] }>("/promotions/available", {
     method: "GET",
@@ -127,16 +118,11 @@ export default async function CuponesPage() {
   const [meJson, res] = await Promise.all([authPromise, promotionsPromise]);
 
   if (jwt && meJson) {
-    serverAuthResolved = true;
-    serverIsLoggedIn = Boolean(meJson?.id);
     serverIsStoreAdmin = isStoreAdmin(meJson);
 
     if (serverIsStoreAdmin) {
       redirect("/admin/pedidos");
     }
-
-    const claimed = sanitizeClaimedCouponValues(meJson?.claimedCoupons);
-    for (const value of claimed) serverClaimedCoupons.add(value);
   }
 
   const allRows = Array.isArray(res?.data) ? res.data : [];
@@ -150,19 +136,11 @@ export default async function CuponesPage() {
             <div>
               <h1 className="text-3xl font-extrabold text-neutral-900">Cupones</h1>
               <p className="mt-2 text-sm text-neutral-600">
-                Explora cupones activos, aplicalos y guardalos en Mis cupones.
+                Explora los cupones activos disponibles para tus compras.
               </p>
               <p className="mt-1 text-sm text-neutral-500">
-                Aplica al cupón para luego poder usarlo.
+                No necesitás guardarlos: en el checkout vas a poder seleccionar el cupón y el sistema validará si aplica a tu carrito.
               </p>
-            </div>
-            <div className="flex gap-2">
-              <Link
-                href="/cupones/mis-cupones"
-                className="rounded-full border px-4 py-2 text-sm font-semibold text-neutral-900 hover:bg-neutral-50"
-              >
-                Mis cupones
-              </Link>
             </div>
           </div>
         </div>
@@ -172,7 +150,6 @@ export default async function CuponesPage() {
             const minSubtotal = Number(c.minSubtotal ?? 0);
             const maxDiscount = Number(c.maxDiscount ?? 0);
             const expires = c.endAt ? new Date(c.endAt) : null;
-            const couponCode = String(c.code || "");
             return (
               <article
                 key={c.id}
@@ -206,20 +183,6 @@ export default async function CuponesPage() {
                     Combinable:{" "}
                     <span className="font-semibold">{c.combinable ? "Sí" : "No"}</span>
                   </div>
-                </div>
-
-                <div className="mt-5 flex gap-3">
-                  <ApplyCouponButton
-                    documentId={c.documentId ?? null}
-                    code={couponCode}
-                    initialApplied={isCouponClaimed(serverClaimedCoupons, {
-                      documentId: c.documentId ?? null,
-                      code: couponCode,
-                    })}
-                    initialIsLoggedIn={serverIsLoggedIn}
-                    initialIsStoreAdmin={serverIsStoreAdmin}
-                    initialAuthResolved={serverAuthResolved}
-                  />
                 </div>
               </article>
             );

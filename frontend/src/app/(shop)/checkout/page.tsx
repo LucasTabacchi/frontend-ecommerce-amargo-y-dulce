@@ -7,15 +7,13 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { useCartStore } from "@/store/cart.store";
 import { useAuthStore } from "@/store/auth.store";
-import {
-  CLAIMED_COUPONS_KEY,
-  isCouponClaimed,
-  migrateClaimedCouponsForList,
-  normalizeCouponCode,
-  sanitizeClaimedCouponValues,
-} from "@/lib/coupon-claims";
 import { buildCartQuoteItems } from "@/lib/cart-quote-items";
 import { buildCheckoutDisplaySummary } from "@/lib/checkout-summary";
+import {
+  buildCouponOptions,
+  normalizeCouponCode,
+  type CouponOption as MyCouponOption,
+} from "@/lib/coupon-options";
 
 /* ================= helpers ================= */
 
@@ -161,20 +159,6 @@ type MeResponse = {
   } | null;
 };
 
-type MyCouponOption = {
-  id: number;
-  documentId?: string | null;
-  code: string;
-  name: string;
-  startAt: string | null;
-  endAt: string | null;
-  exhausted: boolean;
-  isNotStarted: boolean;
-  isExpired: boolean;
-  isAvailable: boolean;
-  unavailableLabel: string | null;
-};
-
 function toNum(v: any, def = 0) {
   const n = typeof v === "number" ? v : Number(v);
   return Number.isFinite(n) ? n : def;
@@ -230,24 +214,6 @@ function isEmptyish(v: string) {
   return String(v ?? "").trim().length === 0;
 }
 
-function readClaimedCouponClaims() {
-  if (typeof window === "undefined") return new Set<string>();
-  try {
-    const raw = localStorage.getItem(CLAIMED_COUPONS_KEY);
-    const parsed = JSON.parse(raw || "[]");
-    if (!Array.isArray(parsed)) return new Set<string>();
-    return new Set(sanitizeClaimedCouponValues(parsed));
-  } catch {
-    return new Set<string>();
-  }
-}
-
-function writeClaimedCouponClaims(values: string[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(CLAIMED_COUPONS_KEY, JSON.stringify(sanitizeClaimedCouponValues(values)));
-  window.dispatchEvent(new Event("amg-coupons-changed"));
-}
-
 /* ================= page ================= */
 
 function CheckoutPageContent() {
@@ -299,7 +265,6 @@ function CheckoutPageContent() {
   const [myCouponsLoading, setMyCouponsLoading] = useState(false);
   const [myCouponsError, setMyCouponsError] = useState<string | null>(null);
   const [myCoupons, setMyCoupons] = useState<MyCouponOption[]>([]);
-  const [claimedCouponsVersion, setClaimedCouponsVersion] = useState(0);
 
   const [loading, setLoading] = useState(false);
   const [quoting, setQuoting] = useState(false);
@@ -386,29 +351,10 @@ function CheckoutPageContent() {
   }, [meReady, isStoreAdmin, router]);
 
   useEffect(() => {
-    const onCouponsChanged = () => setClaimedCouponsVersion((prev) => prev + 1);
-    window.addEventListener("storage", onCouponsChanged);
-    window.addEventListener("amg-coupons-changed", onCouponsChanged);
-    return () => {
-      window.removeEventListener("storage", onCouponsChanged);
-      window.removeEventListener("amg-coupons-changed", onCouponsChanged);
-    };
-  }, []);
-
-  useEffect(() => {
     if (!meReady || isStoreAdmin) return;
     let alive = true;
 
     (async () => {
-      const claimed = readClaimedCouponClaims();
-      if (!claimed.size) {
-        if (!alive) return;
-        setMyCoupons([]);
-        setMyCouponsError(null);
-        setMyCouponsLoading(false);
-        return;
-      }
-
       setMyCouponsLoading(true);
       setMyCouponsError(null);
       try {
@@ -424,77 +370,8 @@ function CheckoutPageContent() {
         }
 
         const list = Array.isArray(j?.data) ? j.data : [];
-        const map = new Map<string, MyCouponOption>();
-        const nowMs = Date.now();
-
-        for (const row of list) {
-          const code = normalizeCouponCode(row?.code);
-          const documentId =
-            typeof row?.documentId === "string" && row.documentId.trim()
-              ? row.documentId.trim()
-              : null;
-          if (
-            !code ||
-            !isCouponClaimed(claimed, { documentId, code }) ||
-            map.has(code)
-          ) {
-            continue;
-          }
-          const name = String(row?.name ?? "").trim() || "Cupón";
-          const startAt = String(row?.startAt ?? "").trim() || null;
-          const endAt = String(row?.endAt ?? "").trim() || null;
-          const exhausted = Boolean(row?.exhausted);
-
-          const startMs = startAt ? Date.parse(startAt) : NaN;
-          const endMs = endAt ? Date.parse(endAt) : NaN;
-
-          const isNotStarted =
-            typeof row?.isNotStarted === "boolean"
-              ? row.isNotStarted
-              : Number.isFinite(startMs)
-              ? startMs > nowMs
-              : false;
-          const isExpired =
-            typeof row?.isExpired === "boolean"
-              ? row.isExpired
-              : Number.isFinite(endMs)
-              ? endMs < nowMs
-              : false;
-          const isAvailable =
-            typeof row?.isAvailable === "boolean"
-              ? row.isAvailable
-              : !isNotStarted && !isExpired && !exhausted;
-
-          const unavailableLabel = isExpired
-            ? "Vencido"
-            : isNotStarted
-            ? "Próximamente"
-            : exhausted
-            ? "Agotado"
-            : null;
-
-          map.set(code, {
-            id: Number.isFinite(Number(row?.id)) ? Number(row.id) : map.size + 1,
-            documentId,
-            code,
-            name,
-            startAt,
-            endAt,
-            exhausted,
-            isNotStarted,
-            isExpired,
-            isAvailable,
-            unavailableLabel,
-          });
-        }
-
         if (!alive) return;
-        const nextCoupons = Array.from(map.values());
-        const migrated = migrateClaimedCouponsForList(Array.from(claimed), nextCoupons);
-        if (migrated.changed) {
-          writeClaimedCouponClaims(migrated.values);
-        }
-        setMyCoupons(nextCoupons);
+        setMyCoupons(buildCouponOptions(list));
       } catch (e: any) {
         if (!alive) return;
         setMyCoupons([]);
@@ -508,7 +385,7 @@ function CheckoutPageContent() {
     return () => {
       alive = false;
     };
-  }, [meReady, isStoreAdmin, claimedCouponsVersion]);
+  }, [meReady, isStoreAdmin]);
 
   useEffect(() => {
     const selected = normalizeCouponCode(coupon);
@@ -1387,7 +1264,7 @@ function CheckoutPageContent() {
             {/* Cupón */}
             <div>
               <label className="mb-1 block text-xs font-semibold text-neutral-700">
-                Mis cupones
+                Cupones disponibles
               </label>
               <select
                 className="w-full border p-2 text-sm"
@@ -1418,7 +1295,7 @@ function CheckoutPageContent() {
               ) : null}
               {!myCouponsLoading && !myCouponsError && myCoupons.length === 0 ? (
                 <p className="mt-1 text-xs text-neutral-500">
-                  No tenés cupones aplicados en Mis cupones.
+                  No hay cupones disponibles en este momento.
                 </p>
               ) : null}
               {myCouponsError ? (
@@ -1432,8 +1309,8 @@ function CheckoutPageContent() {
                 Seleccioná un cupón válido. El cupón aplica solo a productos sin descuento.
               </p>
               <div className="mt-1">
-                <Link href="/cupones/mis-cupones" className="text-xs font-semibold text-red-700 hover:underline">
-                  Ver mis cupones →
+                <Link href="/cupones" className="text-xs font-semibold text-red-700 hover:underline">
+                  Ver cupones disponibles →
                 </Link>
               </div>
 
