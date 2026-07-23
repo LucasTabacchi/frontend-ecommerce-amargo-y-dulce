@@ -2,13 +2,14 @@
 import { notFound, redirect } from "next/navigation";
 import Link from "next/link";
 import { Metadata } from "next";
-import { cache } from "react";
+import { Suspense, cache } from "react";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
 import { ProductReviews } from "@/components/products/ProductReviews";
 import { ProductPurchaseBox } from "./ProductPurchaseBox";
 import { Gallery } from "./Gallery";
 import { getFirstProductImageUrl, getProductGalleryImages } from "@/lib/product-images";
+import { getServerProductReviews } from "@/lib/server/shop-data";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -138,6 +139,43 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
   };
 }
 
+function ProductReviewsFallback() {
+  return (
+    <section className="mt-10 rounded-2xl border bg-white p-6 lg:p-7">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <div className="h-5 w-52 animate-pulse rounded bg-neutral-200" />
+          <div className="mt-2 h-4 w-64 animate-pulse rounded bg-neutral-100" />
+        </div>
+        <div className="h-16 w-36 animate-pulse rounded-2xl bg-neutral-100" />
+      </div>
+      <div className="mt-6 h-12 animate-pulse rounded-xl border bg-neutral-50" />
+    </section>
+  );
+}
+
+async function ProductReviewsSection({
+  productDocumentId,
+  productId,
+}: {
+  productDocumentId?: string;
+  productId: number;
+}) {
+  const initialReviews = await getServerProductReviews({
+    productDocumentId,
+    productId,
+    pageSize: 20,
+  });
+
+  return (
+    <ProductReviews
+      productDocumentId={productDocumentId}
+      productId={productId}
+      initialReviews={initialReviews}
+    />
+  );
+}
+
 export default async function ProductDetailPage({ params }: Props) {
   const row = await getProduct(params.id);
   if (!row) return notFound();
@@ -259,10 +297,12 @@ export default async function ProductDetailPage({ params }: Props) {
         </div>
 
         <div className="pb-14">
-          <ProductReviews
-            productDocumentId={documentId ?? undefined}
-            productId={id}
-          />
+          <Suspense fallback={<ProductReviewsFallback />}>
+            <ProductReviewsSection
+              productDocumentId={documentId ?? undefined}
+              productId={id}
+            />
+          </Suspense>
         </div>
       </Container>
     </main>

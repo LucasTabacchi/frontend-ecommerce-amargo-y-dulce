@@ -122,10 +122,13 @@ export function ProductReviews({
   const authChecked = useAuthStore((s) => s.resolved);
   const isStoreAdmin = Boolean(authUser?.isStoreAdmin);
 
-  async function load() {
+  async function load(options?: { silent?: boolean }) {
     if (!canFilter) return;
-    setLoading(true);
-    setError(null);
+    const silent = Boolean(options?.silent);
+    if (!silent) {
+      setLoading(true);
+      setError(null);
+    }
 
     try {
       const sp = new URLSearchParams();
@@ -152,19 +155,44 @@ export function ProductReviews({
           : { canReview: false, reason: "unknown" }
       );
     } catch (e: any) {
-      setReviews([]);
+      if (!silent) {
+        setReviews([]);
+        setError(e?.message || "No se pudieron cargar las reseñas.");
+      }
       setReviewPermission({ canReview: false, reason: "error" });
-      setError(e?.message || "No se pudieron cargar las reseñas.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }
 
   useEffect(() => {
-    if (hasInitialReviews) return;
+    if (hasInitialReviews) {
+      if (!authChecked) return;
+
+      if (!authUser || isStoreAdmin) {
+        setReviewPermission({
+          canReview: false,
+          reason: isStoreAdmin ? "store_admin" : "not_authenticated",
+        });
+        return;
+      }
+
+      load({ silent: true });
+      return;
+    }
+
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [productDocumentId, productId, pageSize, hasInitialReviews]);
+  }, [
+    productDocumentId,
+    productId,
+    pageSize,
+    hasInitialReviews,
+    authChecked,
+    authUser?.id,
+    authUser?.email,
+    isStoreAdmin,
+  ]);
 
   const count = reviews.length;
   const avg = useMemo(() => {
