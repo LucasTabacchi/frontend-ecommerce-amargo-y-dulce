@@ -6,6 +6,11 @@ import {
   getStrapiBase,
   type ServerAuthUser,
 } from "@/lib/server/auth-user";
+import {
+  buildReviewPermission,
+  hasExistingUserReview,
+  hasPurchasedProduct,
+} from "@/lib/review-permissions";
 
 export type ServerAddress = {
   id: string | number | null;
@@ -58,6 +63,11 @@ export type ServerReview = {
   text?: string;
   name?: string;
   createdAt?: string;
+};
+
+export type ServerReviewPermission = {
+  canReview: boolean;
+  reason?: string | null;
 };
 
 export type PaginatedResult<T> = {
@@ -392,6 +402,53 @@ function mapServerInvoice(strapiBase: string, row: any): ServerInvoice {
   };
 }
 
+function getServerUserReviewKey(user: ServerAuthUser) {
+  return (
+    String(user.email ?? "").trim().toLowerCase() ||
+    String(user.documentId ?? "").trim() ||
+    String(user.id ?? "").trim()
+  );
+}
+
+async function getServerExistingUserReviews(params: {
+  userKey: string;
+  productDocumentId?: string;
+  productId?: number;
+}) {
+  const userKey = String(params.userKey ?? "").trim();
+  if (!userKey) return [];
+
+  const hasProductDocumentId =
+    typeof params.productDocumentId === "string" &&
+    params.productDocumentId.trim().length > 0;
+  const hasProductId = Number.isFinite(params.productId) && Number(params.productId) > 0;
+  if (!hasProductDocumentId && !hasProductId) return [];
+
+  const query = new URLSearchParams();
+  query.set("pagination[pageSize]", "10");
+  query.set("populate", "product");
+  query.set("filters[name][$eqi]", userKey);
+
+  let orIndex = 0;
+  if (hasProductDocumentId) {
+    query.set(
+      `filters[$or][${orIndex}][product][documentId][$eq]`,
+      String(params.productDocumentId).trim()
+    );
+    orIndex += 1;
+  }
+  if (hasProductId) {
+    query.set(
+      `filters[$or][${orIndex}][product][id][$eq]`,
+      String(Number(params.productId))
+    );
+  }
+
+  const result = await fetchServerScopedJson(`/api/reviews?${query.toString()}`);
+  if (!result.ok) return [];
+  return Array.isArray(result.json?.data) ? result.json.data : [];
+}
+
 async function getServerCustomerInvoicesLegacyPaginated(
   viewer: ServerAuthUser,
   page: number,
@@ -555,4 +612,45 @@ export async function getServerProductReviews(params: {
       createdAt: String(flat?.createdAt ?? "").trim() || undefined,
     };
   });
+}
+
+export async function getServerProductReviewPermission(params: {
+  productDocumentId?: string;
+  productId?: number;
+}): Promise<ServerReviewPermission> {
+  const hasProductDocumentId =
+    typeof params.productDocumentId === "string" &&
+    params.productDocumentId.trim().length > 0;
+  const hasProductId = Number.isFinite(params.productId) && Number(params.productId) > 0;
+
+  if (!hasProductDocumentId && !hasProductId) {
+    return { canReview: false, reason: "unknown" };
+  }
+
+  const viewer = await getServerAuthUser();
+  if (!viewer) return { canReview: false, reason: "not_authenticated" };
+  if (viewer.isStoreAdmin) return { canReview: false, reason: "store_admin" };
+
+  const target = {
+    productDocumentId: hasProductDocumentId ? String(params.productDocumentId).trim() : null,
+    productId: hasProductId ? Number(params.productId) : null,
+  };
+  const userKey = getServerUserReviewKey(viewer);
+
+  try {
+    const [orders, existingReviews] = await Promise.all([
+      getServerCustomerOrders(viewer),
+      getServerExistingUserReviews({
+        userKey,
+        productDocumentId: target.productDocumentId ?? undefined,
+        productId: target.productId ?? undefined,
+      }),
+    ]);
+
+    const purchased = hasPurchasedProduct(orders, target);
+    const alreadyReviewed = hasExistingUserReview(existingReviews, userKey, target);
+    return buildReviewPermission(purchased, alreadyReviewed);
+  } catch {
+    return { canReview: false, reason: "unknown" };
+  }
 }

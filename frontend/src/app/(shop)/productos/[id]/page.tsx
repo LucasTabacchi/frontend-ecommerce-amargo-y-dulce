@@ -9,7 +9,10 @@ import { ProductReviews } from "@/components/products/ProductReviews";
 import { ProductPurchaseBox } from "./ProductPurchaseBox";
 import { Gallery } from "./Gallery";
 import { getFirstProductImageUrl, getProductGalleryImages } from "@/lib/product-images";
-import { getServerProductReviews } from "@/lib/server/shop-data";
+import {
+  getServerProductReviewPermission,
+  getServerProductReviews,
+} from "@/lib/server/shop-data";
 
 export const dynamic = "force-dynamic";
 export const fetchCache = "force-no-store";
@@ -161,17 +164,24 @@ async function ProductReviewsSection({
   productDocumentId?: string;
   productId: number;
 }) {
-  const initialReviews = await getServerProductReviews({
-    productDocumentId,
-    productId,
-    pageSize: 20,
-  });
+  const [initialReviews, initialReviewPermission] = await Promise.all([
+    getServerProductReviews({
+      productDocumentId,
+      productId,
+      pageSize: 20,
+    }),
+    getServerProductReviewPermission({
+      productDocumentId,
+      productId,
+    }),
+  ]);
 
   return (
     <ProductReviews
       productDocumentId={productDocumentId}
       productId={productId}
       initialReviews={initialReviews}
+      initialReviewPermission={initialReviewPermission}
     />
   );
 }

@@ -95,11 +95,13 @@ export function ProductReviews({
   productId,
   pageSize = 20,
   initialReviews,
+  initialReviewPermission,
 }: {
   productDocumentId?: string;
   productId?: number;
   pageSize?: number;
   initialReviews?: ReviewItem[];
+  initialReviewPermission?: ReviewPermission;
 }) {
   const hasInitialReviews = initialReviews !== undefined;
   const canFilter =
@@ -108,7 +110,9 @@ export function ProductReviews({
 
   const [loading, setLoading] = useState(!hasInitialReviews);
   const [reviews, setReviews] = useState<ReviewItem[]>(() => initialReviews ?? []);
-  const [reviewPermission, setReviewPermission] = useState<ReviewPermission | null>(null);
+  const [reviewPermission, setReviewPermission] = useState<ReviewPermission | null>(
+    () => initialReviewPermission ?? null
+  );
   const [error, setError] = useState<string | null>(null);
 
   // form
@@ -121,6 +125,10 @@ export function ProductReviews({
   const authUser = useAuthStore((s) => s.user);
   const authChecked = useAuthStore((s) => s.resolved);
   const isStoreAdmin = Boolean(authUser?.isStoreAdmin);
+  const canShowReviewForm =
+    !isStoreAdmin &&
+    reviewPermission?.canReview === true &&
+    (authChecked || initialReviewPermission?.canReview === true);
 
   async function load(options?: { silent?: boolean }) {
     if (!canFilter) return;
@@ -299,7 +307,7 @@ export function ProductReviews({
       )}
 
       {/* ✅ FORM */}
-      {authChecked && !isStoreAdmin && reviewPermission?.canReview ? (
+      {canShowReviewForm ? (
         <form onSubmit={submitReview} className="mt-6 rounded-2xl bg-neutral-50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="text-sm font-extrabold text-neutral-900">
