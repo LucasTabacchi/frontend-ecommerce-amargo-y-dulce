@@ -90,6 +90,13 @@ function discountLabel(c: CouponRow) {
   return "Beneficio especial";
 }
 
+function formatDate(value?: string | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toLocaleDateString("es-AR");
+}
+
 function isCouponActiveNow(c: CouponRow) {
   const nowMs = Date.now();
   const startMs = c.startAt ? Date.parse(String(c.startAt)) : NaN;
@@ -170,39 +177,87 @@ export default async function CuponesPage() {
           {rows.map((c) => {
             const minSubtotal = Number(c.minSubtotal ?? 0);
             const maxDiscount = Number(c.maxDiscount ?? 0);
-            const expires = c.endAt ? new Date(c.endAt) : null;
+            const expires = formatDate(c.endAt);
+            const isFreeShipping = String(c.discountType || "").trim().toLowerCase() === "free_shipping";
+
             return (
               <article
                 key={c.id}
-                className="rounded-xl border border-neutral-200 bg-white p-6 shadow-sm"
+                className="group relative overflow-hidden rounded-lg border border-red-100 bg-gradient-to-br from-white via-[#fff8f3] to-[#f4e8dd] shadow-sm transition duration-200 hover:-translate-y-0.5 hover:border-red-200 hover:shadow-lg"
               >
-                <div className="text-lg font-extrabold text-neutral-900">{c.name || "Cupón"}</div>
-                <div className="mt-3 space-y-1 text-sm text-neutral-700">
-                  <div>
-                    Beneficio:{" "}
-                    <span className="font-semibold">{discountLabel(c)}</span>
+                <div className="absolute inset-y-0 left-0 w-2 bg-gradient-to-b from-red-600 via-red-500 to-[#7a2e18]" />
+                <div className="absolute -left-3 top-1/2 h-6 w-6 -translate-y-1/2 rounded-full border border-red-100 bg-[#f8f1eb]" />
+                <div className="flex min-h-full flex-col p-6 pl-7">
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div>
+                      <div className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-red-700">
+                        {isFreeShipping ? "Beneficio de envío" : "Cupón especial"}
+                      </div>
+                      <h2 className="mt-1 text-xl font-extrabold text-neutral-950">
+                        {c.name || "Cupón"}
+                      </h2>
+                    </div>
+                    <div className="rounded-full bg-red-600 px-3 py-1 text-xs font-extrabold uppercase tracking-wide text-white shadow-sm">
+                      {discountLabel(c)}
+                    </div>
                   </div>
-                  {minSubtotal > 0 ? (
-                    <div>
-                      Compra mínima:{" "}
-                      <span className="font-semibold">{formatARS(minSubtotal)}</span>
+
+                  {c.description ? (
+                    <p className="mt-3 text-sm leading-6 text-neutral-700">{c.description}</p>
+                  ) : null}
+
+                  <div className="mt-5 rounded-md border border-dashed border-red-300 bg-white/75 px-4 py-3">
+                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500">
+                      Código
+                    </div>
+                    <div className="mt-1 font-mono text-lg font-extrabold tracking-wide text-neutral-950">
+                      {c.code}
+                    </div>
+                  </div>
+
+                  <dl className="mt-5 grid gap-3 text-sm text-neutral-700 sm:grid-cols-2">
+                    <div className="rounded-md bg-white/70 px-3 py-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        Compra mínima
+                      </dt>
+                      <dd className="mt-1 font-bold text-neutral-950">
+                        {minSubtotal > 0 ? formatARS(minSubtotal) : "Sin mínimo"}
+                      </dd>
+                    </div>
+                    <div className="rounded-md bg-white/70 px-3 py-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        Tope
+                      </dt>
+                      <dd className="mt-1 font-bold text-neutral-950">
+                        {maxDiscount > 0 ? formatARS(maxDiscount) : "Sin tope"}
+                      </dd>
+                    </div>
+                    <div className="rounded-md bg-white/70 px-3 py-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        Vencimiento
+                      </dt>
+                      <dd className="mt-1 font-bold text-neutral-950">
+                        {expires || "Sin fecha"}
+                      </dd>
+                    </div>
+                    <div className="rounded-md bg-white/70 px-3 py-2">
+                      <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+                        Combinable
+                      </dt>
+                      <dd className="mt-1 font-bold text-neutral-950">
+                        {c.combinable ? "Sí" : "No"}
+                      </dd>
+                    </div>
+                  </dl>
+
+                  {c.scopeLabel ? (
+                    <div className="mt-4 inline-flex w-fit rounded-full bg-red-50 px-3 py-1 text-xs font-semibold text-red-700">
+                      {c.scopeLabel}
                     </div>
                   ) : null}
-                  {maxDiscount > 0 ? (
-                    <div>
-                      Tope de descuento:{" "}
-                      <span className="font-semibold">{formatARS(maxDiscount)}</span>
-                    </div>
-                  ) : null}
-                  {c.scopeLabel ? <div>{c.scopeLabel}</div> : null}
-                  {expires ? (
-                    <div className="text-xs text-neutral-500">
-                      Vence: {expires.toLocaleDateString("es-AR")}
-                    </div>
-                  ) : null}
-                  <div>
-                    Combinable:{" "}
-                    <span className="font-semibold">{c.combinable ? "Sí" : "No"}</span>
+
+                  <div className="mt-5 border-t border-red-100 pt-3 text-xs text-neutral-500">
+                    Disponible para seleccionar en el checkout si cumple las condiciones de la compra.
                   </div>
                 </div>
               </article>
