@@ -206,15 +206,6 @@ export default async function CuponesPage() {
                     <p className="mt-3 text-sm leading-6 text-neutral-700">{c.description}</p>
                   ) : null}
 
-                  <div className="mt-5 rounded-md border border-dashed border-red-300 bg-white/75 px-4 py-3">
-                    <div className="text-[11px] font-bold uppercase tracking-[0.16em] text-neutral-500">
-                      Código
-                    </div>
-                    <div className="mt-1 font-mono text-lg font-extrabold tracking-wide text-neutral-950">
-                      {c.code}
-                    </div>
-                  </div>
-
                   <dl className="mt-5 grid gap-3 text-sm text-neutral-700 sm:grid-cols-2">
                     <div className="rounded-md bg-white/70 px-3 py-2">
                       <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
