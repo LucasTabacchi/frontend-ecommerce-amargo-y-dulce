@@ -4,6 +4,8 @@ import { HomeBestSellers } from "@/components/home/HomeBestSellers";
 import { strapiGet } from "@/lib/strapi";
 import { toCardItem } from "@/lib/strapi-mappers";
 import { HeroCarousel } from "@/components/home/HeroCarousel";
+import { GiftOccasion } from "@/components/home/GiftOccasion";
+import { BrandDifferentials } from "@/components/home/BrandDifferentials";
 import { Metadata } from "next";
 import { Suspense } from "react";
 import { isPubliclyVisibleProduct } from "@/lib/product-visibility";
@@ -134,11 +136,17 @@ export default function HomePage() {
         </div>
       </Container>
       <Container>
+        <GiftOccasion />
+      </Container>
+      <Container>
         <div className="pb-16">
           <Suspense fallback={<HomeBestSellersFallback />}>
             <HomeBestSellersSection />
           </Suspense>
         </div>
+      </Container>
+      <Container>
+        <BrandDifferentials />
       </Container>
     </>
   );
