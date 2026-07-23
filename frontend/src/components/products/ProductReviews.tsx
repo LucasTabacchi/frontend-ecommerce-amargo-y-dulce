@@ -246,7 +246,7 @@ export function ProductReviews({
               ? "Cargando..."
               : count > 0
               ? "Lo que opinan quienes compraron"
-              : "Todavía no hay reseñas"}
+              : "Opiniones de compradores verificados"}
           </p>
         </div>
 
