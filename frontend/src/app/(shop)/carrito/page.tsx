@@ -321,7 +321,6 @@ export default function CarritoPage() {
     total: 0,
     appliedPromotions: [],
   });
-  const [isQuoting, setIsQuoting] = useState(false);
 
   // El backend trae precios reales y calcula promociones desde id, documentId o slug.
   const payloadItems = useMemo(() => {
@@ -337,14 +336,11 @@ export default function CarritoPage() {
 
     if (!payloadItems.length) {
       setQuote({ subtotal: 0, discountTotal: 0, total: 0, appliedPromotions: [] });
-      setIsQuoting(false);
       return;
     }
 
     const t = setTimeout(async () => {
       try {
-        setIsQuoting(true);
-
         const res = await fetch("/api/promotions/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -375,8 +371,6 @@ export default function CarritoPage() {
         if (!alive) return;
         const s = Math.round(cartAvailability.purchasableSubtotal);
         setQuote({ subtotal: s, discountTotal: 0, total: s, appliedPromotions: [] });
-      } finally {
-        if (alive) setIsQuoting(false);
       }
     }, 250);
 
@@ -722,14 +716,6 @@ export default function CarritoPage() {
                 </span>
               </div>
 
-              {isQuoting ? (
-                <div className="pt-2 text-xs text-neutral-500">Calculando promociones…</div>
-              ) : null}
-
-              {availabilityLoading ? (
-                <div className="pt-2 text-xs text-neutral-500">Verificando stock actual…</div>
-              ) : null}
-
               {cartAvailability.hasBlockedItems ? (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
                   {cartAvailability.insufficientCount > 0 ? (
@@ -778,13 +764,11 @@ export default function CarritoPage() {
                 ? cartAvailability.insufficientCount > 0
                   ? "Corregí el carrito"
                   : "Sin stock"
-                : availabilityLoading
-                ? "Verificando stock..."
                 : "Finalizar compra"}
             </Link>
 
             <p className="mt-3 text-center text-xs text-neutral-500">
-              El total final se calcula con reglas de promociones en el backend.
+              El total final se confirma antes de realizar el pago.
             </p>
           </aside>
         </div>
