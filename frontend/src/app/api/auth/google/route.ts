@@ -2,6 +2,7 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import {
+  buildGoogleProfileUserPatch,
   GOOGLE_PROFILE_COOKIE,
   encodeGoogleProfileName,
   mergeGoogleProfileName,
@@ -71,6 +72,39 @@ async function fetchGoogleProfileName(accessToken: string): Promise<GoogleProfil
     return normalizeGoogleProfileName(await res.json().catch(() => null));
   } catch {
     return null;
+  }
+}
+
+async function syncGoogleProfileToStrapiUser(params: {
+  strapiBase: string;
+  jwt: string;
+  user: any;
+  googleProfile: GoogleProfileName | null;
+}) {
+  const { strapiBase, jwt, user, googleProfile } = params;
+  const userId = Number(user?.id);
+  const payload = buildGoogleProfileUserPatch(user, googleProfile);
+
+  if (!Number.isFinite(userId) || userId <= 0 || !payload) return user;
+
+  try {
+    const res = await fetch(`${strapiBase}/api/users/${Math.trunc(userId)}`, {
+      method: "PUT",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      cache: "no-store",
+    });
+
+    const updated = await res.json().catch(() => null);
+    if (!res.ok || !updated || typeof updated !== "object") return user;
+
+    return { ...user, ...updated };
+  } catch (error) {
+    console.error("[api/auth/google] No se pudo sincronizar el perfil de Google:", error);
+    return user;
   }
 }
 
@@ -170,6 +204,13 @@ export async function GET(req: Request) {
     return NextResponse.redirect(back, { status: 302 });
   }
 
+  await syncGoogleProfileToStrapiUser({
+    strapiBase: STRAPI,
+    jwt: ex.jwt,
+    user: ex.user,
+    googleProfile,
+  });
+
   const res = NextResponse.redirect(back, { status: 302 });
   res.headers.set("Cache-Control", "no-store");
 
@@ -223,8 +264,14 @@ export async function POST(req: Request) {
     });
     const meJson = await meRes.json().catch(() => null);
     if (meRes.ok && meJson) {
+      const syncedUser = await syncGoogleProfileToStrapiUser({
+        strapiBase: STRAPI,
+        jwt: existingJwt,
+        user: meJson,
+        googleProfile,
+      });
       const res = NextResponse.json(
-        { user: mergeGoogleProfileName(meJson, googleProfile), reusedSession: true },
+        { user: mergeGoogleProfileName(syncedUser, googleProfile), reusedSession: true },
         { status: 200 }
       );
       setGoogleProfileCookie(res, googleProfile, isHttps(req));
@@ -243,7 +290,14 @@ export async function POST(req: Request) {
 
   const isHttpsReq = req.headers.get("x-forwarded-proto")?.includes("https") ?? false;
 
-  const res = NextResponse.json({ user: mergeGoogleProfileName(ex.user, googleProfile) });
+  const syncedUser = await syncGoogleProfileToStrapiUser({
+    strapiBase: STRAPI,
+    jwt: ex.jwt,
+    user: ex.user,
+    googleProfile,
+  });
+
+  const res = NextResponse.json({ user: mergeGoogleProfileName(syncedUser, googleProfile) });
   res.cookies.set("strapi_jwt", ex.jwt, {
     httpOnly: true,
     secure: isHttpsReq,

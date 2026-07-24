@@ -27,6 +27,7 @@ function loadTsModule(relativePath) {
 }
 
 const {
+  buildGoogleProfileUserPatch,
   decodeGoogleProfileName,
   encodeGoogleProfileName,
   mergeGoogleProfileName,
@@ -89,6 +90,65 @@ test("does not merge a Google profile from a different email", () => {
   };
 
   assert.deepEqual(mergeGoogleProfileName(user, googleProfile), user);
+});
+
+test("builds a Strapi user patch with missing Google profile fields", () => {
+  const user = {
+    id: 1,
+    email: "lucas@example.com",
+    username: "lucas@example.com",
+    name: "",
+    firstName: null,
+    lastName: undefined,
+  };
+  const googleProfile = {
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
+    email: "lucas@example.com",
+  };
+
+  assert.deepEqual(buildGoogleProfileUserPatch(user, googleProfile), {
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
+  });
+});
+
+test("does not overwrite existing Strapi profile fields with Google data", () => {
+  const user = {
+    id: 1,
+    email: "lucas@example.com",
+    name: "Nombre Manual",
+    firstName: "Nombre",
+    lastName: "Manual",
+  };
+  const googleProfile = {
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
+    email: "lucas@example.com",
+  };
+
+  assert.equal(buildGoogleProfileUserPatch(user, googleProfile), null);
+});
+
+test("does not build a Strapi user patch for a different Google account", () => {
+  const user = {
+    id: 1,
+    email: "lucas@example.com",
+    name: "",
+    firstName: "",
+    lastName: "",
+  };
+  const googleProfile = {
+    name: "Otra Cuenta",
+    firstName: "Otra",
+    lastName: "Cuenta",
+    email: "otra@example.com",
+  };
+
+  assert.equal(buildGoogleProfileUserPatch(user, googleProfile), null);
 });
 
 test("round trips the Google profile name through a cookie-safe value", () => {

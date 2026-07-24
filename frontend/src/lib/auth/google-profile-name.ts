@@ -59,6 +59,28 @@ export function mergeGoogleProfileName<T extends Record<string, any> | null | un
   };
 }
 
+export function buildGoogleProfileUserPatch(
+  user: Record<string, any> | null | undefined,
+  googleProfile: GoogleProfileName | null | undefined
+) {
+  if (!user || !googleProfile) return null;
+
+  const userEmail = safeString(user.email)?.toLowerCase();
+  const googleEmail = safeString(googleProfile.email)?.toLowerCase();
+  if (userEmail && googleEmail && userEmail !== googleEmail) return null;
+
+  const payload: Record<string, string> = {};
+  const name = safeString(googleProfile.name);
+  const firstName = safeString(googleProfile.firstName);
+  const lastName = safeString(googleProfile.lastName);
+
+  if (name && !safeString(user.name)) payload.name = name;
+  if (firstName && !safeString(user.firstName)) payload.firstName = firstName;
+  if (lastName && !safeString(user.lastName)) payload.lastName = lastName;
+
+  return Object.keys(payload).length > 0 ? payload : null;
+}
+
 export function encodeGoogleProfileName(profile: GoogleProfileName | null | undefined) {
   const normalized = normalizeGoogleProfileName(profile);
   if (!normalized) return "";
