@@ -233,10 +233,10 @@ export default async function CuponesPage() {
                     </div>
                     <div className="rounded-md bg-white/70 px-3 py-2">
                       <dt className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
-                        Combinable
+                        Aplicación
                       </dt>
                       <dd className="mt-1 font-bold text-neutral-950">
-                        {c.combinable ? "Sí" : "No"}
+                        No acumulable con productos en oferta
                       </dd>
                     </div>
                   </dl>
