@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "@/components/layout/Container";
+import { formatOrderDateTime } from "@/lib/order-date";
 
 type OrderRow = {
   id: string | number;
@@ -459,10 +460,7 @@ function AdminPedidosPageContent() {
             <div className="mt-8 space-y-4">
               {orders.map((o) => {
                 const totalNum = typeof o.total === "number" ? o.total : Number(o.total || 0);
-                const date = o.createdAt ? new Date(o.createdAt) : null;
-                const dateLabel = date
-                  ? date.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })
-                  : "";
+                const dateLabel = formatOrderDateTime(o.createdAt);
                 const action = getActionByStatus(o.orderStatus);
                 const rowId = String(o.id);
                 const isUpdatingThis = updatingId === rowId;

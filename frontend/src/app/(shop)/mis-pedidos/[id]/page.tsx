@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/layout/Container";
+import { formatOrderDateTime } from "@/lib/order-date";
 import { requireServerAuthUser } from "@/lib/server/auth-user";
 import { getServerCustomerOrderById } from "@/lib/server/shop-data";
 import { RetryPaymentButton } from "./RetryPaymentButton";
@@ -149,12 +150,7 @@ export default async function PedidoDetallePage({
 
   const totalNum =
     typeof order.total === "number" ? order.total : Number(order.total || 0);
-  const createdLabel = order.createdAt
-    ? new Date(order.createdAt).toLocaleString("es-AR", {
-        dateStyle: "medium",
-        timeStyle: "short",
-      })
-    : "";
+  const createdLabel = formatOrderDateTime(order.createdAt);
   const retryOrderId = String(order.documentId || order.id || "").trim();
 
   return (

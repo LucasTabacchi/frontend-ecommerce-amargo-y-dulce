@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { Container } from "@/components/layout/Container";
+import { formatOrderDateTime } from "@/lib/order-date";
 import { requireServerAuthUser } from "@/lib/server/auth-user";
 import { getServerCustomerOrdersPaginated } from "@/lib/server/shop-data";
 import type { ServerOrder } from "@/lib/server/shop-data";
@@ -196,10 +197,7 @@ export default async function MisPedidosPage({
                   const totalNum =
                     typeof order.total === "number" ? order.total : Number(order.total || 0);
 
-                  const date = order.createdAt ? new Date(order.createdAt) : null;
-                  const dateLabel = date
-                    ? date.toLocaleString("es-AR", { dateStyle: "medium", timeStyle: "short" })
-                    : "";
+                  const dateLabel = formatOrderDateTime(order.createdAt);
 
                   return (
                     <Link
