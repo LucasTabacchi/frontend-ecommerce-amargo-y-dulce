@@ -1,6 +1,12 @@
 // src/app/api/mp/create-preference/route.ts
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+  buildRetriedOrderItems,
+  buildRetriedOrderUpdateData,
+  buildUserScopedOrderLookupPath,
+  canRetryOrderPayment,
+} from "@/lib/retry-payment";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -135,13 +141,19 @@ async function fetchStrapiJson(url: string, jwt: string) {
 /**
  * ✅ Busca Order por documentId usando filters (porque /orders/:id espera id numérico)
  */
-async function getOrderByDocumentId(strapiBase: string, jwt: string, documentId: string) {
-  const sp = new URLSearchParams();
-  sp.set("populate", "*");
-  sp.set("filters[documentId][$eq]", documentId);
-  sp.set("pagination[pageSize]", "1");
-
-  const url = `${strapiBase}/api/orders?${sp.toString()}`;
+async function getOrderByDocumentId(params: {
+  strapiBase: string;
+  jwt: string;
+  documentId: string;
+  user: any;
+}) {
+  const { strapiBase, jwt, documentId, user } = params;
+  const path = buildUserScopedOrderLookupPath({
+    orderId: documentId,
+    userDocumentId: user?.documentId,
+    userId: user?.id,
+  });
+  const url = `${strapiBase}${path}`;
   const { r, json } = await fetchStrapiJson(url, jwt);
 
   if (!r.ok) return { ok: false as const, status: r.status, json };
@@ -151,6 +163,26 @@ async function getOrderByDocumentId(strapiBase: string, jwt: string, documentId:
 
   const flat = row?.attributes ? { id: row.id, documentId: row.documentId, ...row.attributes } : row;
   return { ok: true as const, data: flat, raw: row };
+}
+
+async function updateOrderInStrapi(params: {
+  strapiBase: string;
+  token: string;
+  orderDocumentId: string;
+  data: any;
+}) {
+  const { strapiBase, token, orderDocumentId, data } = params;
+  const res = await fetch(`${strapiBase}/api/orders/${encodeURIComponent(orderDocumentId)}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ data }),
+    cache: "no-store",
+  });
+  const json = await res.json().catch(() => null);
+  return { res, json };
 }
 
 /* ===================== STOCK VALIDATION ===================== */
@@ -171,7 +203,7 @@ async function validateStockOrThrow(strapiBase: string, jwt: string, items: any[
   }
 
   const docIds = Array.from(need.keys());
-  if (!docIds.length) return;
+  if (!docIds.length) return new Map<string, any>();
 
   const sp = new URLSearchParams();
   sp.set("pagination[pageSize]", String(Math.min(docIds.length, 100)));
@@ -222,6 +254,8 @@ async function validateStockOrThrow(strapiBase: string, jwt: string, items: any[
     err.problems = problems;
     throw err;
   }
+
+  return byDoc;
 }
 
 /* ===================== ROUTE ===================== */
@@ -275,7 +309,12 @@ export async function POST(req: Request) {
   }
 
   // ✅ Traer orden por documentId (filters)
-  const orderRes = await getOrderByDocumentId(strapiBase, jwt, orderId);
+  const orderRes = await getOrderByDocumentId({
+    strapiBase,
+    jwt,
+    documentId: orderId,
+    user: meRes.json,
+  });
   if (!orderRes.ok) {
     return NextResponse.json(
       {
@@ -289,6 +328,15 @@ export async function POST(req: Request) {
 
   const order = orderRes.data;
   const orderNumber = order?.orderNumber ? String(order.orderNumber) : null;
+  if (!canRetryOrderPayment(order?.orderStatus)) {
+    return NextResponse.json(
+      {
+        error: "Solo se puede reintentar el pago de pedidos pendientes.",
+        status: order?.orderStatus ?? null,
+      },
+      { status: 409 }
+    );
+  }
 
   const mpExternalReference =
     typeof order?.mpExternalReference === "string" && order.mpExternalReference.trim()
@@ -310,17 +358,19 @@ export async function POST(req: Request) {
   }
 
   // ✅ Validar stock
+  let productsByDocumentId: Map<string, any>;
   try {
-    await validateStockOrThrow(strapiBase, jwt, items);
+    productsByDocumentId = await validateStockOrThrow(strapiBase, jwt, items);
   } catch (e: any) {
-      if (e?.code === "OUT_OF_STOCK") {
+    if (e?.code === "OUT_OF_STOCK") {
       return NextResponse.json({ error: "Sin stock suficiente", code: "OUT_OF_STOCK", problems: e.problems ?? [] }, { status: 409 });
     }
     return NextResponse.json({ error: e?.message || "Error validando stock", code: e?.code, details: e?.details }, { status: 500 });
   }
 
   // ✅ Recalcular promociones y total del lado servidor (no confiar en cliente)
-  const quoteItems = buildQuoteItems(items);
+  const refreshedItems = buildRetriedOrderItems(items, productsByDocumentId);
+  const quoteItems = buildQuoteItems(refreshedItems);
   if (!quoteItems.length) {
     return NextResponse.json(
       { error: "La orden no tiene items con productId/documentId/slug válido." },
@@ -368,6 +418,31 @@ export async function POST(req: Request) {
     );
   }
 
+  const updateData = buildRetriedOrderUpdateData({
+    quoteJson,
+    shippingCost,
+    totalNumber,
+    items: refreshedItems,
+    fallbackCoupon: coupon,
+  });
+  const orderUpdateToken = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN || jwt;
+  const updateRes = await updateOrderInStrapi({
+    strapiBase,
+    token: orderUpdateToken,
+    orderDocumentId: orderId,
+    data: updateData,
+  });
+  if (!updateRes.res.ok) {
+    return NextResponse.json(
+      {
+        error: "No se pudo actualizar la orden con precios y promociones vigentes.",
+        status: updateRes.res.status,
+        details: updateRes.json,
+      },
+      { status: updateRes.res.status || 500 }
+    );
+  }
+
   // Cobro por 1 ítem = total final
   const chargeItems: MPItem[] = [
     {
@@ -398,10 +473,10 @@ export async function POST(req: Request) {
         mpExternalReference: external_reference,
         shippingMethod,
         pickupPoint: order?.pickupPoint ?? undefined,
-        total: String(Math.round(totalNumber)),
-        subtotal: String(Math.round(Number(quoteJson?.subtotal ?? 0))),
-        discountTotal: String(Math.round(Number(quoteJson?.discountTotal ?? 0))),
-        coupon: coupon ?? undefined,
+        total: String(updateData.total),
+        subtotal: String(updateData.subtotal),
+        discountTotal: String(updateData.discountTotal),
+        coupon: updateData.coupon ?? undefined,
       }),
     };
 

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { formatOrderDateTime } from "@/lib/order-date";
+import { canRetryOrderPayment } from "@/lib/retry-payment";
 import { requireServerAuthUser } from "@/lib/server/auth-user";
 import { getServerCustomerOrderById } from "@/lib/server/shop-data";
 import { RetryPaymentButton } from "./RetryPaymentButton";
@@ -27,8 +28,7 @@ function normalizeStatus(s?: string | null) {
 }
 
 function canRetryPaymentByStatus(status?: string | null) {
-  const s = normalizeStatus(status);
-  return s === "pending" || s === "failed" || s === "cancelled" || s === "unknown";
+  return canRetryOrderPayment(status);
 }
 
 function StatusPill({ status }: { status: string }) {
