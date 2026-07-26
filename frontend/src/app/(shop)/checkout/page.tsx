@@ -738,51 +738,6 @@ function CheckoutPageContent() {
 
   /* ================= submit ================= */
 
-  async function fetchFinalQuote(): Promise<Quote> {
-    const fallbackS = Math.round(uiSubtotal);
-    try {
-      const res = await fetch("/api/promotions/quote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          items: payloadItems,
-          coupon: cartHasDiscount ? "" : coupon.trim(),
-          shipping: 0,
-        }),
-        cache: "no-store",
-      });
-
-      const data = await res.json().catch(() => null);
-      if (!res.ok) {
-        return {
-          subtotal: fallbackS,
-          discountTotal: 0,
-          total: fallbackS,
-          appliedPromotions: [],
-          lineDiscounts: [],
-          reasonCode: null,
-          message: null,
-          appliesToMessage: null,
-          coupon: null,
-        };
-      }
-
-      return normalizeQuote(data, fallbackS);
-    } catch {
-      return {
-        subtotal: fallbackS,
-        discountTotal: 0,
-        total: fallbackS,
-        appliedPromotions: [],
-        lineDiscounts: [],
-        reasonCode: null,
-        message: null,
-        appliesToMessage: null,
-        coupon: null,
-      };
-    }
-  }
-
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError(null);
@@ -823,9 +778,14 @@ function CheckoutPageContent() {
     try {
       setLoading(true);
 
-      await persistDniIfLogged(trimmedDni);
+      void persistDniIfLogged(trimmedDni);
 
-      const finalQuote = await fetchFinalQuote();
+      const finalQuote: Quote = {
+        ...quote,
+        subtotal: effectiveSubtotal,
+        discountTotal: effectiveDiscount,
+        total: effectiveTotal,
+      };
       const mpExternalReference = safeUUID();
 
       const totalNum = Math.round(toNum(finalQuote?.total, 0));

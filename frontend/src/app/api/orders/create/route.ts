@@ -119,17 +119,21 @@ function isStoreAdmin(user: any) {
 }
 
 async function fetchUserPendingOrders(strapiBase: string, jwt: string, user: any) {
-  const path = buildPendingOrderLookupPath({
-    userDocumentId: user?.documentId,
-    userId: user?.id,
-  });
-  const res = await fetch(`${strapiBase}${path}`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-    cache: "no-store",
-  });
-  const json = await strapiJSON(res);
-  if (!res.ok) return [];
-  return Array.isArray(json?.data) ? json.data : [];
+  try {
+    const path = buildPendingOrderLookupPath({
+      userDocumentId: user?.documentId,
+      userId: user?.id,
+    });
+    const res = await fetch(`${strapiBase}${path}`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+      cache: "no-store",
+    });
+    const json = await strapiJSON(res);
+    if (!res.ok) return [];
+    return Array.isArray(json?.data) ? json.data : [];
+  } catch {
+    return [];
+  }
 }
 
 export async function POST(req: Request) {
@@ -238,6 +242,8 @@ export async function POST(req: Request) {
     ? incomingData.coupon.trim()
     : "";
 
+  const pendingOrdersPromise = fetchUserPendingOrders(strapiBase, jwt, meJson);
+
   const quoteRes = await fetch(`${strapiBase}/api/promotions/quote`, {
     method: "POST",
     headers: {
@@ -338,7 +344,7 @@ export async function POST(req: Request) {
     mpExternalReference,
   };
 
-  const pendingOrders = await fetchUserPendingOrders(strapiBase, jwt, meJson);
+  const pendingOrders = await pendingOrdersPromise;
   const reusableOrder = findMatchingPendingOrder(pendingOrders, data);
 
   if (reusableOrder) {
