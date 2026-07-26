@@ -760,7 +760,7 @@ export default function CarritoPage() {
             >
               {isStoreAdmin
                 ? "No disponible"
-                : cartAvailability.checkoutBlocked
+                : items.length > 0 && cartAvailability.checkoutBlocked
                 ? cartAvailability.insufficientCount > 0
                   ? "Corregí el carrito"
                   : "Sin stock"
