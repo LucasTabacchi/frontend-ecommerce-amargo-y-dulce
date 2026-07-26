@@ -17,8 +17,17 @@ function normalizeStrapiBase(url: string) {
   return u;
 }
 
+function normalizeBaseUrl(url: string) {
+  const u = String(url ?? "").trim();
+  return u.endsWith("/") ? u.slice(0, -1) : u;
+}
+
 function isNonEmptyString(v: any): v is string {
   return typeof v === "string" && v.trim().length > 0;
+}
+
+function isHttpUrl(url: string) {
+  return /^https?:\/\//i.test(url);
 }
 
 function safeUUID() {
@@ -33,6 +42,21 @@ async function strapiJSON(res: Response) {
 
 function badRequest(msg: string, fields?: Record<string, any>) {
   return NextResponse.json({ error: msg, fields }, { status: 400 });
+}
+
+function cleanObject<T extends Record<string, any>>(obj: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined && v !== null && v !== "")
+  ) as Partial<T>;
+}
+
+function pickMpErrorMessage(payload: any, fallback: string) {
+  if (!payload) return fallback;
+  if (typeof payload === "string") return payload;
+  if (payload?.message) return payload.message;
+  if (payload?.error) return payload.error;
+  if (payload?.cause?.[0]?.description) return payload.cause[0].description;
+  return fallback;
 }
 
 function readShipping(obj: any) {
@@ -95,6 +119,37 @@ function buildQuoteItems(items: any[]) {
     .filter((it) => (it.id != null || !!it.documentId || !!it.slug) && Number.isFinite(it.qty) && it.qty > 0);
 }
 
+function pickAttr(row: any) {
+  return row?.attributes ?? row ?? {};
+}
+
+function pickDocumentId(row: any): string | null {
+  const attr = pickAttr(row);
+  const v =
+    row?.documentId ??
+    row?.attributes?.documentId ??
+    row?.attributes?.document_id ??
+    attr?.documentId ??
+    attr?.document_id ??
+    null;
+
+  const s = v != null ? String(v).trim() : "";
+  return s ? s : null;
+}
+
+function pickTitle(row: any): string {
+  const attr = pickAttr(row);
+  return String(attr?.title ?? row?.title ?? "Producto");
+}
+
+function pickStock(row: any): number | null {
+  const attr = pickAttr(row);
+  const raw = attr?.stock ?? row?.stock ?? null;
+  if (raw === null || raw === undefined) return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : 0;
+}
+
 /**
  * Lee JWT del usuario desde cookies (probamos varios nombres comunes).
  * Ajustá/limpiá si ya sabés el nombre exacto.
@@ -134,6 +189,172 @@ async function fetchUserPendingOrders(strapiBase: string, jwt: string, user: any
   } catch {
     return [];
   }
+}
+
+async function validateStockForPayment(strapiBase: string, jwt: string, items: any[]) {
+  const need = new Map<string, { requested: number; title?: string }>();
+
+  for (const it of Array.isArray(items) ? items : []) {
+    const doc = String(it?.productDocumentId ?? it?.documentId ?? "").trim();
+    const qty = Number(it?.qty ?? it?.quantity ?? 0);
+    if (!doc || !Number.isFinite(qty) || qty <= 0) continue;
+
+    const prev = need.get(doc);
+    need.set(doc, {
+      requested: (prev?.requested ?? 0) + Math.floor(qty),
+      title: String(it?.title ?? prev?.title ?? "Producto"),
+    });
+  }
+
+  const docIds = Array.from(need.keys());
+  if (!docIds.length) return;
+
+  const sp = new URLSearchParams();
+  sp.set("pagination[pageSize]", String(Math.min(docIds.length, 100)));
+  sp.set("fields[0]", "title");
+  sp.set("fields[1]", "stock");
+  sp.set("fields[2]", "documentId");
+  sp.set("filters[publishedAt][$notNull]", "true");
+  docIds.forEach((doc, i) => sp.set(`filters[$or][${i}][documentId][$eq]`, doc));
+
+  const res = await fetch(`${strapiBase}/api/products?${sp.toString()}`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+    cache: "no-store",
+  });
+  const json = await strapiJSON(res);
+
+  if (!res.ok) {
+    const err: any = new Error("STRAPI_PRODUCTS_FETCH_FAILED");
+    err.code = "STRAPI_PRODUCTS_FETCH_FAILED";
+    err.status = res.status;
+    err.details = json;
+    throw err;
+  }
+
+  const rows = Array.isArray(json?.data) ? json.data : [];
+  const byDoc = new Map<string, any>();
+  for (const row of rows) {
+    const doc = pickDocumentId(row);
+    if (doc) byDoc.set(doc, row);
+  }
+
+  const problems: Array<{ productDocumentId: string; title: string; requested: number; available: number }> = [];
+
+  for (const doc of docIds) {
+    const requested = need.get(doc)!.requested;
+    const row = byDoc.get(doc);
+
+    if (!row) {
+      problems.push({
+        productDocumentId: doc,
+        title: need.get(doc)?.title ?? "Producto",
+        requested,
+        available: 0,
+      });
+      continue;
+    }
+
+    const stock = pickStock(row);
+    if (stock === null) continue;
+
+    if (stock < requested) {
+      problems.push({
+        productDocumentId: doc,
+        title: pickTitle(row),
+        requested,
+        available: stock,
+      });
+    }
+  }
+
+  if (problems.length) {
+    const err: any = new Error("OUT_OF_STOCK");
+    err.code = "OUT_OF_STOCK";
+    err.problems = problems;
+    throw err;
+  }
+}
+
+async function createMercadoPagoPreference(params: {
+  orderId: string;
+  orderNumber: string | null;
+  mpExternalReference: string;
+  data: any;
+  accessToken: string;
+  siteUrl: string;
+}) {
+  const { orderId, orderNumber, mpExternalReference, data, accessToken, siteUrl } = params;
+  const totalNumber = Math.round(Number(data?.total ?? 0));
+
+  if (!Number.isFinite(totalNumber) || totalNumber <= 0) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        { error: "Total final inválido para generar preferencia.", total: totalNumber },
+        { status: 400 }
+      ),
+    };
+  }
+
+  const preferenceBody = {
+    items: [
+      {
+        title: orderNumber ? `Pedido ${orderNumber}` : "Compra Amargo y Dulce",
+        quantity: 1,
+        unit_price: totalNumber,
+        currency_id: "ARS",
+      },
+    ],
+    external_reference: mpExternalReference,
+    back_urls: {
+      success: `${siteUrl}/gracias?status=success&orderId=${encodeURIComponent(orderId)}`,
+      failure: `${siteUrl}/gracias?status=failure&orderId=${encodeURIComponent(orderId)}`,
+      pending: `${siteUrl}/gracias?status=pending&orderId=${encodeURIComponent(orderId)}`,
+    },
+    auto_return: "approved",
+    notification_url: `${siteUrl}/api/mp/webhook`,
+    metadata: cleanObject({
+      orderId,
+      orderNumber: orderNumber ?? undefined,
+      mpExternalReference,
+      shippingMethod: data?.shippingMethod,
+      pickupPoint: data?.pickupPoint ?? undefined,
+      total: String(data?.total ?? totalNumber),
+      subtotal: String(data?.subtotal ?? 0),
+      discountTotal: String(data?.discountTotal ?? 0),
+      coupon: data?.coupon ?? undefined,
+    }),
+  };
+
+  const res = await fetch("https://api.mercadopago.com/checkout/preferences", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(preferenceBody),
+    cache: "no-store",
+  });
+  const pref = await strapiJSON(res);
+
+  if (!res.ok) {
+    return {
+      ok: false as const,
+      response: NextResponse.json(
+        {
+          error: pickMpErrorMessage(pref, "MercadoPago rechazó la preferencia"),
+          status: res.status,
+          details: pref,
+        },
+        { status: res.status || 500 }
+      ),
+    };
+  }
+
+  return {
+    ok: true as const,
+    pref,
+  };
 }
 
 export async function POST(req: Request) {
@@ -193,6 +414,8 @@ export async function POST(req: Request) {
     );
   }
 
+  const shouldCreatePaymentPreference = incomingData.createPaymentPreference === true;
+
   // ===================== VALIDACIONES =====================
 
   const name = isNonEmptyString(incomingData.name) ? incomingData.name.trim() : "";
@@ -243,6 +466,12 @@ export async function POST(req: Request) {
     : "";
 
   const pendingOrdersPromise = fetchUserPendingOrders(strapiBase, jwt, meJson);
+  const stockValidationPromise = shouldCreatePaymentPreference
+    ? validateStockForPayment(strapiBase, jwt, items).then(
+        () => null,
+        (error) => error
+      )
+    : Promise.resolve(null);
 
   const quoteRes = await fetch(`${strapiBase}/api/promotions/quote`, {
     method: "POST",
@@ -271,6 +500,26 @@ export async function POST(req: Request) {
   const promoTotal = readMoney(quoteJson?.total, 0);
   if (promoTotal <= 0) {
     return badRequest("Total inválido luego de recalcular promociones.");
+  }
+
+  if (shouldCreatePaymentPreference) {
+    const stockError = await stockValidationPromise;
+    if (stockError) {
+      if (stockError?.code === "OUT_OF_STOCK") {
+        return NextResponse.json(
+          { error: "Sin stock suficiente", code: "OUT_OF_STOCK", problems: stockError.problems ?? [] },
+          { status: 409 }
+        );
+      }
+      return NextResponse.json(
+        {
+          error: stockError?.message || "Error validando stock",
+          code: stockError?.code,
+          details: stockError?.details,
+        },
+        { status: 500 }
+      );
+    }
   }
 
   const shippingCost = calcShippingARS(promoTotal, shippingMethod);
@@ -351,13 +600,60 @@ export async function POST(req: Request) {
     const documentId = reusableOrder?.documentId ? String(reusableOrder.documentId) : null;
     const numericId = reusableOrder?.id != null ? String(reusableOrder.id) : null;
     const orderNumber = reusableOrder?.orderNumber ?? null;
+    const orderId = documentId ?? numericId;
+    const mpExternalReferenceForPayment = reusableOrder?.mpExternalReference ?? mpExternalReference;
+
+    if (shouldCreatePaymentPreference) {
+      if (!orderId) {
+        return NextResponse.json(
+          { error: "La orden pendiente no tiene identificador para generar el pago." },
+          { status: 500 }
+        );
+      }
+
+      const accessToken = process.env.MP_ACCESS_TOKEN;
+      if (!accessToken) {
+        return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN en el servidor" }, { status: 500 });
+      }
+
+      const rawSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+      const siteUrl = normalizeBaseUrl(rawSiteUrl);
+      if (!isHttpUrl(siteUrl)) {
+        return NextResponse.json(
+          { error: "NEXT_PUBLIC_SITE_URL inválida (http/https requerido)", got: rawSiteUrl },
+          { status: 500 }
+        );
+      }
+
+      const prefResult = await createMercadoPagoPreference({
+        orderId,
+        orderNumber,
+        mpExternalReference: mpExternalReferenceForPayment,
+        data,
+        accessToken,
+        siteUrl,
+      });
+      if (!prefResult.ok) return prefResult.response;
+
+      return NextResponse.json({
+        orderId,
+        orderDocumentId: documentId,
+        orderNumericId: numericId,
+        orderNumber,
+        mpExternalReference: mpExternalReferenceForPayment,
+        reusedPendingOrder: true,
+        id: prefResult.pref?.id,
+        init_point: prefResult.pref?.init_point,
+        sandbox_init_point: prefResult.pref?.sandbox_init_point,
+      });
+    }
 
     return NextResponse.json({
-      orderId: documentId ?? numericId,
+      orderId,
       orderDocumentId: documentId,
       orderNumericId: numericId,
       orderNumber,
-      mpExternalReference: reusableOrder?.mpExternalReference ?? mpExternalReference,
+      mpExternalReference: mpExternalReferenceForPayment,
       reusedPendingOrder: true,
     });
   }
@@ -388,9 +684,54 @@ export async function POST(req: Request) {
   const documentId = created?.data?.documentId ? String(created.data.documentId) : null;
   const numericId = created?.data?.id != null ? String(created.data.id) : null;
   const orderNumber = created?.data?.orderNumber ?? null; // si lifecycle ya lo seteo
+  const orderId = documentId ?? numericId;
+
+  if (shouldCreatePaymentPreference) {
+    if (!orderId) {
+      return NextResponse.json(
+        { error: "La orden creada no tiene identificador para generar el pago." },
+        { status: 500 }
+      );
+    }
+
+    const accessToken = process.env.MP_ACCESS_TOKEN;
+    if (!accessToken) {
+      return NextResponse.json({ error: "Falta MP_ACCESS_TOKEN en el servidor" }, { status: 500 });
+    }
+
+    const rawSiteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000";
+    const siteUrl = normalizeBaseUrl(rawSiteUrl);
+    if (!isHttpUrl(siteUrl)) {
+      return NextResponse.json(
+        { error: "NEXT_PUBLIC_SITE_URL inválida (http/https requerido)", got: rawSiteUrl },
+        { status: 500 }
+      );
+    }
+
+    const prefResult = await createMercadoPagoPreference({
+      orderId,
+      orderNumber,
+      mpExternalReference,
+      data,
+      accessToken,
+      siteUrl,
+    });
+    if (!prefResult.ok) return prefResult.response;
+
+    return NextResponse.json({
+      orderId,
+      orderDocumentId: documentId,
+      orderNumericId: numericId,
+      orderNumber,
+      mpExternalReference,
+      id: prefResult.pref?.id,
+      init_point: prefResult.pref?.init_point,
+      sandbox_init_point: prefResult.pref?.sandbox_init_point,
+    });
+  }
 
   return NextResponse.json({
-    orderId: documentId ?? numericId,
+    orderId,
     orderDocumentId: documentId,
     orderNumericId: numericId,
     orderNumber,

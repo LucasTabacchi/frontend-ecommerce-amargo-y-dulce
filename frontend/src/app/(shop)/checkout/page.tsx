@@ -27,12 +27,6 @@ function priceWithOff(price: number, off?: number) {
     : price;
 }
 
-function makeOrderNumber(numericId: number | string) {
-  const n = Number(numericId);
-  if (!Number.isFinite(n)) return "AMG-XXXX";
-  return `AMG-${String(n).padStart(4, "0")}`;
-}
-
 function pickErrorMessage(payload: any, fallback: string) {
   if (!payload) return fallback;
   if (typeof payload.error === "string") return payload.error;
@@ -805,6 +799,7 @@ function CheckoutPageContent() {
           email: trimmedEmail,
           phone: trimmedPhone,
           dni: trimmedDni || null,
+          createPaymentPreference: true,
 
           // ✅ Shipping policy snapshot
           shippingMethod,
@@ -863,59 +858,8 @@ function CheckoutPageContent() {
       });
 
       const created = await createRes.json().catch(() => null);
-      if (!createRes.ok) {
-        throw new Error(pickErrorMessage(created, "No se pudo crear la orden"));
-      }
-
-      const orderId: string | undefined = created?.orderDocumentId || created?.orderId;
-      const orderNumericId: string | undefined = created?.orderNumericId;
-      const mpExtFromServer: string | undefined = created?.mpExternalReference;
-
-      if (!orderId) {
-        throw new Error("No se recibió orderDocumentId/orderId desde /api/orders/create");
-      }
-
-      const mpExternalReferenceFinal = mpExtFromServer || mpExternalReference;
-      const orderNumber = makeOrderNumber(orderNumericId || orderId);
-
-      /* 2️⃣ Preferencia MP */
-      const mpItems = checkoutItems
-        .map((it: any) => ({
-          title: it.title,
-          qty: Math.max(1, Math.floor(Number(it.qty) || 1)),
-          unit_price: Number(priceWithOff(Number(it.price) || 0, it.off)),
-          productDocumentId: it?.documentId ?? it?.productDocumentId ?? null,
-        }))
-        .filter((x: any) => x.qty > 0 && Number.isFinite(x.unit_price) && x.unit_price > 0);
-
-      if (mpItems.length === 0) throw new Error("No hay items válidos para MercadoPago.");
-
-      const prefRes = await fetch("/api/mp/create-preference", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          orderId,
-          orderNumber,
-          mpExternalReference: mpExternalReferenceFinal,
-          items: mpItems,
-
-          // 👇 enviamos el shipping para que el server lo cobre en MP
-          shippingMethod,
-          shippingCost: shippingFinal,
-
-          // Totales informativos
-          total: grandTotalFinal,
-          subtotal: Math.round(toNum(finalQuote.subtotal, 0)),
-          discountTotal: Math.round(toNum(finalQuote.discountTotal, 0)),
-          coupon: cartHasDiscount ? null : coupon.trim() || null,
-          appliedPromotions: finalQuote.appliedPromotions,
-        }),
-      });
-
-      const pref = await prefRes.json().catch(() => null);
-
-      if (prefRes.status === 409 && pref?.code === "OUT_OF_STOCK") {
-        const probs = Array.isArray(pref?.problems) ? pref.problems : [];
+      if (createRes.status === 409 && created?.code === "OUT_OF_STOCK") {
+        const probs = Array.isArray(created?.problems) ? created.problems : [];
         setStockProblems(
           probs.map((p: any) => ({
             productDocumentId: String(p?.productDocumentId ?? p?.documentId ?? ""),
@@ -927,11 +871,17 @@ function CheckoutPageContent() {
         throw new Error("No hay stock suficiente para completar la compra.");
       }
 
-      if (!prefRes.ok) {
-        throw new Error(pickErrorMessage(pref, "No se pudo crear la preferencia MP"));
+      if (!createRes.ok) {
+        throw new Error(pickErrorMessage(created, "No se pudo crear la orden"));
       }
 
-      const checkoutUrl: string | undefined = pref?.sandbox_init_point || pref?.init_point;
+      const orderId: string | undefined = created?.orderDocumentId || created?.orderId;
+
+      if (!orderId) {
+        throw new Error("No se recibió orderDocumentId/orderId desde /api/orders/create");
+      }
+
+      const checkoutUrl: string | undefined = created?.sandbox_init_point || created?.init_point;
       if (!checkoutUrl) {
         throw new Error("MercadoPago no devolvió init_point / sandbox_init_point.");
       }
