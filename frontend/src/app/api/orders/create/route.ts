@@ -2,6 +2,10 @@
 import { NextResponse } from "next/server";
 import crypto from "crypto";
 import { cookies } from "next/headers";
+import {
+  buildPendingOrderLookupPath,
+  findMatchingPendingOrder,
+} from "@/lib/pending-order-reuse";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -112,6 +116,20 @@ function isStoreAdmin(user: any) {
     user?.isStoreAdmin === 1 ||
     user?.isStoreAdmin === "true"
   );
+}
+
+async function fetchUserPendingOrders(strapiBase: string, jwt: string, user: any) {
+  const path = buildPendingOrderLookupPath({
+    userDocumentId: user?.documentId,
+    userId: user?.id,
+  });
+  const res = await fetch(`${strapiBase}${path}`, {
+    headers: { Authorization: `Bearer ${jwt}` },
+    cache: "no-store",
+  });
+  const json = await strapiJSON(res);
+  if (!res.ok) return [];
+  return Array.isArray(json?.data) ? json.data : [];
 }
 
 export async function POST(req: Request) {
@@ -319,6 +337,24 @@ export async function POST(req: Request) {
 
     mpExternalReference,
   };
+
+  const pendingOrders = await fetchUserPendingOrders(strapiBase, jwt, meJson);
+  const reusableOrder = findMatchingPendingOrder(pendingOrders, data);
+
+  if (reusableOrder) {
+    const documentId = reusableOrder?.documentId ? String(reusableOrder.documentId) : null;
+    const numericId = reusableOrder?.id != null ? String(reusableOrder.id) : null;
+    const orderNumber = reusableOrder?.orderNumber ?? null;
+
+    return NextResponse.json({
+      orderId: documentId ?? numericId,
+      orderDocumentId: documentId,
+      orderNumericId: numericId,
+      orderNumber,
+      mpExternalReference: reusableOrder?.mpExternalReference ?? mpExternalReference,
+      reusedPendingOrder: true,
+    });
+  }
 
   const createPayload = { data };
 
