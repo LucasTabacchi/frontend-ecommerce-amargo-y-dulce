@@ -1,4 +1,9 @@
 import { NextResponse } from "next/server";
+import {
+  buildProductProxyRequestOptions,
+  buildProductProxySearch,
+  isFreshProductProxyRequest,
+} from "@/lib/product-proxy-cache";
 
 export const runtime = "nodejs";
 
@@ -22,19 +27,23 @@ export async function GET(
   const token = getToken();
 
   const { searchParams } = new URL(req.url);
-  const qs = searchParams.toString();
+  const fresh = isFreshProductProxyRequest(searchParams);
+  const qs = buildProductProxySearch(searchParams);
 
   const id = encodeURIComponent(ctx.params.id);
   const url = `${base}/api/products/${id}${qs ? `?${qs}` : ""}`;
 
-  const res = await fetch(url, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-    cache: "no-store",
-  });
+  const res = await fetch(url, buildProductProxyRequestOptions({ fresh, token }));
 
   const text = await res.text().catch(() => "");
-  return new NextResponse(text, {
+  const response = new NextResponse(text, {
     status: res.status,
     headers: { "Content-Type": res.headers.get("content-type") ?? "application/json" },
   });
+
+  if (!fresh && res.ok) {
+    response.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=120");
+  }
+
+  return response;
 }

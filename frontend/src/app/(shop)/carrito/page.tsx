@@ -183,6 +183,7 @@ export default function CarritoPage() {
         sp.set("fields[2]", "slug");
         sp.set("fields[3]", "price");
         sp.set("fields[4]", "off");
+        sp.set("fresh", "1");
         docIds.forEach((doc, i) => {
           sp.set(`filters[$or][${i}][documentId][$eq]`, doc);
         });
