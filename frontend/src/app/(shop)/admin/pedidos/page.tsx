@@ -5,6 +5,12 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { formatOrderDateTime } from "@/lib/order-date";
+import {
+  getFulfillmentMethod,
+  getOrderActionByStatus,
+  getOrderStatusLabel,
+  normalizeOrderStatus,
+} from "@/lib/order-fulfillment";
 
 type OrderRow = {
   id: string | number;
@@ -15,6 +21,9 @@ type OrderRow = {
   name?: string | null;
   email?: string | null;
   phone?: string | null;
+  shippingMethod?: string | null;
+  shippingCost?: number | string | null;
+  pickupPoint?: string | null;
   shippingAddress?: { text?: string | null } | null;
   items?: any[] | null;
 };
@@ -85,19 +94,10 @@ function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
 }
 
-function normalizeStatus(s?: string | null) {
-  const v = String(s || "").toLowerCase();
-  if (v === "paid") return "paid";
-  if (v === "pending") return "pending";
-  if (v === "shipped") return "shipped";
-  if (v === "delivered") return "delivered";
-  if (v === "failed") return "failed";
-  if (v === "cancelled") return "cancelled";
-  return "unknown";
-}
-
-function StatusPill({ status }: { status: string }) {
-  const s = normalizeStatus(status);
+function StatusPill({ order }: { order: OrderRow }) {
+  const status = String(order.orderStatus || "");
+  const s = normalizeOrderStatus(status);
+  const fulfillmentMethod = getFulfillmentMethod(order);
   const cls =
     s === "paid"
       ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -111,33 +111,13 @@ function StatusPill({ status }: { status: string }) {
       ? "bg-red-50 text-red-700 ring-red-200"
       : "bg-neutral-50 text-neutral-700 ring-neutral-200";
 
-  const label =
-    s === "paid"
-      ? "Pagado"
-      : s === "pending"
-      ? "Pendiente"
-      : s === "shipped"
-      ? "Enviado"
-      : s === "delivered"
-      ? "Entregado"
-      : s === "failed"
-      ? "Fallido"
-      : s === "cancelled"
-      ? "Cancelado"
-      : "—";
+  const label = getOrderStatusLabel(status, fulfillmentMethod);
 
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${cls}`}>
       {label}
     </span>
   );
-}
-
-function getActionByStatus(status?: string | null) {
-  const s = normalizeStatus(status);
-  if (s === "paid") return { nextStatus: "shipped", label: "Marcar como enviado" };
-  if (s === "shipped") return { nextStatus: "delivered", label: "Marcar como entregado" };
-  return null;
 }
 
 function AdminPedidosLoader() {
@@ -275,7 +255,7 @@ function AdminPedidosPageContent() {
   }, [me, isStoreAdmin, q, statusFilter, page, pageSize]);
 
   async function handleAdvanceStatus(order: OrderRow) {
-    const action = getActionByStatus(order.orderStatus);
+    const action = getOrderActionByStatus(order.orderStatus, getFulfillmentMethod(order));
     if (!action) return;
 
     const orderId = String(order.id || "").trim();
@@ -308,7 +288,10 @@ function AdminPedidosPageContent() {
   }
 
   const filteredInfo = useMemo(() => {
-    const statusLabel = statusFilter === "paid" ? "pagados (para enviar)" : "enviados (para entregar)";
+    const statusLabel =
+      statusFilter === "paid"
+        ? "pagados (para preparar)"
+        : "enviados o listos para retirar";
 
     if (!q.trim()) return `Mostrando pedidos ${statusLabel}.`;
     return `Mostrando ${statusLabel} · búsqueda: "${q.trim()}"`;
@@ -376,8 +359,8 @@ function AdminPedidosPageContent() {
               }}
               className="h-11 rounded-xl border border-neutral-300 px-3 text-sm text-neutral-900"
             >
-              <option value="paid">Pagados (para enviar)</option>
-              <option value="shipped">Enviados (para entregar)</option>
+              <option value="paid">Pagados (para preparar)</option>
+              <option value="shipped">Enviados / listos para retirar</option>
             </select>
             <select
               value={String(pageSize)}
@@ -461,7 +444,7 @@ function AdminPedidosPageContent() {
               {orders.map((o) => {
                 const totalNum = typeof o.total === "number" ? o.total : Number(o.total || 0);
                 const dateLabel = formatOrderDateTime(o.createdAt);
-                const action = getActionByStatus(o.orderStatus);
+                const action = getOrderActionByStatus(o.orderStatus, getFulfillmentMethod(o));
                 const rowId = String(o.id);
                 const isUpdatingThis = updatingId === rowId;
                 const itemRows = normalizeOrderItems(o.items);
@@ -479,7 +462,7 @@ function AdminPedidosPageContent() {
                       </div>
 
                       <div className="flex items-center gap-3">
-                        <StatusPill status={String(o.orderStatus || "")} />
+                        <StatusPill order={o} />
                         <div className="text-right">
                           <div className="text-sm text-neutral-600">Total</div>
                           <div className="text-base font-extrabold text-neutral-900 whitespace-nowrap">

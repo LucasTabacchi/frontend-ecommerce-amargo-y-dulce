@@ -2,37 +2,34 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Container } from "@/components/layout/Container";
 import { formatOrderDateTime } from "@/lib/order-date";
+import {
+  getFulfillmentMethod,
+  getOrderStatusLabel,
+  getTrackingSteps,
+  normalizeOrderStatus,
+  type FulfillmentMethod,
+} from "@/lib/order-fulfillment";
 import { canRetryOrderPayment } from "@/lib/retry-payment";
 import { requireServerAuthUser } from "@/lib/server/auth-user";
 import { getServerCustomerOrderById } from "@/lib/server/shop-data";
 import { RetryPaymentButton } from "./RetryPaymentButton";
 
-type TrackingStep = {
-  key: "pending" | "paid" | "shipped" | "delivered";
-  label: string;
-};
-
 function formatARS(n: number) {
   return n.toLocaleString("es-AR", { style: "currency", currency: "ARS" });
-}
-
-function normalizeStatus(s?: string | null) {
-  const v = String(s || "").toLowerCase();
-  if (v === "paid") return "paid";
-  if (v === "pending") return "pending";
-  if (v === "shipped") return "shipped";
-  if (v === "delivered") return "delivered";
-  if (v === "failed") return "failed";
-  if (v === "cancelled") return "cancelled";
-  return "unknown";
 }
 
 function canRetryPaymentByStatus(status?: string | null) {
   return canRetryOrderPayment(status);
 }
 
-function StatusPill({ status }: { status: string }) {
-  const s = normalizeStatus(status);
+function StatusPill({
+  status,
+  fulfillmentMethod,
+}: {
+  status: string;
+  fulfillmentMethod: FulfillmentMethod;
+}) {
+  const s = normalizeOrderStatus(status);
   const cls =
     s === "paid"
       ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -46,20 +43,7 @@ function StatusPill({ status }: { status: string }) {
       ? "bg-red-50 text-red-700 ring-red-200"
       : "bg-neutral-50 text-neutral-700 ring-neutral-200";
 
-  const label =
-    s === "paid"
-      ? "Pagado"
-      : s === "pending"
-      ? "Pendiente"
-      : s === "shipped"
-      ? "Enviado"
-      : s === "delivered"
-      ? "Entregado"
-      : s === "failed"
-      ? "Fallido"
-      : s === "cancelled"
-      ? "Cancelado"
-      : "—";
+  const label = getOrderStatusLabel(status, fulfillmentMethod);
 
   return (
     <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ring-1 ${cls}`}>
@@ -68,14 +52,15 @@ function StatusPill({ status }: { status: string }) {
   );
 }
 
-function Tracking({ status }: { status: string }) {
-  const normalizedStatus = normalizeStatus(status);
-  const steps: TrackingStep[] = [
-    { key: "pending", label: "Pendiente" },
-    { key: "paid", label: "Pagado" },
-    { key: "shipped", label: "Enviado" },
-    { key: "delivered", label: "Entregado" },
-  ];
+function Tracking({
+  status,
+  fulfillmentMethod,
+}: {
+  status: string;
+  fulfillmentMethod: FulfillmentMethod;
+}) {
+  const normalizedStatus = normalizeOrderStatus(status);
+  const steps = getTrackingSteps(fulfillmentMethod);
 
   const activeIndex = steps.findIndex((step) => step.key === normalizedStatus);
   const isBad = normalizedStatus === "failed" || normalizedStatus === "cancelled";
@@ -89,7 +74,7 @@ function Tracking({ status }: { status: string }) {
             {isBad ? "Este pedido no pudo completarse." : "Seguimiento simple del estado del pedido."}
           </div>
         </div>
-        <StatusPill status={status} />
+        <StatusPill status={status} fulfillmentMethod={fulfillmentMethod} />
       </div>
 
       <div className="mt-5 grid grid-cols-4 gap-2">
@@ -152,6 +137,7 @@ export default async function PedidoDetallePage({
     typeof order.total === "number" ? order.total : Number(order.total || 0);
   const createdLabel = formatOrderDateTime(order.createdAt);
   const retryOrderId = String(order.documentId || order.id || "").trim();
+  const fulfillmentMethod = getFulfillmentMethod(order);
 
   return (
     <main>
@@ -172,7 +158,7 @@ export default async function PedidoDetallePage({
           </div>
 
           <div className="mt-8 grid gap-6 lg:grid-cols-2">
-            <Tracking status={String(order.orderStatus || "")} />
+            <Tracking status={String(order.orderStatus || "")} fulfillmentMethod={fulfillmentMethod} />
 
             <div className="rounded-2xl border bg-white p-5">
               <div className="flex items-start justify-between gap-3">
@@ -183,7 +169,10 @@ export default async function PedidoDetallePage({
                   </div>
                   {createdLabel ? <div className="mt-1 text-sm text-neutral-600">{createdLabel}</div> : null}
                 </div>
-                <StatusPill status={String(order.orderStatus || "")} />
+                <StatusPill
+                  status={String(order.orderStatus || "")}
+                  fulfillmentMethod={fulfillmentMethod}
+                />
               </div>
 
               <div className="mt-5 space-y-3 text-sm">

@@ -139,6 +139,9 @@ export async function GET(req: Request) {
     name: pickField(row, "name"),
     email: pickField(row, "email"),
     phone: pickField(row, "phone"),
+    shippingMethod: pickField(row, "shippingMethod"),
+    shippingCost: pickField(row, "shippingCost"),
+    pickupPoint: pickField(row, "pickupPoint"),
     shippingAddress: pickField(row, "shippingAddress"),
     items: pickField(row, "items"),
   }));
