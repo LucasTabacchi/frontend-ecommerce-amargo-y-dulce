@@ -11,6 +11,7 @@ import {
   getOrderStatusLabel,
   normalizeOrderStatus,
 } from "@/lib/order-fulfillment";
+import { removeAdminOrderFromCurrentList } from "@/lib/admin-order-list";
 
 type OrderRow = {
   id: string | number;
@@ -281,7 +282,11 @@ function AdminPedidosPageContent() {
         throw new Error(j?.error || "No se pudo actualizar el estado.");
       }
 
-      await loadOrders(q, statusFilter, page, pageSize);
+      const nextOrders = removeAdminOrderFromCurrentList(orders, orderId);
+      if (nextOrders !== orders) {
+        setOrders(nextOrders);
+        setTotal((current) => Math.max(0, current - 1));
+      }
     } catch (e: any) {
       setStatusError(e?.message || "No se pudo actualizar el estado.");
     } finally {
