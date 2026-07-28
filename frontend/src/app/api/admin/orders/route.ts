@@ -97,8 +97,15 @@ export async function GET(req: Request) {
   const pageSize = Math.min(pageSizeReq, 100);
 
   // Panel tienda operativo: solo estados con transición manual.
-  const status = statusRaw === "shipped" ? "shipped" : "paid";
+  const isPickupReady = statusRaw === "pickup_ready";
+  const isDeliveryShipped = statusRaw === "delivery_shipped" || statusRaw === "shipped";
+  const status = isPickupReady || isDeliveryShipped ? "shipped" : "paid";
   sp.set("filters[orderStatus][$eqi]", status);
+  if (isPickupReady) {
+    sp.set("filters[shippingMethod][$eqi]", "pickup");
+  } else if (isDeliveryShipped) {
+    sp.set("filters[shippingMethod][$eqi]", "delivery");
+  }
   sp.set("pagination[page]", String(page));
   sp.set("pagination[pageSize]", String(pageSize));
 

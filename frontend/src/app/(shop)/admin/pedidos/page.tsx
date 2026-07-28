@@ -28,7 +28,7 @@ type OrderRow = {
   items?: any[] | null;
 };
 
-type StatusFilter = "paid" | "shipped";
+type StatusFilter = "paid" | "delivery_shipped" | "pickup_ready";
 type PaginationMeta = {
   page: number;
   pageSize: number;
@@ -43,7 +43,9 @@ type OrderItemRow = {
 };
 
 function parseStatusFilter(raw: string | null): StatusFilter {
-  return raw === "shipped" ? "shipped" : "paid";
+  if (raw === "pickup_ready") return "pickup_ready";
+  if (raw === "delivery_shipped" || raw === "shipped") return "delivery_shipped";
+  return "paid";
 }
 
 function toPositiveInt(raw: string | null, fallback: number) {
@@ -291,7 +293,9 @@ function AdminPedidosPageContent() {
     const statusLabel =
       statusFilter === "paid"
         ? "pagados (para preparar)"
-        : "enviados o listos para retirar";
+        : statusFilter === "pickup_ready"
+        ? "listos para retirar"
+        : "enviados a domicilio";
 
     if (!q.trim()) return `Mostrando pedidos ${statusLabel}.`;
     return `Mostrando ${statusLabel} · búsqueda: "${q.trim()}"`;
@@ -360,7 +364,8 @@ function AdminPedidosPageContent() {
               className="h-11 rounded-xl border border-neutral-300 px-3 text-sm text-neutral-900"
             >
               <option value="paid">Pagados (para preparar)</option>
-              <option value="shipped">Enviados / listos para retirar</option>
+              <option value="delivery_shipped">Enviados a domicilio</option>
+              <option value="pickup_ready">Listos para retirar</option>
             </select>
             <select
               value={String(pageSize)}
