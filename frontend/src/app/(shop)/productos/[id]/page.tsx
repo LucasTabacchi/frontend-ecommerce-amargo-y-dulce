@@ -13,10 +13,12 @@ import {
   getServerProductReviewPermission,
   getServerProductReviews,
 } from "@/lib/server/shop-data";
+import {
+  PUBLIC_STOREFRONT_REVALIDATE_SECONDS,
+  publicStorefrontNext,
+} from "@/lib/cache";
 
-export const dynamic = "force-dynamic";
-export const fetchCache = "force-no-store";
-export const revalidate = 0;
+export const revalidate = PUBLIC_STOREFRONT_REVALIDATE_SECONDS;
 
 interface Props {
   params: { id: string };
@@ -84,7 +86,7 @@ const getProduct = cache(async function getProduct(pid: string) {
     if (isNumeric) {
       const sp = buildProductDetailParams();
       const res = await fetcher<any>(`/products/${clean}?${sp.toString()}`, {
-        cache: "no-store",
+        next: publicStorefrontNext,
       });
 
       const row = res?.data ?? null;
@@ -108,7 +110,7 @@ const getProduct = cache(async function getProduct(pid: string) {
     sp.set("filters[$or][1][slug][$eq]", clean);
 
     const list = await fetcher<any>(`/products?${sp.toString()}`, {
-      cache: "no-store",
+      next: publicStorefrontNext,
     });
 
     return list?.data?.[0] ?? null;

@@ -1,6 +1,10 @@
 type FetcherOptions = RequestInit & {
   headers?: Record<string, string>;
   auth?: boolean; // ✅ si true, agrega Bearer token (server-only)
+  next?: {
+    revalidate?: number | false;
+    tags?: string[];
+  };
 };
 
 // Normaliza base: sin trailing "/" y sin "/api" al final (para evitar /api/api)

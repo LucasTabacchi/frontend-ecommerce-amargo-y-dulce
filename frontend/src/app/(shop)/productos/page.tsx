@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
 import { Metadata } from "next";
-import { unstable_noStore as noStore } from "next/cache";
 import { AddToCartButton } from "@/components/cart/AddToCartButton";
 import { Container } from "@/components/layout/Container";
 import { fetcher } from "@/lib/fetcher";
@@ -12,10 +11,12 @@ import {
   filterPubliclyVisibleProducts,
 } from "@/lib/product-visibility";
 import { getLowStockLabel } from "@/lib/stock-labels";
+import {
+  PUBLIC_STOREFRONT_REVALIDATE_SECONDS,
+  publicStorefrontNext,
+} from "@/lib/cache";
 
-export const dynamic = "force-dynamic";
-export const fetchCache = "force-no-store";
-export const revalidate = 0;
+export const revalidate = PUBLIC_STOREFRONT_REVALIDATE_SECONDS;
 
 export const metadata: Metadata = {
   title: "Productos | Chocolates Artesanales",
@@ -41,8 +42,6 @@ export default async function ProductosPage({
 }: {
   searchParams?: { q?: string };
 }) {
-  noStore();
-
   const q = (searchParams?.q || "").trim();
 
   let products: any[] = [];
@@ -75,7 +74,7 @@ export default async function ProductosPage({
       // Si tu fetcher usa auth=true para pegarle a Strapi con token, dejalo.
       // Pero para storefront público, esto debería ser false.
       auth: false,
-      cache: "no-store",
+      next: publicStorefrontNext,
     });
 
     const raw = filterPubliclyVisibleProducts(Array.isArray(res?.data) ? res.data : []);
