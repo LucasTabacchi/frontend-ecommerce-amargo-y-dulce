@@ -125,9 +125,21 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
     );
   }
 
-  const meRes = await fetchJson(`${strapiBase}/api/users/me`, {
-    headers: { Authorization: `Bearer ${jwt}` },
-  });
+  const serverToken = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
+  if (!serverToken) {
+    return NextResponse.json({ error: "Falta STRAPI_TOKEN/STRAPI_API_TOKEN" }, { status: 500 });
+  }
+
+  const [meRes, orderRes] = await Promise.all([
+    fetchJson(`${strapiBase}/api/users/me`, {
+      headers: { Authorization: `Bearer ${jwt}` },
+    }),
+    findOrderByIdentifier({
+      strapiBase,
+      token: serverToken,
+      idOrNumber: String(params.id ?? "").trim(),
+    }),
+  ]);
 
   if (!meRes.r.ok || !meRes.json) {
     return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -136,17 +148,6 @@ export async function PATCH(req: Request, { params }: { params: { id: string } }
   if (!isStoreAdmin(meRes.json)) {
     return NextResponse.json({ error: "Forbidden: requiere isStoreAdmin" }, { status: 403 });
   }
-
-  const serverToken = process.env.STRAPI_TOKEN || process.env.STRAPI_API_TOKEN;
-  if (!serverToken) {
-    return NextResponse.json({ error: "Falta STRAPI_TOKEN/STRAPI_API_TOKEN" }, { status: 500 });
-  }
-
-  const orderRes = await findOrderByIdentifier({
-    strapiBase,
-    token: serverToken,
-    idOrNumber: String(params.id ?? "").trim(),
-  });
 
   if (!orderRes.ok) {
     return NextResponse.json(
