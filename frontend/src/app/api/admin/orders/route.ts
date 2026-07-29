@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+  applyAdminOrderStatusFilter,
+  parseAdminOrderStatusFilter,
+} from "@/lib/admin-order-filters";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -97,15 +101,8 @@ export async function GET(req: Request) {
   const pageSize = Math.min(pageSizeReq, 100);
 
   // Panel tienda operativo: solo estados con transición manual.
-  const isPickupReady = statusRaw === "pickup_ready";
-  const isDeliveryShipped = statusRaw === "delivery_shipped" || statusRaw === "shipped";
-  const status = isPickupReady || isDeliveryShipped ? "shipped" : "paid";
-  sp.set("filters[orderStatus][$eqi]", status);
-  if (isPickupReady) {
-    sp.set("filters[shippingMethod][$eqi]", "pickup");
-  } else if (isDeliveryShipped) {
-    sp.set("filters[shippingMethod][$eqi]", "delivery");
-  }
+  const statusFilter = parseAdminOrderStatusFilter(statusRaw);
+  applyAdminOrderStatusFilter(sp, statusFilter);
   sp.set("pagination[page]", String(page));
   sp.set("pagination[pageSize]", String(pageSize));
 
@@ -153,6 +150,6 @@ export async function GET(req: Request) {
     items: pickField(row, "items"),
   }));
 
-  return NextResponse.json({ orders, status, meta }, { status: 200 });
+  return NextResponse.json({ orders, status: statusFilter, meta }, { status: 200 });
 }
 

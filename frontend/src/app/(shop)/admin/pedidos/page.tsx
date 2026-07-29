@@ -12,6 +12,11 @@ import {
   normalizeOrderStatus,
 } from "@/lib/order-fulfillment";
 import { removeAdminOrderFromCurrentList } from "@/lib/admin-order-list";
+import {
+  getAdminOrderStatusFilterLabel,
+  parseAdminOrderStatusFilter,
+  type AdminOrderStatusFilter,
+} from "@/lib/admin-order-filters";
 
 type OrderRow = {
   id: string | number;
@@ -29,7 +34,7 @@ type OrderRow = {
   items?: any[] | null;
 };
 
-type StatusFilter = "paid" | "delivery_shipped" | "pickup_ready";
+type StatusFilter = AdminOrderStatusFilter;
 type PaginationMeta = {
   page: number;
   pageSize: number;
@@ -42,12 +47,6 @@ type OrderItemRow = {
   qty: number;
   unitPrice: number;
 };
-
-function parseStatusFilter(raw: string | null): StatusFilter {
-  if (raw === "pickup_ready") return "pickup_ready";
-  if (raw === "delivery_shipped" || raw === "shipped") return "delivery_shipped";
-  return "paid";
-}
 
 function toPositiveInt(raw: string | null, fallback: number) {
   const n = Number(raw);
@@ -146,7 +145,7 @@ function AdminPedidosPageContent() {
 
   const [qInput, setQInput] = useState(() => String(sp.get("q") ?? ""));
   const [q, setQ] = useState(() => String(sp.get("q") ?? ""));
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => parseStatusFilter(sp.get("status")));
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>(() => parseAdminOrderStatusFilter(sp.get("status")));
   const [page, setPage] = useState(() => toPositiveInt(sp.get("page"), 1));
   const [pageSize, setPageSize] = useState(() => parsePageSize(sp.get("pageSize"), 20));
   const [pageCount, setPageCount] = useState(1);
@@ -181,7 +180,7 @@ function AdminPedidosPageContent() {
 
   useEffect(() => {
     const nextQ = String(sp.get("q") ?? "");
-    const nextStatus = parseStatusFilter(sp.get("status"));
+    const nextStatus = parseAdminOrderStatusFilter(sp.get("status"));
     const nextPage = toPositiveInt(sp.get("page"), 1);
     const nextPageSize = parsePageSize(sp.get("pageSize"), 20);
 
@@ -295,12 +294,7 @@ function AdminPedidosPageContent() {
   }
 
   const filteredInfo = useMemo(() => {
-    const statusLabel =
-      statusFilter === "paid"
-        ? "pagados (para preparar)"
-        : statusFilter === "pickup_ready"
-        ? "listos para retirar"
-        : "enviados a domicilio";
+    const statusLabel = getAdminOrderStatusFilterLabel(statusFilter);
 
     if (!q.trim()) return `Mostrando pedidos ${statusLabel}.`;
     return `Mostrando ${statusLabel} · búsqueda: "${q.trim()}"`;
@@ -369,8 +363,7 @@ function AdminPedidosPageContent() {
               className="h-11 rounded-xl border border-neutral-300 px-3 text-sm text-neutral-900"
             >
               <option value="paid">Pagados (para preparar)</option>
-              <option value="delivery_shipped">Enviados a domicilio</option>
-              <option value="pickup_ready">Listos para retirar</option>
+              <option value="ready">Enviados / listos para retirar</option>
             </select>
             <select
               value={String(pageSize)}
