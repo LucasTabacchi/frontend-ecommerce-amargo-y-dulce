@@ -66,6 +66,17 @@ test("detects an existing user review for the same product", () => {
   );
 });
 
+test("detects an existing user review by internal userEmail while name stays display-only", () => {
+  const reviews = [
+    { name: "Lucas Tabacchi", userEmail: "lucas@example.com", product: { documentId: "prod-1", id: 4 } },
+  ];
+
+  assert.equal(
+    hasExistingUserReview(reviews, "lucas@example.com", { productDocumentId: "prod-1" }),
+    true
+  );
+});
+
 test("builds review permission from purchase and duplicate state", () => {
   assert.deepEqual(buildReviewPermission(false, false), {
     canReview: false,

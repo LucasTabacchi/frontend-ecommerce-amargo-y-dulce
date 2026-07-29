@@ -5,6 +5,7 @@ import {
   hasExistingUserReview,
   hasPurchasedProduct,
 } from "@/lib/review-permissions";
+import { buildReviewAuthorFields, getReviewUserKey } from "@/lib/review-author";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
@@ -77,14 +78,6 @@ async function resolveProductNumericId(params: {
   return Number.isFinite(idNum) && idNum > 0 ? idNum : null;
 }
 
-function getUserReviewKey(user: any) {
-  return (
-    String(user?.email ?? "").trim().toLowerCase() ||
-    String(user?.documentId ?? "").trim() ||
-    (user?.id != null ? String(user.id).trim() : "")
-  );
-}
-
 async function fetchAuthenticatedUser(strapiBase: string, jwt: string) {
   const meRes = await fetchWithTimeout(`${strapiBase}/api/users/me`, {
     headers: { Authorization: `Bearer ${jwt}` },
@@ -135,15 +128,16 @@ async function fetchExistingUserReviews(params: {
   const sp = new URLSearchParams();
   sp.set("pagination[pageSize]", "10");
   sp.set("populate", "product");
-  sp.set("filters[name][$eqi]", userKey);
+  sp.set("filters[$and][0][$or][0][userEmail][$eqi]", userKey);
+  sp.set("filters[$and][0][$or][1][name][$eqi]", userKey);
 
   let orIndex = 0;
   if (productDocumentId) {
-    sp.set(`filters[$or][${orIndex}][product][documentId][$eq]`, productDocumentId);
+    sp.set(`filters[$and][1][$or][${orIndex}][product][documentId][$eq]`, productDocumentId);
     orIndex++;
   }
   if (productId) {
-    sp.set(`filters[$or][${orIndex}][product][id][$eq]`, String(productId));
+    sp.set(`filters[$and][1][$or][${orIndex}][product][id][$eq]`, String(productId));
     orIndex++;
   }
 
@@ -171,7 +165,7 @@ async function resolveReviewPermission(params: {
   if (!me.ok) return { canReview: false, reason: "not_authenticated" };
   if (isStoreAdmin(me.user)) return { canReview: false, reason: "store_admin" };
 
-  const userKey = getUserReviewKey(me.user);
+  const userKey = getReviewUserKey(me.user);
   const target = { productDocumentId, productId };
   const [orders, existingReviews] = await Promise.all([
     fetchUserOrders({ strapiBase, jwt, user: me.user }),
@@ -357,7 +351,7 @@ export async function POST(req: Request) {
     );
   }
 
-  const userKey = getUserReviewKey(meJson);
+  const userKey = getReviewUserKey(meJson);
   const target = { productDocumentId, productId };
   const [orders, existingReviews] = await Promise.all([
     fetchUserOrders({ strapiBase, jwt, user: meJson }),
@@ -382,7 +376,7 @@ export async function POST(req: Request) {
   const baseData = {
     rating,
     comment,
-    name: userKey || name || "cliente",
+    ...buildReviewAuthorFields(meJson, name),
     verified: true,
   };
 

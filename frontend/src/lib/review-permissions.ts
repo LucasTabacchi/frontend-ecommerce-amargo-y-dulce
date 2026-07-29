@@ -80,7 +80,7 @@ export function hasExistingUserReview(
   return (Array.isArray(reviews) ? reviews : []).some((review) => {
     const f = flat(review);
     const reviewUserKey = text(
-      f?.userKey ?? f?.name ?? f?.email ?? f?.user?.email ?? f?.user?.data?.attributes?.email
+      f?.userKey ?? f?.userEmail ?? f?.email ?? f?.user?.email ?? f?.user?.data?.attributes?.email ?? f?.name
     ).toLowerCase();
 
     return reviewUserKey === normalizedUserKey && productMatches(f, target);

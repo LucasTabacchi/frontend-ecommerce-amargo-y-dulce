@@ -11,6 +11,7 @@ import {
   hasExistingUserReview,
   hasPurchasedProduct,
 } from "@/lib/review-permissions";
+import { getReviewUserKey } from "@/lib/review-author";
 
 export type ServerAddress = {
   id: string | number | null;
@@ -402,14 +403,6 @@ function mapServerInvoice(strapiBase: string, row: any): ServerInvoice {
   };
 }
 
-function getServerUserReviewKey(user: ServerAuthUser) {
-  return (
-    String(user.email ?? "").trim().toLowerCase() ||
-    String(user.documentId ?? "").trim() ||
-    String(user.id ?? "").trim()
-  );
-}
-
 async function getServerExistingUserReviews(params: {
   userKey: string;
   productDocumentId?: string;
@@ -427,19 +420,20 @@ async function getServerExistingUserReviews(params: {
   const query = new URLSearchParams();
   query.set("pagination[pageSize]", "10");
   query.set("populate", "product");
-  query.set("filters[name][$eqi]", userKey);
+  query.set("filters[$and][0][$or][0][userEmail][$eqi]", userKey);
+  query.set("filters[$and][0][$or][1][name][$eqi]", userKey);
 
   let orIndex = 0;
   if (hasProductDocumentId) {
     query.set(
-      `filters[$or][${orIndex}][product][documentId][$eq]`,
+      `filters[$and][1][$or][${orIndex}][product][documentId][$eq]`,
       String(params.productDocumentId).trim()
     );
     orIndex += 1;
   }
   if (hasProductId) {
     query.set(
-      `filters[$or][${orIndex}][product][id][$eq]`,
+      `filters[$and][1][$or][${orIndex}][product][id][$eq]`,
       String(Number(params.productId))
     );
   }
@@ -635,7 +629,7 @@ export async function getServerProductReviewPermission(params: {
     productDocumentId: hasProductDocumentId ? String(params.productDocumentId).trim() : null,
     productId: hasProductId ? Number(params.productId) : null,
   };
-  const userKey = getServerUserReviewKey(viewer);
+  const userKey = getReviewUserKey(viewer);
 
   try {
     const [orders, existingReviews] = await Promise.all([
