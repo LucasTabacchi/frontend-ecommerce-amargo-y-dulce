@@ -11,6 +11,7 @@ import {
 } from "@/lib/auth/google-profile-name";
 import {
   buildStrapiGoogleConnectUrl,
+  pickGoogleProfileSyncToken,
   shouldExchangeGoogleAccessToken,
 } from "@/lib/auth/google-oauth-flow";
 
@@ -88,14 +89,19 @@ async function syncGoogleProfileToStrapiUser(params: {
   const { strapiBase, jwt, user, googleProfile } = params;
   const userId = Number(user?.id);
   const payload = buildGoogleProfileUserPatch(user, googleProfile);
+  const syncToken = pickGoogleProfileSyncToken({
+    userJwt: jwt,
+    strapiApiToken: process.env.STRAPI_API_TOKEN,
+    strapiToken: process.env.STRAPI_TOKEN,
+  });
 
-  if (!Number.isFinite(userId) || userId <= 0 || !payload) return user;
+  if (!Number.isFinite(userId) || userId <= 0 || !payload || !syncToken) return user;
 
   try {
     const res = await fetch(`${strapiBase}/api/users/${Math.trunc(userId)}`, {
       method: "PUT",
       headers: {
-        Authorization: `Bearer ${jwt}`,
+        Authorization: `Bearer ${syncToken}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(payload),

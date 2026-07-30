@@ -14,3 +14,21 @@ export function buildStrapiGoogleConnectUrl(strapiBase: string, frontendRedirect
 export function shouldExchangeGoogleAccessToken(_opts?: { existingJwt?: string | null }) {
   return true;
 }
+
+function safeToken(value: unknown) {
+  const token = typeof value === "string" ? value.trim() : "";
+  return token.length ? token : null;
+}
+
+export function pickGoogleProfileSyncToken(input: {
+  userJwt: string;
+  strapiApiToken?: string | null;
+  strapiToken?: string | null;
+}) {
+  return (
+    safeToken(input.strapiApiToken) ||
+    safeToken(input.strapiToken) ||
+    safeToken(input.userJwt) ||
+    ""
+  );
+}

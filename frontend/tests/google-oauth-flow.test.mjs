@@ -29,6 +29,7 @@ function loadTsModule(relativePath) {
 const {
   GOOGLE_OAUTH_SCOPE,
   buildStrapiGoogleConnectUrl,
+  pickGoogleProfileSyncToken,
   shouldExchangeGoogleAccessToken,
 } = loadTsModule("src/lib/auth/google-oauth-flow.ts");
 
@@ -52,4 +53,31 @@ test("builds the Strapi Google connect URL requesting profile data", () => {
 test("always exchanges the returned Google token instead of reusing a stale session", () => {
   assert.equal(shouldExchangeGoogleAccessToken({ existingJwt: "old-session" }), true);
   assert.equal(shouldExchangeGoogleAccessToken({ existingJwt: null }), true);
+});
+
+test("uses the server Strapi token to sync Google profile fields when available", () => {
+  assert.equal(
+    pickGoogleProfileSyncToken({
+      userJwt: "client-jwt",
+      strapiApiToken: "server-api-token",
+      strapiToken: "",
+    }),
+    "server-api-token"
+  );
+  assert.equal(
+    pickGoogleProfileSyncToken({
+      userJwt: "client-jwt",
+      strapiApiToken: "",
+      strapiToken: "legacy-server-token",
+    }),
+    "legacy-server-token"
+  );
+  assert.equal(
+    pickGoogleProfileSyncToken({
+      userJwt: "client-jwt",
+      strapiApiToken: "",
+      strapiToken: "",
+    }),
+    "client-jwt"
+  );
 });
