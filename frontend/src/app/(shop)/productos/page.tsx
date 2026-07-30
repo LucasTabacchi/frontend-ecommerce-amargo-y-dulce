@@ -13,10 +13,11 @@ import {
 import { getLowStockLabel } from "@/lib/stock-labels";
 import {
   PUBLIC_STOREFRONT_REVALIDATE_SECONDS,
-  publicStorefrontNext,
+  publicStorefrontFetchOptions,
 } from "@/lib/cache";
 
 export const revalidate = PUBLIC_STOREFRONT_REVALIDATE_SECONDS;
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Productos | Chocolates Artesanales",
@@ -74,7 +75,7 @@ export default async function ProductosPage({
       // Si tu fetcher usa auth=true para pegarle a Strapi con token, dejalo.
       // Pero para storefront público, esto debería ser false.
       auth: false,
-      next: publicStorefrontNext,
+      ...publicStorefrontFetchOptions,
     });
 
     const raw = filterPubliclyVisibleProducts(Array.isArray(res?.data) ? res.data : []);

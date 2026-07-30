@@ -28,10 +28,11 @@ function loadTsModule(relativePath) {
 
 const {
   buildProductProxyRequestOptions,
+  buildProductProxyResponseCacheControl,
   buildProductProxySearch,
 } = loadTsModule("src/lib/product-proxy-cache.ts");
 
-test("public product proxy requests do not send the server token and can revalidate briefly", () => {
+test("public product proxy requests do not send the server token and always fetch fresh data", () => {
   const options = buildProductProxyRequestOptions({
     fresh: false,
     token: "server-token",
@@ -39,8 +40,9 @@ test("public product proxy requests do not send the server token and can revalid
   });
 
   assert.deepEqual(options.headers, {});
-  assert.deepEqual(options.next, { revalidate: 30 });
-  assert.equal(options.cache, undefined);
+  assert.equal(options.cache, "no-store");
+  assert.equal(options.next, undefined);
+  assert.equal(buildProductProxyResponseCacheControl(), "no-store");
 });
 
 test("fresh product proxy requests keep no-store and server auth for cart stock checks", () => {

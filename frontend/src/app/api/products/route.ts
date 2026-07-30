@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import {
+  buildProductProxyResponseCacheControl,
   buildProductProxyRequestOptions,
   buildProductProxySearch,
   isFreshProductProxyRequest,
@@ -37,9 +38,7 @@ export async function GET(req: Request) {
     headers: { "Content-Type": res.headers.get("content-type") ?? "application/json" },
   });
 
-  if (!fresh && res.ok) {
-    response.headers.set("Cache-Control", "s-maxage=30, stale-while-revalidate=120");
-  }
+  response.headers.set("Cache-Control", buildProductProxyResponseCacheControl());
 
   return response;
 }

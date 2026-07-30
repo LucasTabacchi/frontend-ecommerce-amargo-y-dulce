@@ -1,5 +1,3 @@
-const DEFAULT_PRODUCT_PROXY_REVALIDATE_SECONDS = 30;
-
 type ProductProxyRequestOptions = RequestInit & {
   next?: {
     revalidate: number;
@@ -20,12 +18,14 @@ export function buildProductProxySearch(searchParams: URLSearchParams) {
 export function buildProductProxyRequestOptions({
   fresh,
   token,
-  revalidateSeconds = DEFAULT_PRODUCT_PROXY_REVALIDATE_SECONDS,
+  revalidateSeconds: _revalidateSeconds = 0,
 }: {
   fresh: boolean;
   token?: string | null;
   revalidateSeconds?: number;
 }): ProductProxyRequestOptions {
+  void _revalidateSeconds;
+
   if (fresh) {
     return {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -35,6 +35,10 @@ export function buildProductProxyRequestOptions({
 
   return {
     headers: {},
-    next: { revalidate: revalidateSeconds },
+    cache: "no-store" as const,
   };
+}
+
+export function buildProductProxyResponseCacheControl() {
+  return "no-store";
 }

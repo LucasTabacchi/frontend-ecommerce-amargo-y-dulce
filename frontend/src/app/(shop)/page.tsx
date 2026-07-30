@@ -11,10 +11,11 @@ import { Suspense } from "react";
 import { isPubliclyVisibleProduct } from "@/lib/product-visibility";
 import {
   PUBLIC_STOREFRONT_REVALIDATE_SECONDS,
-  publicStorefrontNext,
+  publicStorefrontFetchOptions,
 } from "@/lib/cache";
 
 export const revalidate = PUBLIC_STOREFRONT_REVALIDATE_SECONDS;
+export const dynamic = "force-dynamic";
 
 export const metadata: Metadata = {
   title: "Inicio | Chocolates Artesanales",
@@ -51,7 +52,7 @@ async function getBestSellers() {
   for (const query of queries) {
     try {
       const res = await strapiGet<StrapiSingleResponse<HomePageAttributes>>(query, {
-        next: publicStorefrontNext,
+        ...publicStorefrontFetchOptions,
       });
 
       const home = (res?.data?.attributes ?? res?.data) as
