@@ -115,13 +115,36 @@ test("builds a Strapi user patch with missing Google profile fields", () => {
   });
 });
 
-test("does not overwrite existing Strapi profile fields with Google data", () => {
+test("builds a Strapi user patch when stored profile fields are stale", () => {
   const user = {
     id: 1,
     email: "lucas@example.com",
-    name: "Nombre Manual",
-    firstName: "Nombre",
-    lastName: "Manual",
+    username: "Operador Tienda",
+    name: "Operador Tienda",
+    firstName: "Operador",
+    lastName: "Tienda",
+  };
+  const googleProfile = {
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
+    email: "lucas@example.com",
+  };
+
+  assert.deepEqual(buildGoogleProfileUserPatch(user, googleProfile), {
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
+  });
+});
+
+test("does not build a Strapi user patch when profile fields already match Google", () => {
+  const user = {
+    id: 1,
+    email: "lucas@example.com",
+    name: "Lucas Tabacchi",
+    firstName: "Lucas",
+    lastName: "Tabacchi",
   };
   const googleProfile = {
     name: "Lucas Tabacchi",

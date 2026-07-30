@@ -74,9 +74,9 @@ export function buildGoogleProfileUserPatch(
   const firstName = safeString(googleProfile.firstName);
   const lastName = safeString(googleProfile.lastName);
 
-  if (name && !safeString(user.name)) payload.name = name;
-  if (firstName && !safeString(user.firstName)) payload.firstName = firstName;
-  if (lastName && !safeString(user.lastName)) payload.lastName = lastName;
+  if (name && safeString(user.name) !== name) payload.name = name;
+  if (firstName && safeString(user.firstName) !== firstName) payload.firstName = firstName;
+  if (lastName && safeString(user.lastName) !== lastName) payload.lastName = lastName;
 
   return Object.keys(payload).length > 0 ? payload : null;
 }
