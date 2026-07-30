@@ -9,6 +9,10 @@ import {
   normalizeGoogleProfileName,
   type GoogleProfileName,
 } from "@/lib/auth/google-profile-name";
+import {
+  buildStrapiGoogleConnectUrl,
+  shouldExchangeGoogleAccessToken,
+} from "@/lib/auth/google-oauth-flow";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -168,8 +172,10 @@ export async function GET(req: Request) {
 
     // ✅ Flujo recomendado por Strapi:
     // arrancamos en /api/connect/google para que Grant/session/state se manejen del lado Strapi.
-    const strapiConnectUrl = new URL(`${STRAPI}/api/connect/google`);
-    strapiConnectUrl.searchParams.set("callback", frontendRedirect.toString());
+    const strapiConnectUrl = buildStrapiGoogleConnectUrl(
+      STRAPI,
+      frontendRedirect.toString()
+    );
 
     const res = NextResponse.redirect(strapiConnectUrl.toString(), { status: 302 });
     res.headers.set("Cache-Control", "no-store");
@@ -254,10 +260,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing STRAPI_URL" }, { status: 500 });
   }
 
-  // Evita doble intercambio de access_token si la sesión ya está activa.
   const existingJwt = cookies().get("strapi_jwt")?.value || null;
   const googleProfile = await fetchGoogleProfileName(access_token);
-  if (existingJwt) {
+  if (existingJwt && !shouldExchangeGoogleAccessToken({ existingJwt })) {
     const meRes = await fetch(`${STRAPI}/api/users/me`, {
       headers: { Authorization: `Bearer ${existingJwt}` },
       cache: "no-store",
