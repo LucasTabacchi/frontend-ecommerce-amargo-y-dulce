@@ -5,6 +5,7 @@ import {
   buildGoogleProfileUserPatch,
   GOOGLE_PROFILE_COOKIE,
   encodeGoogleProfileName,
+  hasGoogleProfileDisplayName,
   mergeGoogleProfileName,
   normalizeGoogleProfileName,
   type GoogleProfileName,
@@ -67,17 +68,33 @@ async function exchangeAccessTokenForJwt(strapiBase: string, access_token: strin
   return { ok: true as const, status: 200, jwt, user };
 }
 
+const GOOGLE_USERINFO_ENDPOINTS = [
+  "https://www.googleapis.com/oauth2/v3/userinfo",
+  "https://www.googleapis.com/oauth2/v2/userinfo",
+  "https://www.googleapis.com/oauth2/v1/userinfo?alt=json",
+];
+
 async function fetchGoogleProfileName(accessToken: string): Promise<GoogleProfileName | null> {
-  try {
-    const res = await fetch("https://www.googleapis.com/oauth2/v3/userinfo", {
-      headers: { Authorization: `Bearer ${accessToken}` },
-      cache: "no-store",
-    });
-    if (!res.ok) return null;
-    return normalizeGoogleProfileName(await res.json().catch(() => null));
-  } catch {
-    return null;
+  let fallback: GoogleProfileName | null = null;
+
+  for (const endpoint of GOOGLE_USERINFO_ENDPOINTS) {
+    try {
+      const res = await fetch(endpoint, {
+        headers: { Authorization: `Bearer ${accessToken}` },
+        cache: "no-store",
+      });
+      if (!res.ok) continue;
+
+      const profile = normalizeGoogleProfileName(await res.json().catch(() => null));
+      if (!profile) continue;
+      if (hasGoogleProfileDisplayName(profile)) return profile;
+      fallback ??= profile;
+    } catch {
+      continue;
+    }
   }
+
+  return fallback;
 }
 
 async function syncGoogleProfileToStrapiUser(params: {

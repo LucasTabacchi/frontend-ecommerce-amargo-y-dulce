@@ -30,6 +30,7 @@ const {
   buildGoogleProfileUserPatch,
   decodeGoogleProfileName,
   encodeGoogleProfileName,
+  pickBestGoogleProfileName,
   mergeGoogleProfileName,
   normalizeGoogleProfileName,
 } = loadTsModule("src/lib/auth/google-profile-name.ts");
@@ -188,4 +189,24 @@ test("round trips the Google profile name through a cookie-safe value", () => {
     lastName: "Tabacchi",
     email: "lucas@example.com",
   });
+});
+
+test("keeps looking for a Google profile response with a display name", () => {
+  assert.deepEqual(
+    pickBestGoogleProfileName([
+      { email: "lucas@example.com" },
+      {
+        name: "Lucas Tabacchi",
+        given_name: "Lucas",
+        family_name: "Tabacchi",
+        email: "lucas@example.com",
+      },
+    ]),
+    {
+      name: "Lucas Tabacchi",
+      firstName: "Lucas",
+      lastName: "Tabacchi",
+      email: "lucas@example.com",
+    }
+  );
 });

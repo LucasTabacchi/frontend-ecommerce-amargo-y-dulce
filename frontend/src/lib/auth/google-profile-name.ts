@@ -35,6 +35,27 @@ export function normalizeGoogleProfileName(raw: unknown): GoogleProfileName | nu
   };
 }
 
+export function hasGoogleProfileDisplayName(profile: GoogleProfileName | null | undefined) {
+  return Boolean(
+    safeString(profile?.name) ||
+      safeString(profile?.firstName) ||
+      safeString(profile?.lastName)
+  );
+}
+
+export function pickBestGoogleProfileName(candidates: unknown[]) {
+  let fallback: GoogleProfileName | null = null;
+
+  for (const candidate of candidates) {
+    const profile = normalizeGoogleProfileName(candidate);
+    if (!profile) continue;
+    if (hasGoogleProfileDisplayName(profile)) return profile;
+    fallback ??= profile;
+  }
+
+  return fallback;
+}
+
 export function mergeGoogleProfileName<T extends Record<string, any> | null | undefined>(
   user: T,
   googleProfile: GoogleProfileName | null | undefined
