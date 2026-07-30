@@ -10,6 +10,7 @@ import { CartBadge } from "@/components/cart/CartBadge";
 import { ProfilePanel } from "@/components/profile/ProfilePanel";
 import { useCartStore } from "@/store/cart.store";
 import { useAuthStore } from "@/store/auth.store";
+import { resolveUserHeaderName } from "@/lib/auth/user-display-name";
 
 type Suggestion = {
   id: string | number | null;
@@ -54,17 +55,6 @@ function NavLink({
       {children}
     </Link>
   );
-}
-
-function safeName(v: any) {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s.length ? s : null;
-}
-
-function firstToken(v: any) {
-  const s = safeName(v);
-  if (!s) return null;
-  return s.split(/\s+/)[0] || null;
 }
 
 export function Header() {
@@ -455,13 +445,7 @@ export function Header() {
     );
   }
 
-  // ✅ Muestra firstName + lastName si existen, si no cae a username o email
-  const headerDisplayName =
-    safeName(me?.firstName) ||
-    firstToken(me?.name) ||
-    safeName(me?.username) ||
-    (typeof me?.email === "string" ? safeName(me.email.split("@")[0]) : null) ||
-    "Cuenta";
+  const headerDisplayName = resolveUserHeaderName(me, "Cuenta");
   const resolvedIsStoreAdmin = Boolean(me?.isStoreAdmin);
   // Mientras no resolvimos sesión/rol evitamos mostrar UI de cuenta común
   // para no generar flash al cambiar a cuenta tienda.
