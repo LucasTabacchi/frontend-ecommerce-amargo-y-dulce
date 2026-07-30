@@ -9,6 +9,7 @@ import { ProductReviews } from "@/components/products/ProductReviews";
 import { ProductPurchaseBox } from "./ProductPurchaseBox";
 import { Gallery } from "./Gallery";
 import { getFirstProductImageUrl, getProductGalleryImages } from "@/lib/product-images";
+import { formatProductCategoryLabel } from "@/lib/product-category";
 import {
   getServerProductReviewPermission,
   getServerProductReviews,
@@ -206,6 +207,7 @@ export default async function ProductDetailPage({ params }: Props) {
   const title = String(attr?.title ?? "Producto");
   const description = richTextToPlainText(attr?.description);
   const category = attr?.category ?? null;
+  const categoryLabel = formatProductCategoryLabel(category);
 
   const price = asNum(attr?.price, 0);
   const off = asNum(attr?.off, 0);
@@ -245,10 +247,10 @@ export default async function ProductDetailPage({ params }: Props) {
 
         <div className="pt-6 pb-6">
           <h1 className="text-3xl font-extrabold text-neutral-900">{title}</h1>
-          {category && (
-            <p className="mt-1 text-sm font-semibold text-neutral-500">
-              {String(category)}
-            </p>
+          {categoryLabel && (
+            <div className="mt-3 inline-flex rounded-full border border-red-100 bg-red-50 px-3 py-1 text-xs font-extrabold uppercase tracking-normal text-red-700">
+              {categoryLabel}
+            </div>
           )}
         </div>
 
